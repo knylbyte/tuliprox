@@ -2329,11 +2329,12 @@ async fn sync_panel_api_for_input_on_boot(
             );
         }
 
+        let server_tz_name = server_tz.as_ref().map_or("none", |tz| Tz::name(*tz));
         debug_if_enabled!(
-            "panel_api time context for input {}: expire_mode={:?}, tz={:?}, skew_secs={}",
+            "panel_api time context for input {}: expire_mode={:?}, tz={}, skew_secs={}",
             sanitize_sensitive_info(&input.name),
             expire_mode,
-            server_tz,
+            server_tz_name,
             skew_secs.unwrap_or_default()
         );
     } else if let Some(cached) = cached_entry.as_ref() {
@@ -2346,11 +2347,12 @@ async fn sync_panel_api_for_input_on_boot(
             get_current_timestamp(),
             cached.skew_secs.unwrap_or_default(),
         );
+        let server_tz_name = server_tz.as_ref().map_or("none", |tz| Tz::name(*tz));
         debug_if_enabled!(
-            "panel_api time context fallback for input {}: expire_mode={:?}, tz={:?}, skew_secs={}",
+            "panel_api time context fallback for input {}: expire_mode={:?}, tz={}, skew_secs={}",
             sanitize_sensitive_info(&input.name),
             cached.expire_mode,
-            server_tz,
+            server_tz_name,
             cached.skew_secs.unwrap_or_default()
         );
     } else {
@@ -2456,6 +2458,8 @@ async fn sync_panel_api_for_input_on_boot(
     // Refresh/provision credentials on boot/update.
     // Root is handled first (may affect desired_aliases and avoids over-provisioning).
     let mut root_action_planned = false;
+    let mut provisioned_root = 0_u16;
+    let mut provisioned_aliases = 0_u16;
 
     if let Some(root_idx) = accounts.iter().position(|a| a.name == input.name) {
         let now = effective_now;
@@ -2477,12 +2481,13 @@ async fn sync_panel_api_for_input_on_boot(
         let should_refresh_root = root_exp_missing || root_expired || root_expiring;
         root_action_planned = should_refresh_root;
 
+        let root_exp_display =
+            root_exp_date.map_or_else(|| "None".to_string(), |ts| ts.to_string());
         debug_if_enabled!(
-            "panel_api boot/update root status for input {} (offset={}s): exp_date={:?}, missing={}, expired={}, expiring(offset)={}",
+            "panel_api boot/update root status for input {} (offset={}s): exp_date={}, expired={}, expiring(offset)={}",
             sanitize_sensitive_info(&input.name),
             offset_secs,
-            root_exp_date,
-            root_exp_missing,
+            root_exp_display,
             root_expired,
             root_expiring
         );
@@ -2492,10 +2497,10 @@ async fn sync_panel_api_for_input_on_boot(
             let old_password = accounts[root_idx].password.clone();
 
             debug_if_enabled!(
-                "panel_api boot/update refreshing root account {} for input {} (exp_date={:?}, offset={}s)",
+                "panel_api boot/update refreshing root account {} for input {} (exp_date={}, offset={}s)",
+                sanitize_sensitive_info(&old_username),
                 sanitize_sensitive_info(&input.name),
-                sanitize_sensitive_info(&input.name),
-                root_exp_date,
+                root_exp_display,
                 offset_secs
             );
 
@@ -2507,7 +2512,10 @@ async fn sync_panel_api_for_input_on_boot(
             )
             .await
             {
-                Ok(()) => (old_username.clone(), old_password.clone(), false),
+                Ok(()) => {
+                    provisioned_root = 1;
+                    (old_username.clone(), old_password.clone(), false)
+                }
                 Err(err) => {
                     debug_if_enabled!(
                         "panel_api client_renew failed for root {}: {}",
@@ -2517,6 +2525,7 @@ async fn sync_panel_api_for_input_on_boot(
 
                     match panel_client_new(app_state.as_ref(), panel_cfg).await {
                         Ok((new_username, new_password, _base_url_from_resp)) => {
+                            provisioned_root = 1;
                             // Variant B: if the old root is still valid but within offset window,
                             // keep it as a new alias entry so we don't lose usable credentials.
                             let park_old_root_as_alias =
@@ -2750,16 +2759,6 @@ async fn sync_panel_api_for_input_on_boot(
         |min_pool| min_pool.saturating_sub(u16::from(root_valid)),
     );
 
-    let valid_total = count_valid_accounts_at(&accounts, now);
-    let valid_aliases = count_valid_alias_accounts_at(&accounts, input.name.as_str(), now);
-    let exp_missing_aliases = accounts
-        .iter()
-        .filter(|a| a.name != input.name && a.exp_date.is_none())
-        .count();
-    let expired_aliases = accounts
-        .iter()
-        .filter(|a| a.name != input.name && is_input_expired_at(a.exp_date, now))
-        .count();
     let expiring_aliases = accounts
         .iter()
         .filter(|a| {
@@ -2786,8 +2785,6 @@ async fn sync_panel_api_for_input_on_boot(
         .count();
 
     let desired_aliases_u16 = desired_aliases;
-    let valid_aliases_u16 = u16::try_from(valid_aliases).unwrap_or(u16::MAX);
-    let missing_aliases = desired_aliases_u16.saturating_sub(valid_aliases_u16);
 
     let mut refresh_candidates: Vec<usize> = accounts
         .iter()
@@ -2829,13 +2826,9 @@ async fn sync_panel_api_for_input_on_boot(
         .take(planned_refresh_aliases)
         .collect();
 
+    let enabled_users = alias_pool_both_auto(panel_cfg)
+        .then(|| count_enabled_proxy_users(app_state.as_ref(), &input.name));
     if alias_pool_both_auto(panel_cfg) {
-        let enabled_users = count_enabled_proxy_users(app_state.as_ref(), &input.name);
-        let to_provision = u16::try_from(planned_refresh_aliases)
-            .unwrap_or(u16::MAX)
-            .saturating_add(missing_aliases)
-            .saturating_add(u16::from(root_action_planned));
-
         debug_if_enabled!(
             "panel_api boot/update provisioning root for input {} (offset={}s): valid={}, planned_refresh(offset)={}",
             sanitize_sensitive_info(&input.name),
@@ -2845,27 +2838,13 @@ async fn sync_panel_api_for_input_on_boot(
         );
 
         debug_if_enabled!(
-            "panel_api boot/update provisioning aliases for input {} (offset={}s): desired={}, valid={}, valid_beyond_offset={}, missing={}, exp_missing={}, expiring(offset)={}, expired={}, refresh_needed(offset)={}, refresh_planned(offset)={}",
+            "panel_api boot/update provisioning aliases for input {} (offset={}s): desired={}, valid_beyond_offset={}, expiring(offset)={}, refresh_planned(offset)={}",
             sanitize_sensitive_info(&input.name),
             offset_secs,
             desired_aliases_u16,
-            valid_aliases,
             valid_aliases_beyond_offset,
-            missing_aliases,
-            exp_missing_aliases,
             expiring_aliases,
-            expired_aliases,
-            needed_refresh_aliases_u16,
             planned_refresh_aliases
-        );
-
-        debug_if_enabled!(
-            "panel_api boot/update provisioning total for input {} (offset={}s): enabled_users={}, valid_accounts={}, to_provision={}",
-            sanitize_sensitive_info(&input.name),
-            offset_secs,
-            enabled_users,
-            valid_total,
-            to_provision
         );
     }
 
@@ -2906,7 +2885,10 @@ async fn sync_panel_api_for_input_on_boot(
         )
         .await
         {
-            Ok(()) => (old_username.clone(), old_password.clone(), false),
+            Ok(()) => {
+                provisioned_aliases = provisioned_aliases.saturating_add(1);
+                (old_username.clone(), old_password.clone(), false)
+            }
             Err(err) => {
                 debug_if_enabled!(
                     "panel_api client_renew failed for alias {}: {}",
@@ -2998,6 +2980,7 @@ async fn sync_panel_api_for_input_on_boot(
                             password: new_password,
                             exp_date,
                         });
+                        provisioned_aliases = provisioned_aliases.saturating_add(1);
                         continue;
                     }
                     Err(err) => {
@@ -3102,6 +3085,19 @@ async fn sync_panel_api_for_input_on_boot(
 
     if !newly_created_accounts.is_empty() {
         accounts.extend(newly_created_accounts);
+    }
+
+    if let Some(enabled_users) = enabled_users {
+        let valid_total = count_valid_accounts_at(&accounts, now);
+        debug_if_enabled!(
+            "panel_api boot/update provisioning total for input {} (offset={}s): enabled_users={}, valid_accounts={}, provisioned_root={}, provisioned_aliases={}",
+            sanitize_sensitive_info(&input.name),
+            offset_secs,
+            enabled_users,
+            valid_total,
+            provisioned_root,
+            provisioned_aliases
+        );
     }
 
     if !panel_cfg.query_parameter.client_adult_content.is_empty() {
