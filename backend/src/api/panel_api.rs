@@ -3264,7 +3264,12 @@ fn provisioning_method_to_reqwest(method: PanelApiProvisioningMethod) -> Method 
     }
 }
 
-fn build_panel_api_test_url(base_url: &str, username: &str, password: &str) -> Option<Url> {
+fn build_player_api_action_url(
+    base_url: &str,
+    username: &str,
+    password: &str,
+    action: &str,
+) -> Option<Url> {
     let url = Url::parse(base_url).ok()?;
     let host = url.host_str()?;
     let scheme = url.scheme();
@@ -3279,8 +3284,121 @@ fn build_panel_api_test_url(base_url: &str, username: &str, password: &str) -> O
         .query_pairs_mut()
         .append_pair("username", username)
         .append_pair("password", password)
-        .append_pair("action", "account_info");
+        .append_pair("action", action);
     Some(test_url)
+}
+
+fn build_panel_api_test_url(base_url: &str, username: &str, password: &str) -> Option<Url> {
+    build_player_api_action_url(base_url, username, password, "account_info")
+}
+
+enum PanelApiProbeTarget {
+    PanelClientInfo,
+    PlayerApi { action: &'static str, url: Url },
+}
+
+impl PanelApiProbeTarget {
+    fn action(&self) -> &'static str {
+        match self {
+            PanelApiProbeTarget::PanelClientInfo => "client_info",
+            PanelApiProbeTarget::PlayerApi { action, .. } => action,
+        }
+    }
+}
+
+fn build_panel_api_probe_targets(
+    input: &ConfigInput,
+    panel_cfg: &PanelApiConfigDto,
+    username: &str,
+    password: &str,
+) -> Vec<PanelApiProbeTarget> {
+    let mut targets = Vec::new();
+    if !panel_cfg.query_parameter.client_info.is_empty() {
+        targets.push(PanelApiProbeTarget::PanelClientInfo);
+    }
+    for action in [
+        "get_live_categories",
+        "get_series_categories",
+        "get_vod_categories",
+    ] {
+        if let Some(url) =
+            build_player_api_action_url(input.url.as_str(), username, password, action)
+        {
+            targets.push(PanelApiProbeTarget::PlayerApi { action, url });
+        }
+    }
+    targets
+}
+
+async fn probe_panel_api_targets(
+    app_state: &Arc<AppState>,
+    panel_cfg: &PanelApiConfigDto,
+    username: &str,
+    password: &str,
+    probe_method: PanelApiProvisioningMethod,
+    targets: &[PanelApiProbeTarget],
+    attempt: u64,
+) -> bool {
+    let mut all_ready = true;
+    for target in targets {
+        match target {
+            PanelApiProbeTarget::PanelClientInfo => {
+                match panel_client_info_raw(app_state, panel_cfg, username, password).await {
+                    Ok(_) => {
+                        debug_if_enabled!(
+                            "panel_api probe status: 'ok' action={} attempt={}",
+                            target.action(),
+                            attempt
+                        );
+                    }
+                    Err(err) => {
+                        debug_if_enabled!(
+                            "panel_api probe failed action={} attempt={}: {}",
+                            target.action(),
+                            attempt,
+                            sanitize_sensitive_info(err.to_string().as_str())
+                        );
+                        all_ready = false;
+                    }
+                }
+            }
+            PanelApiProbeTarget::PlayerApi { action, url } => {
+                match probe_panel_api_test_url(app_state, url, probe_method).await {
+                    Ok(status) => {
+                        debug_if_enabled!(
+                            "panel_api probe status: '{}' action={} url: {} attempt={}",
+                            status,
+                            action,
+                            sanitize_sensitive_info(url.as_str()),
+                            attempt
+                        );
+                        if !status.is_success() {
+                            all_ready = false;
+                        }
+                    }
+                    Err(err) => {
+                        if err.is_timeout() {
+                            debug_if_enabled!(
+                                "panel_api probe timeout action={} url: {} attempt={}",
+                                action,
+                                sanitize_sensitive_info(url.as_str()),
+                                attempt
+                            );
+                        } else {
+                            debug_if_enabled!(
+                                "panel_api probe failed action={} url: {} attempt={}: {err}",
+                                action,
+                                sanitize_sensitive_info(url.as_str()),
+                                attempt
+                            );
+                        }
+                        all_ready = false;
+                    }
+                }
+            }
+        }
+    }
+    all_ready
 }
 
 async fn probe_panel_api_test_url(
@@ -3309,18 +3427,29 @@ async fn wait_for_panel_api_account_ready(
     let probe_interval_secs = panel_cfg.provisioning.probe_interval_sec.max(1);
     let probe_method = panel_cfg.provisioning.method;
 
-    let Some(test_url) = build_panel_api_test_url(input.url.as_str(), username, password) else {
+    let probe_targets = build_panel_api_probe_targets(input, panel_cfg, username, password);
+    if probe_targets.is_empty() {
+        debug_if_enabled!(
+            "panel_api probe skipped for {} (input={}): no probe targets",
+            sanitize_sensitive_info(account_name),
+            sanitize_sensitive_info(&input.name)
+        );
         return false;
-    };
+    }
 
+    let targets_list = probe_targets
+        .iter()
+        .map(PanelApiProbeTarget::action)
+        .collect::<Vec<_>>()
+        .join(",");
     debug_if_enabled!(
-        "panel_api probe start for {} (input={} timeout={}s interval={}s method={}) url={}",
+        "panel_api probe start for {} (input={} timeout={}s interval={}s method={}) targets={}",
         sanitize_sensitive_info(account_name),
         sanitize_sensitive_info(&input.name),
         max_wait_secs,
         probe_interval_secs,
         probe_method,
-        sanitize_sensitive_info(test_url.as_str())
+        targets_list
     );
 
     let deadline = Instant::now() + Duration::from_secs(max_wait_secs);
@@ -3328,33 +3457,18 @@ async fn wait_for_panel_api_account_ready(
     let mut attempt = 0u64;
     loop {
         attempt += 1;
-        match probe_panel_api_test_url(app_state, &test_url, probe_method).await {
-            Ok(status) => {
-                debug_if_enabled!(
-                    "panel_api probe status: '{}' url: {} attempt={}",
-                    status,
-                    sanitize_sensitive_info(test_url.as_str()),
-                    attempt
-                );
-                if status.is_success() {
-                    return true;
-                }
-            }
-            Err(err) => {
-                if err.is_timeout() {
-                    debug_if_enabled!(
-                        "panel_api probe timeout for {} attempt={}",
-                        sanitize_sensitive_info(test_url.as_str()),
-                        attempt
-                    );
-                } else {
-                    debug_if_enabled!(
-                        "panel_api probe failed for {} attempt={}: {err}",
-                        sanitize_sensitive_info(test_url.as_str()),
-                        attempt
-                    );
-                }
-            }
+        if probe_panel_api_targets(
+            app_state,
+            panel_cfg,
+            username,
+            password,
+            probe_method,
+            &probe_targets,
+            attempt,
+        )
+        .await
+        {
+            return true;
         }
 
         if max_wait_secs == 0 {
