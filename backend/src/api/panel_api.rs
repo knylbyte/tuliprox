@@ -2462,7 +2462,6 @@ async fn sync_panel_api_for_input_on_boot(
     let min_pool = resolve_alias_pool_min(app_state.as_ref(), &input.name, panel_cfg);
     // Refresh/provision credentials on boot/update.
     // Root is handled first (may affect desired_aliases and avoids over-provisioning).
-    let mut root_action_planned = false;
     let mut provisioned_root = 0_u16;
     let mut provisioned_aliases = 0_u16;
 
@@ -2484,7 +2483,6 @@ async fn sync_panel_api_for_input_on_boot(
             None => false,
         };
         let should_refresh_root = root_exp_missing || root_expired || root_expiring;
-        root_action_planned = should_refresh_root;
 
         let root_exp_display =
             root_exp_date.map_or_else(|| "None".to_string(), |ts| ts.to_string());
