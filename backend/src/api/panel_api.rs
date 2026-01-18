@@ -2039,29 +2039,17 @@ async fn sync_panel_api_for_input_on_boot(
     let mut root_expiring_summary = false;
 
     if let Some(root_idx) = accounts.iter().position(|a| a.name == input.name) {
-        let now = get_current_timestamp();
-        let offset_deadline = now.saturating_add(offset_secs);
         let root_exp_date = accounts[root_idx].exp_date;
         let root_exp_missing = root_exp_date.is_none();
-        let root_expired = match root_exp_date {
-            Some(ts) => u64::try_from(ts)
-                .map(|exp_ts| exp_ts <= now)
-                .unwrap_or(true),
-            None => false,
-        };
-        let root_expiring = match root_exp_date {
-            Some(ts) => u64::try_from(ts)
-                .map(|exp_ts| exp_ts > now && exp_ts <= offset_deadline)
-                .unwrap_or(true),
-            None => false,
-        };
+        let root_expired = is_input_expired(root_exp_date);
+        let root_expiring = is_expiring_with_offset(root_exp_date, offset_secs);
         let should_refresh_root = root_exp_missing || root_expired || root_expiring;
         root_action_planned = should_refresh_root;
         root_exp_date_summary = root_exp_date;
         root_exp_missing_summary = root_exp_missing;
         root_expired_summary = root_expired;
         root_expiring_summary = root_expiring;
-
+        
         if should_refresh_root {
             let old_username = accounts[root_idx].username.clone();
             let old_password = accounts[root_idx].password.clone();
