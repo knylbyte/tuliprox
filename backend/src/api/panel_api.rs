@@ -2837,11 +2837,17 @@ async fn sync_panel_api_for_input_on_boot(
             .saturating_add(u16::from(root_action_planned));
 
         debug_if_enabled!(
-            "panel_api boot/update provisioning for input {} (offset={}s):\n  root: valid={}, planned_refresh(offset)={}\n  aliases: desired={}, valid={}, valid_beyond_offset={}, missing={}, exp_missing={}, expiring(offset)={}, expired={}, refresh_needed(offset)={}, refresh_planned(offset)={}\n  total: enabled_users={}, valid_accounts={}, to_provision={}",
+            "panel_api boot/update provisioning root for input {} (offset={}s): valid={}, planned_refresh(offset)={}",
             sanitize_sensitive_info(&input.name),
             offset_secs,
             root_valid,
-            root_action_planned,
+            root_action_planned
+        );
+
+        debug_if_enabled!(
+            "panel_api boot/update provisioning aliases for input {} (offset={}s): desired={}, valid={}, valid_beyond_offset={}, missing={}, exp_missing={}, expiring(offset)={}, expired={}, refresh_needed(offset)={}, refresh_planned(offset)={}",
+            sanitize_sensitive_info(&input.name),
+            offset_secs,
             desired_aliases_u16,
             valid_aliases,
             valid_aliases_beyond_offset,
@@ -2850,7 +2856,13 @@ async fn sync_panel_api_for_input_on_boot(
             expiring_aliases,
             expired_aliases,
             needed_refresh_aliases_u16,
-            planned_refresh_aliases,
+            planned_refresh_aliases
+        );
+
+        debug_if_enabled!(
+            "panel_api boot/update provisioning total for input {} (offset={}s): enabled_users={}, valid_accounts={}, to_provision={}",
+            sanitize_sensitive_info(&input.name),
+            offset_secs,
             enabled_users,
             valid_total,
             to_provision
