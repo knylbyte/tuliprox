@@ -62,6 +62,12 @@ pub const fn default_panel_api_provision_probe_interval_secs() -> u64 {
 pub const fn default_panel_api_provision_cooldown_secs() -> u64 {
     0
 }
+pub const fn default_panel_api_alias_pool_min() -> u16 {
+    1
+}
+pub const fn default_panel_api_alias_pool_max() -> u16 {
+    1
+}
 pub const fn default_connect_timeout_secs() -> u32 {
     6
 }

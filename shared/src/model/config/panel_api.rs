@@ -1,7 +1,8 @@
 use crate::utils::{
-    default_as_true, default_panel_api_provision_cooldown_secs,
-    default_panel_api_provision_probe_interval_secs, default_panel_api_provision_timeout_secs,
-    deserialize_as_option_string, is_true, serialize_vec_flow_map_items,
+    default_as_true, default_panel_api_alias_pool_max, default_panel_api_alias_pool_min,
+    default_panel_api_provision_cooldown_secs, default_panel_api_provision_probe_interval_secs,
+    default_panel_api_provision_timeout_secs, deserialize_as_option_string, is_true,
+    serialize_vec_flow_map_items,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
@@ -75,13 +76,40 @@ impl PanelApiAliasPoolSizeValue {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PanelApiAliasPoolSizeDto {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default = "default_panel_api_alias_pool_min_value",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub min: Option<PanelApiAliasPoolSizeValue>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default = "default_panel_api_alias_pool_max_value",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub max: Option<PanelApiAliasPoolSizeValue>,
+}
+
+fn default_panel_api_alias_pool_min_value() -> Option<PanelApiAliasPoolSizeValue> {
+    Some(PanelApiAliasPoolSizeValue::Number(
+        default_panel_api_alias_pool_min(),
+    ))
+}
+
+fn default_panel_api_alias_pool_max_value() -> Option<PanelApiAliasPoolSizeValue> {
+    Some(PanelApiAliasPoolSizeValue::Number(
+        default_panel_api_alias_pool_max(),
+    ))
+}
+
+impl Default for PanelApiAliasPoolSizeDto {
+    fn default() -> Self {
+        Self {
+            min: default_panel_api_alias_pool_min_value(),
+            max: default_panel_api_alias_pool_max_value(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
