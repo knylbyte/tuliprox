@@ -2,7 +2,9 @@ use crate::app::components::config::config_page::{ConfigForm, LABEL_PANEL_CONFIG
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::input::Input;
 use crate::app::components::select::Select;
-use crate::app::components::{Card, Chip, DropDownOption, DropDownSelection, IconButton, ToggleSwitch};
+use crate::app::components::{
+    Card, Chip, DropDownOption, DropDownSelection, IconButton, ToggleSwitch,
+};
 use crate::app::context::ConfigContext;
 use crate::html_if;
 use shared::model::{
@@ -27,6 +29,7 @@ const HINT_PANEL_ENABLE: &str = "HINT.CONFIG.PANEL.ENABLE";
 const LABEL_PANEL_PROVISIONING: &str = "LABEL.PANEL_PROVISIONING";
 const LABEL_PANEL_PROVISION_TIMEOUT: &str = "LABEL.PANEL_PROVISION_TIMEOUT_SEC";
 const LABEL_PANEL_PROBE_INTERVAL: &str = "LABEL.PANEL_PROBE_INTERVAL_SEC";
+const LABEL_PANEL_PROVISION_COOLDOWN: &str = "LABEL.PANEL_PROVISION_COOLDOWN_SEC";
 const LABEL_PANEL_PROVISION_METHOD: &str = "LABEL.PANEL_PROVISION_METHOD";
 const LABEL_PANEL_PROVISION_OFFSET: &str = "LABEL.PANEL_PROVISION_OFFSET";
 const LABEL_PANEL_ALIAS_POOL: &str = "LABEL.PANEL_ALIAS_POOL";
@@ -89,6 +92,11 @@ enum PanelConfigFormAction {
         source_idx: usize,
         input_idx: usize,
         probe_interval_sec: u64,
+    },
+    SetProvisioningCooldown {
+        source_idx: usize,
+        input_idx: usize,
+        cooldown_sec: u64,
     },
     SetProvisioningMethod {
         source_idx: usize,
@@ -214,11 +222,23 @@ fn validate_panel(panel: Option<&PanelApiConfigDto>) -> Vec<String> {
     }
 
     let sections = [
-        (PanelSection::AccountInfo, &panel.query_parameter.account_info, false),
+        (
+            PanelSection::AccountInfo,
+            &panel.query_parameter.account_info,
+            false,
+        ),
         (PanelSection::Info, &panel.query_parameter.client_info, true),
         (PanelSection::New, &panel.query_parameter.client_new, true),
-        (PanelSection::Renew, &panel.query_parameter.client_renew, true),
-        (PanelSection::AdultContent, &panel.query_parameter.client_adult_content, false),
+        (
+            PanelSection::Renew,
+            &panel.query_parameter.client_renew,
+            true,
+        ),
+        (
+            PanelSection::AdultContent,
+            &panel.query_parameter.client_adult_content,
+            false,
+        ),
     ];
     for (section, params, required) in sections {
         if params.is_empty() {
@@ -239,7 +259,9 @@ fn validate_panel(panel: Option<&PanelApiConfigDto>) -> Vec<String> {
                 PanelSection::Info => "client_info: missing api_key param".to_string(),
                 PanelSection::New => "client_new: missing api_key param".to_string(),
                 PanelSection::Renew => "client_renew: missing api_key param".to_string(),
-                PanelSection::AdultContent => "client_adult_content: missing api_key param".to_string(),
+                PanelSection::AdultContent => {
+                    "client_adult_content: missing api_key param".to_string()
+                }
             });
         }
         match section {
@@ -294,8 +316,14 @@ fn validate_panel(panel: Option<&PanelApiConfigDto>) -> Vec<String> {
     }
 
     if let Some(size) = panel.alias_pool.as_ref().and_then(|p| p.size.as_ref()) {
-        let min = size.min.as_ref().and_then(PanelApiAliasPoolSizeValue::as_number);
-        let max = size.max.as_ref().and_then(PanelApiAliasPoolSizeValue::as_number);
+        let min = size
+            .min
+            .as_ref()
+            .and_then(PanelApiAliasPoolSizeValue::as_number);
+        let max = size
+            .max
+            .as_ref()
+            .and_then(PanelApiAliasPoolSizeValue::as_number);
         if let (Some(min), Some(max)) = (min, max) {
             if min > max {
                 errors.push("alias_pool.size: min must be <= max".to_string());
@@ -494,6 +522,24 @@ impl Reducible for PanelConfigFormState {
                         .panel_api
                         .get_or_insert_with(PanelApiConfigDto::default);
                     panel.provisioning.probe_interval_sec = probe_interval_sec;
+                });
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
+            }
+            PanelConfigFormAction::SetProvisioningCooldown {
+                source_idx,
+                input_idx,
+                cooldown_sec,
+            } => {
+                let mut form = self.form.clone();
+                with_input_mut(&mut form, source_idx, input_idx, |input| {
+                    let panel = input
+                        .panel_api
+                        .get_or_insert_with(PanelApiConfigDto::default);
+                    panel.provisioning.cooldown_sec = cooldown_sec;
                 });
                 Self {
                     form,
@@ -850,10 +896,7 @@ pub fn PanelConfigView() -> Html {
     }
 
     let render_input_card = |source_idx: usize, input_idx: usize, input: &ConfigInputDto| -> Html {
-        let panel_enabled = input
-            .panel_api
-            .as_ref()
-            .is_some_and(|panel| panel.enabled);
+        let panel_enabled = input.panel_api.as_ref().is_some_and(|panel| panel.enabled);
         let errors = validate_panel(input.panel_api.as_ref());
         let has_errors = !errors.is_empty();
         let status_chip = if panel_enabled {
@@ -917,6 +960,17 @@ pub fn PanelConfigView() -> Html {
                     source_idx,
                     input_idx,
                     probe_interval_sec,
+                });
+            })
+        };
+        let on_provision_cooldown = {
+            let form_state = form_state.clone();
+            Callback::from(move |value: String| {
+                let cooldown_sec = value.trim().parse::<u64>().unwrap_or(0);
+                form_state.dispatch(PanelConfigFormAction::SetProvisioningCooldown {
+                    source_idx,
+                    input_idx,
+                    cooldown_sec,
                 });
             })
         };
@@ -984,13 +1038,14 @@ pub fn PanelConfigView() -> Html {
         let provisioning_probe_interval_val = panel
             .map(|p| p.provisioning.probe_interval_sec.to_string())
             .unwrap_or_default();
+        let provisioning_cooldown_val = panel
+            .map(|p| p.provisioning.cooldown_sec.to_string())
+            .unwrap_or_default();
         let provisioning_offset_val = panel
             .and_then(|p| p.provisioning.offset.as_ref())
             .map(|v| v.trim().to_string())
             .unwrap_or_default();
-        let provisioning_method = panel
-            .map(|p| p.provisioning.method)
-            .unwrap_or_default();
+        let provisioning_method = panel.map(|p| p.provisioning.method).unwrap_or_default();
         let alias_pool = panel.and_then(|p| p.alias_pool.as_ref());
         let alias_pool_min = alias_pool
             .and_then(|p| p.size.as_ref())
@@ -1025,10 +1080,11 @@ pub fn PanelConfigView() -> Html {
         let type_label = input.input_type.to_string().to_uppercase();
         let provisioning_method_label = provisioning_method.to_string();
         let provisioning_summary = format!(
-            "{} / {}s / {}s",
+            "{} / {}s / {}s / {}s",
             provisioning_method_label,
             provisioning_timeout_val,
-            provisioning_probe_interval_val
+            provisioning_probe_interval_val,
+            provisioning_cooldown_val
         );
         let alias_pool_min_label = if alias_pool_min_val.is_empty() {
             "—".to_string()
@@ -1108,6 +1164,11 @@ pub fn PanelConfigView() -> Html {
                                                 value={provisioning_probe_interval_val.clone()}
                                                 on_change={Some(on_probe_interval)}
                                                 placeholder={Some("5".to_string())}/>
+                                            <Input name="panel_provision_cooldown"
+                                                label={Some(translate.t(LABEL_PANEL_PROVISION_COOLDOWN))}
+                                                value={provisioning_cooldown_val.clone()}
+                                                on_change={Some(on_provision_cooldown)}
+                                                placeholder={Some("0".to_string())}/>
                                             <Input name="panel_provision_offset"
                                                 label={Some(translate.t(LABEL_PANEL_PROVISION_OFFSET))}
                                                 value={provisioning_offset_val.clone()}

@@ -1046,6 +1046,7 @@ Provisioning (stream probes):
 - `panel_api.provisioning.timeout_sec`: maximum wait time (seconds) to probe a newly created/renewed account before forcing a client reconnect (default `65`).
 - `panel_api.provisioning.method`: HTTP method used for probes (`HEAD`, `GET`, `POST`). Default `HEAD`.
 - `panel_api.provisioning.probe_interval_sec`: probe interval in seconds (default `10`).
+- `panel_api.provisioning.cooldown_sec`: extra wait time (seconds) after a successful probe before continuing boot/update provisioning (default `0`).
 - `panel_api.provisioning.offset`: optional pre-expiry window for boot/update renewal of input accounts with `exp_date`; if `now + offset > exp_date`, tuliprox tries `client_renew`, and falls back to `client_new` if renew fails. Supports suffixes `s` (seconds), `m` (minutes), `h` (hours), `d` (days), e.g. `30m`, `12h`, `2d` (default `None`).
 - Each probe also calls `<scheme>://<host>/player_api.php?username=<username>&password=<password>` and logs status/response for debugging.
 

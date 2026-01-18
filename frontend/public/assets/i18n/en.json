@@ -385,6 +385,7 @@
     "PANEL_PROVISIONING": "Provisioning",
     "PANEL_PROVISION_TIMEOUT_SEC": "Timeout (sec)",
     "PANEL_PROBE_INTERVAL_SEC": "Probe interval (sec)",
+    "PANEL_PROVISION_COOLDOWN_SEC": "Cooldown (sec)",
     "PANEL_PROVISION_OFFSET": "Renew offset (e.g. 30m, 12h)",
     "PANEL_PROVISION_METHOD": "Probe method",
     "PANEL_ALIAS_POOL": "Alias pool",

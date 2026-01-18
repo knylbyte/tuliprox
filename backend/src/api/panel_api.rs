@@ -3389,6 +3389,24 @@ async fn probe_panel_api_test_url(
     Ok(response.status())
 }
 
+async fn apply_provisioning_cooldown(
+    panel_cfg: &PanelApiConfigDto,
+    account_name: &str,
+    input_name: &str,
+) {
+    let cooldown_secs = panel_cfg.provisioning.cooldown_sec;
+    if cooldown_secs == 0 {
+        return;
+    }
+    debug_if_enabled!(
+        "panel_api provisioning cooldown for {} (input={}): {}s",
+        sanitize_sensitive_info(account_name),
+        sanitize_sensitive_info(input_name),
+        cooldown_secs
+    );
+    tokio::time::sleep(Duration::from_secs(cooldown_secs)).await;
+}
+
 async fn wait_for_panel_api_account_ready(
     app_state: &Arc<AppState>,
     input: &ConfigInput,
@@ -3441,6 +3459,7 @@ async fn wait_for_panel_api_account_ready(
         )
         .await
         {
+            apply_provisioning_cooldown(panel_cfg, account_name, &input.name).await;
             return true;
         }
 

@@ -1,7 +1,7 @@
 use crate::utils::{
-    default_as_true, default_panel_api_provision_probe_interval_secs,
-    default_panel_api_provision_timeout_secs, deserialize_as_option_string, is_true,
-    serialize_vec_flow_map_items,
+    default_as_true, default_panel_api_provision_cooldown_secs,
+    default_panel_api_provision_probe_interval_secs, default_panel_api_provision_timeout_secs,
+    deserialize_as_option_string, is_true, serialize_vec_flow_map_items,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
@@ -17,15 +17,35 @@ pub struct PanelApiQueryParamDto {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PanelApiQueryParametersDto {
-    #[serde(default, skip_serializing_if = "Vec::is_empty", serialize_with = "serialize_vec_flow_map_items")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        serialize_with = "serialize_vec_flow_map_items"
+    )]
     pub account_info: Vec<PanelApiQueryParamDto>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty", serialize_with = "serialize_vec_flow_map_items")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        serialize_with = "serialize_vec_flow_map_items"
+    )]
     pub client_info: Vec<PanelApiQueryParamDto>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty", serialize_with = "serialize_vec_flow_map_items")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        serialize_with = "serialize_vec_flow_map_items"
+    )]
     pub client_new: Vec<PanelApiQueryParamDto>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty", serialize_with = "serialize_vec_flow_map_items")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        serialize_with = "serialize_vec_flow_map_items"
+    )]
     pub client_renew: Vec<PanelApiQueryParamDto>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty", serialize_with = "serialize_vec_flow_map_items")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        serialize_with = "serialize_vec_flow_map_items"
+    )]
     pub client_adult_content: Vec<PanelApiQueryParamDto>,
 }
 
@@ -133,6 +153,8 @@ pub struct PanelApiProvisioningDto {
     pub method: PanelApiProvisioningMethod,
     #[serde(default = "default_panel_api_provision_probe_interval_secs")]
     pub probe_interval_sec: u64,
+    #[serde(default = "default_panel_api_provision_cooldown_secs")]
+    pub cooldown_sec: u64,
     #[serde(
         default,
         deserialize_with = "deserialize_as_option_string",
@@ -147,6 +169,7 @@ impl Default for PanelApiProvisioningDto {
             timeout_sec: default_panel_api_provision_timeout_secs(),
             method: PanelApiProvisioningMethod::default(),
             probe_interval_sec: default_panel_api_provision_probe_interval_secs(),
+            cooldown_sec: default_panel_api_provision_cooldown_secs(),
             offset: None,
         }
     }
