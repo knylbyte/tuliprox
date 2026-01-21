@@ -7,6 +7,107 @@ RELEASE_DIR="$WORKING_DIR/release"
 FRONTEND_DIR="${WORKING_DIR}/frontend"
 FRONTEND_BUILD_DIR="${FRONTEND_DIR}/dist"
 BACKEND_DIR="${WORKING_DIR}/backend"
+BRANCH=$(git branch --show-current)
+
+die() {
+  echo "🧨 Error: $*" >&2
+  exit 1
+}
+
+# Validate release strategy
+if [ $# -ne 1 ]; then
+  die "Release strategy required (major|minor)"
+fi
+
+if [ "$BRANCH" != "master" ]; then
+  die "Creating the release from your current branch '${BRANCH}' is prohibited!"
+fi
+
+# Guards: ensure we're releasing the right state
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  die "Working tree is not clean. Commit/stash your changes first."
+fi
+
+git fetch --quiet --tags origin master develop || die "Failed to fetch from 'origin'."
+
+if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/master)" ]; then
+  die "Local 'master' is not at 'origin/master'. Please pull/push before releasing."
+fi
+
+if ! git merge-base --is-ancestor origin/develop HEAD; then
+  die "'master' does not contain 'origin/develop'. Merge develop into master before releasing."
+fi
+
+LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+if [ -n "$LAST_TAG" ]; then
+  if git diff --quiet "${LAST_TAG}..HEAD" -- backend frontend shared resources docker config Cargo.toml Cargo.lock; then
+    die "No relevant changes since last release tag '${LAST_TAG}'."
+  fi
+fi
+
+if ! command -v gh &> /dev/null; then
+  die "gitHub CLI could not be found. Please install gh toolset: https://cli.github.com"
+fi
+
+case "$1" in
+  major) ./bin/inc_version.sh m ;;
+  minor) ./bin/inc_version.sh p ;;
+  *) die "Unknown option '$1' (expected: major|minor)" ;;
+esac
+
+# Marker: version bump push + trigger docker-build workflow (master)
+echo "📦 Committing version bump"
+FILES=(Cargo.lock backend/Cargo.lock backend/Cargo.toml frontend/Cargo.toml shared/Cargo.toml)
+for f in "${FILES[@]}"; do
+  if [ -f "$f" ]; then
+    git add "$f"
+  fi
+done
+
+if git diff --cached --quiet; then
+  die "Version bump produced no changes to commit."
+fi
+
+git commit -m "ci: bump version (${1})"
+git push
+git push github
+
+gh auth status >/dev/null 2>&1 || die "Not logged into GitHub CLI. Run 'gh auth login' first."
+
+RUN_KEY="$(uuidgen 2>/dev/null || true)"
+if [ -z "${RUN_KEY}" ]; then
+  RUN_KEY="run-$(date +%s)-$$"
+fi
+
+RUN_KEY="${1}-${RUN_KEY}"
+
+echo "🚀 Triggering docker-build workflow (master, key: ${RUN_KEY})"
+gh workflow run docker-build.yml --ref master -f branch=master -f choice=none -f run_key="${RUN_KEY}"
+
+echo "🔎 Resolving docker-build workflow run id..."
+DOCKER_BUILD_RUN_ID=""
+for _ in {1..30}; do
+  DOCKER_BUILD_RUN_ID="$(
+    gh run list \
+      -w docker-build.yml \
+      -e workflow_dispatch \
+      -b master \
+      -L 20 \
+      --json databaseId,displayTitle \
+      --jq ".[] | select(.displayTitle | contains(\"${RUN_KEY}\")) | .databaseId" \
+      | head -n 1
+  )"
+  if [ -n "${DOCKER_BUILD_RUN_ID}" ]; then
+    break
+  fi
+  sleep 2
+done
+
+if [ -z "${DOCKER_BUILD_RUN_ID}" ]; then
+  die "Timed out waiting for docker-build workflow run id (run_key=${RUN_KEY})."
+fi
+
+echo "🧩 docker-build run id: ${DOCKER_BUILD_RUN_ID}"
 
 ./bin/build_resources.sh
 
@@ -104,6 +205,19 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
     mkdir -p "$RELEASE_PKG"
     mv "$CHECKSUM_FILE" "$ARC" "$RELEASE_PKG"
 done
+
+# Marker: wait for docker-build workflow completion
+echo "⏳ Waiting for docker-build workflow to finish (run id: ${DOCKER_BUILD_RUN_ID})"
+gh run watch "${DOCKER_BUILD_RUN_ID}" --exit-status
+
+echo "🔀 Back-merging master into develop (fast-forward)"
+git fetch --quiet origin develop || die "Failed to fetch 'origin/develop'."
+if ! git merge-base --is-ancestor origin/develop HEAD; then
+  die "Refusing to update develop: 'origin/develop' is not an ancestor of current master."
+fi
+
+git push origin HEAD:develop
+git push github HEAD:develop
 
 echo "🗑 Cleaning up build artifacts"
 # Clean up the build directories
