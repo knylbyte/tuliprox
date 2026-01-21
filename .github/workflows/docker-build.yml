@@ -208,7 +208,12 @@ jobs:
             exit 0
           fi
 
-          git commit -m "ci: bump version [skip ci]"
+          VERSION="$(grep '^version' backend/Cargo.toml | head -n1 | cut -d'\"' -f2)"
+          if [ -n "${VERSION}" ]; then
+            git commit -m "ci: bump version v${VERSION}"
+          else
+            git commit -m "ci: bump version"
+          fi
           echo "did_commit=true" >> "$GITHUB_OUTPUT"
 
       - name: Extract branch name
