@@ -1,19 +1,53 @@
 name: Docker Build and Push
 
+permissions:
+  contents: write
+  packages: write
+
 on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        type: choice
+        description: Target branch to build/push for
+        required: true
+        default: develop
+        options:
+          - develop
+          - master
+      choice:
+        type: choice
+        description: Trigger build and optionally bump version
+        required: true
+        default: none
+        options:
+          - none
+          - major
+          - minor
+          - patch
   push:
     branches:
-      - master
       - develop
+  release:
+    types:
+      - published
 
 jobs:
   docker-build:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop'
-    
+    if: >-
+      (
+        github.event_name == 'release' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/develop'
+      ) && (
+        github.event_name != 'push' || github.actor != 'github-actions[bot]'
+      )
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'release' && 'master' || github.event_name == 'workflow_dispatch' && inputs.branch || github.ref }}
         
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -63,6 +97,12 @@ jobs:
         run: |
           if ! command -v wasm-bindgen &> /dev/null; then
             cargo install wasm-bindgen-cli
+          fi
+
+      - name: Install cargo-edit
+        run: |
+          if ! command -v cargo-set-version &> /dev/null; then
+            cargo install cargo-edit --locked
           fi
 
       - name: Cache cargo registry and dependencies
@@ -125,28 +165,119 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-      
+
+      - name: Bump patch version (develop)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        run: ./bin/inc_version.sh
+
+      - name: Bump minor version (release)
+        if: github.event_name == 'release'
+        run: ./bin/inc_version.sh p
+
+      - name: Set version (manual)
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          CHOICE='${{ github.event.inputs.choice }}'
+          case "${CHOICE:-none}" in
+            none)
+              ./bin/inc_version.sh k
+              ;;
+            major)
+              ./bin/inc_version.sh m
+              ;;
+            minor)
+              ./bin/inc_version.sh p
+              ;;
+            patch)
+              ./bin/inc_version.sh
+              ;;
+            *)
+              echo "🧨 Error: Unsupported option"
+              exit 1
+              ;;
+          esac
+
+      - name: Commit version bump (local)
+        id: version_commit
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'release'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          FILES=(Cargo.lock backend/Cargo.lock backend/Cargo.toml frontend/Cargo.toml shared/Cargo.toml)
+          for f in "${FILES[@]}"; do
+            if [ -f "$f" ]; then
+              git add "$f"
+            fi
+          done
+
+          if git diff --cached --quiet; then
+            echo "did_commit=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git commit -m "ci: bump version [skip ci]"
+          echo "did_commit=true" >> "$GITHUB_OUTPUT"
+
       - name: Extract branch name
         shell: bash
-        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
         id: extract_branch
-      
-      - name: Create GHCR token file
         run: |
-          mkdir -p $HOME
-          echo "GHCR_IO_TOKEN=${{ secrets.GHCR_IO_TOKEN }}" > $HOME/.ghcr.io
-      
+          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            echo "branch=master" >> "$GITHUB_OUTPUT"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "branch=${{ inputs.branch }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Make build script executable
         run: chmod +x ./bin/build_docker.sh
-      
+
       - name: Build and push Docker images
         env:
+          GITHUB_IO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_OWNER: ${{ github.repository_owner }}
           FRONTEND_CACHE_HIT: ${{ steps.cache-frontend.outputs.cache-hit }}
           CARGO_DEPS_CACHE_HIT: ${{ steps.cache-cargo-deps.outputs.cache-hit }}
           BUILDX_CACHE_FROM: type=local,src=/tmp/.buildx-cache
           BUILDX_CACHE_TO: type=local,dest=/tmp/.buildx-cache-new,mode=max
         run: ./bin/build_docker.sh ${{ steps.extract_branch.outputs.branch }}
-      
+
+      - name: Push version bump
+        if: success() && steps.version_commit.outputs.did_commit == 'true'
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            BRANCH="master"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            BRANCH='${{ inputs.branch }}'
+          else
+            BRANCH="${GITHUB_REF#refs/heads/}"
+          fi
+
+          if [[ "${BRANCH}" != "develop" && "${BRANCH}" != "master" ]]; then
+            echo "Skipping push: unsupported branch '${BRANCH}'"
+            exit 0
+          fi
+
+          git push origin "HEAD:${BRANCH}"
+
+      - name: Back-merge master into develop
+        if: success() && github.event_name == 'release' && steps.version_commit.outputs.did_commit == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          MASTER_SHA="$(git rev-parse HEAD)"
+          git fetch origin develop
+          git checkout -B develop origin/develop
+          git merge --no-ff "${MASTER_SHA}" -m "ci: back-merge master into develop [skip ci]"
+          git push origin develop
+
       - name: Move buildx cache
         run: |
           rm -rf /tmp/.buildx-cache
