@@ -1,7 +1,7 @@
 name: Docker Build and Push
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 on:
@@ -27,11 +27,14 @@ on:
 jobs:
   docker-build:
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/develop'
+    if: (github.event_name == 'release' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/develop') && (github.event_name != 'push' || github.actor != 'github-actions[bot]')
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'release' && 'master' || github.ref }}
         
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -182,6 +185,29 @@ jobs:
               ;;
           esac
 
+      - name: Commit version bump (local)
+        id: version_commit
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'release'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          FILES=(Cargo.lock backend/Cargo.lock backend/Cargo.toml frontend/Cargo.toml shared/Cargo.toml)
+          for f in "${FILES[@]}"; do
+            if [ -f "$f" ]; then
+              git add "$f"
+            fi
+          done
+
+          if git diff --cached --quiet; then
+            echo "did_commit=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git commit -m "ci: bump version [skip ci]"
+          echo "did_commit=true" >> "$GITHUB_OUTPUT"
+
       - name: Extract branch name
         shell: bash
         id: extract_branch
@@ -204,6 +230,23 @@ jobs:
           BUILDX_CACHE_FROM: type=local,src=/tmp/.buildx-cache
           BUILDX_CACHE_TO: type=local,dest=/tmp/.buildx-cache-new,mode=max
         run: ./bin/build_docker.sh ${{ steps.extract_branch.outputs.branch }}
+
+      - name: Push version bump
+        if: success() && steps.version_commit.outputs.did_commit == 'true'
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            BRANCH="master"
+          else
+            BRANCH="${GITHUB_REF#refs/heads/}"
+          fi
+
+          if [[ "${BRANCH}" != "develop" && "${BRANCH}" != "master" ]]; then
+            echo "Skipping push: unsupported branch '${BRANCH}'"
+            exit 0
+          fi
+
+          git push origin "HEAD:${BRANCH}"
 
       - name: Move buildx cache
         run: |
