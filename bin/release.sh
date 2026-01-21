@@ -12,6 +12,12 @@ START_BRANCH="${BRANCH}"
 START_HEAD="$(git rev-parse HEAD)"
 RUN_KEY=""
 DOCKER_BUILD_RUN_ID=""
+ORIGIN_MASTER_AFTER_BUMP_SHA=""
+ORIGIN_DEVELOP_BEFORE_SHA=""
+ORIGIN_DEVELOP_AFTER_FF_SHA=""
+GITHUB_MASTER_AFTER_BUMP_SHA=""
+GITHUB_DEVELOP_BEFORE_SHA=""
+GITHUB_DEVELOP_AFTER_FF_SHA=""
 
 die() {
   echo "🧨 Error: $*" >&2
@@ -53,6 +59,26 @@ cleanup_on_failure() {
   echo "↩️ Resetting local git state to ${START_BRANCH}@${START_HEAD}" >&2
   git reset --hard "${START_HEAD}" >/dev/null 2>&1 || true
   git checkout -f "${START_BRANCH}" >/dev/null 2>&1 || true
+
+  if [ -n "${ORIGIN_MASTER_AFTER_BUMP_SHA}" ]; then
+    echo "⏪ Reverting remote 'origin/master' (force-with-lease)" >&2
+    git push --force-with-lease=refs/heads/master:"${ORIGIN_MASTER_AFTER_BUMP_SHA}" origin "${START_HEAD}:refs/heads/master" >/dev/null 2>&1 || true
+  fi
+
+  if [ -n "${ORIGIN_DEVELOP_AFTER_FF_SHA}" ] && [ -n "${ORIGIN_DEVELOP_BEFORE_SHA}" ]; then
+    echo "⏪ Reverting remote 'origin/develop' (force-with-lease)" >&2
+    git push --force-with-lease=refs/heads/develop:"${ORIGIN_DEVELOP_AFTER_FF_SHA}" origin "${ORIGIN_DEVELOP_BEFORE_SHA}:refs/heads/develop" >/dev/null 2>&1 || true
+  fi
+
+  if [ -n "${GITHUB_MASTER_AFTER_BUMP_SHA}" ]; then
+    echo "⏪ Reverting remote 'github/master' (force-with-lease)" >&2
+    git push --force-with-lease=refs/heads/master:"${GITHUB_MASTER_AFTER_BUMP_SHA}" github "${START_HEAD}:refs/heads/master" >/dev/null 2>&1 || true
+  fi
+
+  if [ -n "${GITHUB_DEVELOP_AFTER_FF_SHA}" ] && [ -n "${GITHUB_DEVELOP_BEFORE_SHA}" ]; then
+    echo "⏪ Reverting remote 'github/develop' (force-with-lease)" >&2
+    git push --force-with-lease=refs/heads/develop:"${GITHUB_DEVELOP_AFTER_FF_SHA}" github "${GITHUB_DEVELOP_BEFORE_SHA}:refs/heads/develop" >/dev/null 2>&1 || true
+  fi
 }
 
 trap cleanup_on_failure EXIT INT TERM
@@ -79,6 +105,12 @@ fi
 
 if ! git merge-base --is-ancestor origin/develop HEAD; then
   die "'master' does not contain 'origin/develop'. Merge develop into master before releasing."
+fi
+
+ORIGIN_DEVELOP_BEFORE_SHA="$(git rev-parse origin/develop)"
+if git remote get-url github >/dev/null 2>&1; then
+  git fetch --quiet github develop || die "Failed to fetch from 'github'."
+  GITHUB_DEVELOP_BEFORE_SHA="$(git rev-parse github/develop)"
 fi
 
 LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
@@ -136,8 +168,12 @@ if [[ ! "$answer" =~ ^[Yy]$ ]]; then
 fi
 
 git commit -m "ci: bump version v${BUMP_VERSION}"
-git push
-git push github
+git push origin HEAD:master
+ORIGIN_MASTER_AFTER_BUMP_SHA="$(git rev-parse HEAD)"
+if git remote get-url github >/dev/null 2>&1; then
+  git push github HEAD:master
+  GITHUB_MASTER_AFTER_BUMP_SHA="${ORIGIN_MASTER_AFTER_BUMP_SHA}"
+fi
 
 echo "🚀 Triggering docker-build workflow (master, key: ${RUN_KEY})"
 gh workflow run docker-build.yml --ref master -f branch=master -f choice=none -f run_key="${RUN_KEY}"
@@ -262,7 +298,11 @@ if ! git merge-base --is-ancestor origin/develop HEAD; then
 fi
 
 git push origin HEAD:develop
-git push github HEAD:develop
+ORIGIN_DEVELOP_AFTER_FF_SHA="$(git rev-parse HEAD)"
+if git remote get-url github >/dev/null 2>&1; then
+  git push github HEAD:develop
+  GITHUB_DEVELOP_AFTER_FF_SHA="${ORIGIN_DEVELOP_AFTER_FF_SHA}"
+fi
 
 echo "🗑 Cleaning up build artifacts"
 # Clean up the build directories
@@ -276,7 +316,9 @@ git commit -m "release ${VERSION}"
 git tag -a "$VERSION" -m "$VERSION"
 git push
 git push --tags
-git push github
-git push github --tags
+if git remote get-url github >/dev/null 2>&1; then
+  git push github
+  git push github --tags
+fi
 
 echo "🎉 Done!"
