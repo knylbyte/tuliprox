@@ -68,9 +68,10 @@ if git diff --cached --quiet; then
   die "Version bump produced no changes to commit."
 fi
 
-git commit -m "ci: bump version (${1})"
-git push
-git push github
+BUMP_VERSION="$(grep '^version' "${BACKEND_DIR}/Cargo.toml" | head -n1 | cut -d'"' -f2)"
+if [ -z "${BUMP_VERSION}" ]; then
+  die "Failed to read version from '${BACKEND_DIR}/Cargo.toml' after bump."
+fi
 
 gh auth status >/dev/null 2>&1 || die "Not logged into GitHub CLI. Run 'gh auth login' first."
 
@@ -117,6 +118,11 @@ cd "$FRONTEND_DIR" || (echo "🧨 Can't find frontend directory" && exit 1)
 VERSION=$(grep '^version' "${BACKEND_DIR}/Cargo.toml" | head -n1 | cut -d'"' -f2)
 
 read -rp "Releasing version: '${VERSION}', please confirm? [y/N] " answer
+
+# Push new version to GitHub
+git commit -m "ci: bump version v${BUMP_VERSION}"
+git push
+git push github
 
 # Default 'N', cancel, if not 'y' or 'Y'
 if [[ ! "$answer" =~ ^[Yy]$ ]]; then
