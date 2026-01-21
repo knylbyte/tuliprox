@@ -116,7 +116,7 @@ echo "📦 Version: ${VERSION}"
 # Build resources if needed (check if resources are already built)
 # Note: Docker build handles resource creation with its own ffmpeg container
 RESOURCES_BUILT=true
-for resource in "channel_unavailable.ts" "user_connections_exhausted.ts" "provider_connections_exhausted.ts" "user_account_expired.ts"; do
+for resource in "channel_unavailable.ts" "user_connections_exhausted.ts" "provider_connections_exhausted.ts" "user_account_expired.ts" "panel_api_provisioning.ppm"; do
     if [ ! -f "${RESOURCES_DIR}/${resource}" ]; then
         RESOURCES_BUILT=false
         break
