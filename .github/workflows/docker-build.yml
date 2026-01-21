@@ -7,6 +7,14 @@ permissions:
 on:
   workflow_dispatch:
     inputs:
+      branch:
+        type: choice
+        description: Target branch to build/push for
+        required: true
+        default: develop
+        options:
+          - develop
+          - master
       choice:
         type: choice
         description: Trigger build and optionally bump version
@@ -28,18 +36,18 @@ jobs:
   docker-build:
     runs-on: ubuntu-latest
     if: >-
-      ${{
-        (github.event_name == 'release' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/develop')
-        && (github.event_name != 'push' || github.actor != 'github-actions[bot]')
-      }}
-
+      (
+        github.event_name == 'release' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/develop'
+      ) && (
+        github.event_name != 'push' || github.actor != 'github-actions[bot]'
+      )
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'release' && 'master' || github.ref }}
+          ref: ${{ github.event_name == 'release' && 'master' || github.event_name == 'workflow_dispatch' && inputs.branch || github.ref }}
         
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -219,6 +227,8 @@ jobs:
         run: |
           if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
             echo "branch=master" >> "$GITHUB_OUTPUT"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "branch=${{ inputs.branch }}" >> "$GITHUB_OUTPUT"
           else
             echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> "$GITHUB_OUTPUT"
           fi
@@ -242,6 +252,8 @@ jobs:
         run: |
           if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
             BRANCH="master"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            BRANCH='${{ inputs.branch }}'
           else
             BRANCH="${GITHUB_REF#refs/heads/}"
           fi
