@@ -1,6 +1,22 @@
 name: Docker Build and Push
 
+permissions:
+  contents: read
+  packages: write
+
 on:
+  workflow_dispatch:
+    inputs:
+      choice:
+        type: choice
+        description: Trigger build and optionally bump version
+        required: true
+        default: none
+        options:
+          - none
+          - major
+          - minor
+          - patch
   push:
     branches:
       - develop
@@ -11,7 +27,7 @@ on:
 jobs:
   docker-build:
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' || github.ref == 'refs/heads/develop'
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/develop'
 
     steps:
       - name: Checkout code
@@ -135,13 +151,37 @@ jobs:
           sudo apt-get install -y ffmpeg
 
       - name: Bump patch version (develop)
-        if: github.ref == 'refs/heads/develop'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
         run: ./bin/inc_version.sh
 
       - name: Bump minor version (release)
         if: github.event_name == 'release'
         run: ./bin/inc_version.sh p
-      
+
+      - name: Set version (manual)
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          CHOICE='${{ github.event.inputs.choice }}'
+          case "${CHOICE:-none}" in
+            none)
+              ./bin/inc_version.sh k
+              ;;
+            major)
+              ./bin/inc_version.sh m
+              ;;
+            minor)
+              ./bin/inc_version.sh p
+              ;;
+            patch)
+              ./bin/inc_version.sh
+              ;;
+            *)
+              echo "🧨 Error: Unsupported option"
+              exit 1
+              ;;
+          esac
+
       - name: Extract branch name
         shell: bash
         id: extract_branch
@@ -151,23 +191,20 @@ jobs:
           else
             echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> "$GITHUB_OUTPUT"
           fi
-      
-      - name: Create GHCR token file
-        run: |
-          mkdir -p $HOME
-          echo "GHCR_IO_TOKEN=${{ secrets.GHCR_IO_TOKEN }}" > $HOME/.ghcr.io
-      
+
       - name: Make build script executable
         run: chmod +x ./bin/build_docker.sh
-      
+
       - name: Build and push Docker images
         env:
+          GITHUB_IO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_OWNER: ${{ github.repository_owner }}
           FRONTEND_CACHE_HIT: ${{ steps.cache-frontend.outputs.cache-hit }}
           CARGO_DEPS_CACHE_HIT: ${{ steps.cache-cargo-deps.outputs.cache-hit }}
           BUILDX_CACHE_FROM: type=local,src=/tmp/.buildx-cache
           BUILDX_CACHE_TO: type=local,dest=/tmp/.buildx-cache-new,mode=max
         run: ./bin/build_docker.sh ${{ steps.extract_branch.outputs.branch }}
-      
+
       - name: Move buildx cache
         run: |
           rm -rf /tmp/.buildx-cache
