@@ -3,14 +3,16 @@ name: Docker Build and Push
 on:
   push:
     branches:
-      - master
       - develop
+  release:
+    types:
+      - published
 
 jobs:
   docker-build:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop'
-    
+    if: github.event_name == 'release' || github.ref == 'refs/heads/develop'
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -63,6 +65,12 @@ jobs:
         run: |
           if ! command -v wasm-bindgen &> /dev/null; then
             cargo install wasm-bindgen-cli
+          fi
+
+      - name: Install cargo-edit
+        run: |
+          if ! command -v cargo-set-version &> /dev/null; then
+            cargo install cargo-edit --locked
           fi
 
       - name: Cache cargo registry and dependencies
@@ -125,11 +133,24 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
+
+      - name: Bump patch version (develop)
+        if: github.ref == 'refs/heads/develop'
+        run: ./bin/inc_version.sh
+
+      - name: Bump minor version (release)
+        if: github.event_name == 'release'
+        run: ./bin/inc_version.sh p
       
       - name: Extract branch name
         shell: bash
-        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
         id: extract_branch
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            echo "branch=master" >> "$GITHUB_OUTPUT"
+          else
+            echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> "$GITHUB_OUTPUT"
+          fi
       
       - name: Create GHCR token file
         run: |
