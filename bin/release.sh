@@ -203,8 +203,7 @@ rm -rf "${FRONTEND_BUILD_DIR}"
 cd "${FRONTEND_DIR}" && env RUSTFLAGS="--remap-path-prefix $HOME=~" trunk build --release
 # Check if the frontend build directory exists
 if [ ! -d "${FRONTEND_BUILD_DIR}" ]; then
-    echo "🧨 Error: Web directory '${FRONTEND_BUILD_DIR}' does not exist."
-    exit 1
+    die "🧨 Error: Web directory '${FRONTEND_BUILD_DIR}' does not exist."
 fi
 
 cd "$WORKING_DIR"
