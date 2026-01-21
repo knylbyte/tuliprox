@@ -8,11 +8,54 @@ FRONTEND_DIR="${WORKING_DIR}/frontend"
 FRONTEND_BUILD_DIR="${FRONTEND_DIR}/dist"
 BACKEND_DIR="${WORKING_DIR}/backend"
 BRANCH=$(git branch --show-current)
+START_BRANCH="${BRANCH}"
+START_HEAD="$(git rev-parse HEAD)"
+RUN_KEY=""
+DOCKER_BUILD_RUN_ID=""
 
 die() {
   echo "🧨 Error: $*" >&2
   exit 1
 }
+
+cleanup_on_failure() {
+  exit_code=$?
+  if [ "${exit_code}" -eq 0 ]; then
+    return
+  fi
+
+  echo "🧹 Cleanup after failure (exit ${exit_code})" >&2
+
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    run_id="${DOCKER_BUILD_RUN_ID:-}"
+    if [ -z "${run_id}" ] && [ -n "${RUN_KEY:-}" ]; then
+      run_id="$(
+        gh run list \
+          -w docker-build.yml \
+          -e workflow_dispatch \
+          -b master \
+          -L 20 \
+          --json databaseId,displayTitle \
+          --jq ".[] | select(.displayTitle | contains(\"${RUN_KEY}\")) | .databaseId" \
+          | head -n 1
+      )"
+    fi
+
+    if [ -n "${run_id}" ]; then
+      status="$(gh run view "${run_id}" --json status --jq .status 2>/dev/null || true)"
+      if [ -n "${status}" ] && [ "${status}" != "completed" ]; then
+        echo "🛑 Cancelling docker-build workflow run ${run_id}" >&2
+        gh run cancel "${run_id}" >/dev/null 2>&1 || true
+      fi
+    fi
+  fi
+
+  echo "↩️ Resetting local git state to ${START_BRANCH}@${START_HEAD}" >&2
+  git reset --hard "${START_HEAD}" >/dev/null 2>&1 || true
+  git checkout -f "${START_BRANCH}" >/dev/null 2>&1 || true
+}
+
+trap cleanup_on_failure EXIT INT TERM
 
 # Validate release strategy
 if [ $# -ne 1 ]; then
@@ -46,7 +89,7 @@ if [ -n "$LAST_TAG" ]; then
 fi
 
 if ! command -v gh &> /dev/null; then
-  die "gitHub CLI could not be found. Please install gh toolset: https://cli.github.com"
+  die "GitHub CLI could not be found. Please install gh toolset: https://cli.github.com"
 fi
 
 case "$1" in
@@ -82,11 +125,24 @@ fi
 
 RUN_KEY="${1}-${RUN_KEY}"
 
+# Read current version from Cargo.toml
+VERSION=$(grep '^version' "${BACKEND_DIR}/Cargo.toml" | head -n1 | cut -d'"' -f2)
+
+read -rp "Releasing version: '${VERSION}', please confirm? [y/N] " answer
+
+# Default 'N', cancel, if not 'y' or 'Y'
+if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+    die "Canceled."
+fi
+
+git commit -m "ci: bump version v${BUMP_VERSION}"
+git push
+git push github
+
 echo "🚀 Triggering docker-build workflow (master, key: ${RUN_KEY})"
 gh workflow run docker-build.yml --ref master -f branch=master -f choice=none -f run_key="${RUN_KEY}"
 
 echo "🔎 Resolving docker-build workflow run id..."
-DOCKER_BUILD_RUN_ID=""
 for _ in {1..30}; do
   DOCKER_BUILD_RUN_ID="$(
     gh run list \
@@ -112,23 +168,7 @@ echo "🧩 docker-build run id: ${DOCKER_BUILD_RUN_ID}"
 
 ./bin/build_resources.sh
 
-cd "$FRONTEND_DIR" || (echo "🧨 Can't find frontend directory" && exit 1)
-
-# Read current version from Cargo.toml
-VERSION=$(grep '^version' "${BACKEND_DIR}/Cargo.toml" | head -n1 | cut -d'"' -f2)
-
-read -rp "Releasing version: '${VERSION}', please confirm? [y/N] " answer
-
-# Push new version to GitHub
-git commit -m "ci: bump version v${BUMP_VERSION}"
-git push
-git push github
-
-# Default 'N', cancel, if not 'y' or 'Y'
-if [[ ! "$answer" =~ ^[Yy]$ ]]; then
-    echo "Canceled."
-    exit 1
-fi
+cd "$FRONTEND_DIR" || die "Can't find frontend directory"
 
 echo "🛠️ Building version $VERSION"
 
