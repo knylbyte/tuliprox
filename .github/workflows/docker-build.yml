@@ -208,7 +208,7 @@ jobs:
             exit 0
           fi
 
-          VERSION="$(grep '^version' backend/Cargo.toml | head -n1 | cut -d'\"' -f2)"
+          VERSION="$(grep '^version' backend/Cargo.toml | head -n1 | cut -d'"' -f2)"
           if [ -n "${VERSION}" ]; then
             git commit -m "ci: bump version v${VERSION}"
           else
