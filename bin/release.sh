@@ -286,6 +286,10 @@ if ! command -v rustup >/dev/null 2>&1; then
   die "'rustup' is required to install Rust targets."
 fi
 
+if ! docker info >/dev/null 2>&1; then
+  die "Docker daemon is not available. Start Docker so 'cross' can run builds in containers (otherwise it may try to install non-host toolchains and fail)."
+fi
+
 echo "🧰 Ensuring rustup targets are installed"
 RUSTUP_REQUIRED_TARGETS=(
   wasm32-unknown-unknown
