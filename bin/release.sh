@@ -88,6 +88,7 @@ if [ $# -ne 1 ]; then
   die "Release strategy required (major|minor)"
 fi
 
+# Validate we're creating the release from master branch
 if [ "$BRANCH" != "master" ]; then
   die "Creating the release from your current branch '${BRANCH}' is prohibited!"
 fi
@@ -132,6 +133,7 @@ esac
 
 # Marker: version bump push + trigger docker-build workflow (master)
 echo "📦 Committing version bump"
+echo
 FILES=(Cargo.lock backend/Cargo.lock backend/Cargo.toml frontend/Cargo.toml shared/Cargo.toml)
 for f in "${FILES[@]}"; do
   if [ -f "$f" ]; then
