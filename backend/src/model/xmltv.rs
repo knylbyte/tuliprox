@@ -1,7 +1,6 @@
 use crate::model::xmltv::XmlTagIcon::Undefined;
 use chrono::{Datelike, TimeZone, Utc};
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
-use quick_xml::{Error, Writer};
 use shared::error::{TuliproxError, TuliproxErrorKind};
 use shared::model::{parse_xmltv_time, EpgChannel, EpgProgramme, EpgTv, InputFetchMethod};
 use std::cmp::{max, min};
@@ -9,10 +8,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use futures::TryFutureExt;
-use tokio::io::AsyncRead;
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use url::Url;
-use shared::utils::sanitize_sensitive_info;
+use shared::utils::{sanitize_sensitive_info, Internable};
 use crate::api::model::AppState;
+use crate::model::{InputSource};
+use crate::utils::async_file_reader;
 use crate::utils::request::{get_remote_content_as_stream};
 
 pub const EPG_TAG_TV: &str = "tv";
@@ -36,16 +37,16 @@ pub enum XmlTagIcon {
 
 #[derive(Debug, Clone)]
 pub struct XmlTag {
-    pub name: String,
+    pub name: Arc<str>,
     pub value: Option<String>,
-    pub attributes: Option<HashMap<String, String>>,
-    pub children: Option<Vec<XmlTag>>,
+    pub attributes: Option<HashMap<Arc<str>, String>>,
+    pub children: Option<Vec<Arc<XmlTag>>>,
     pub icon: XmlTagIcon,
     pub normalized_epg_ids: Option<Vec<String>>,
 }
 
 impl XmlTag {
-    pub(crate) fn new(name: String, attribs: Option<HashMap<String, String>>) -> Self {
+    pub(crate) fn new(name: Arc<str>, attribs: Option<HashMap<Arc<str>, String>>) -> Self {
         Self {
             name,
             value: None,
@@ -59,29 +60,6 @@ impl XmlTag {
     pub fn get_attribute_value(&self, attr_name: &str) -> Option<&String> {
         self.attributes.as_ref().and_then(|attr| attr.get(attr_name))
     }
-
-    fn write_to<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<(), Error> {
-        let mut elem = BytesStart::new(self.name.as_str());
-
-        // empty icon not processed
-        if self.icon == Undefined && self.name.eq(EPG_TAG_ICON) {
-            return Ok(());
-        }
-
-        if let Some(attribs) = self.attributes.as_ref() {
-            for (k, v) in attribs { elem.push_attribute((k.as_str(), v.as_str())); }
-        }
-        writer.write_event(Event::Start(elem))?;
-        if let Some(text) = self.value.as_ref() {
-            writer.write_event(Event::Text(BytesText::new(text.as_str())))?;
-        }
-        if let Some(children) = &self.children {
-            for child in children {
-                child.write_to(writer)?;
-            }
-        }
-        Ok(writer.write_event(Event::End(BytesEnd::new(self.name.as_str())))?)
-    }
 }
 
 
@@ -89,21 +67,96 @@ impl XmlTag {
 pub struct Epg {
     pub priority: i16,
     pub logo_override: bool,
-    pub attributes: Option<HashMap<String, String>>,
-    pub children: Vec<XmlTag>,
+    pub attributes: Option<HashMap<Arc<str>, String>>,
+    pub children: Vec<Arc<XmlTag>>,
 }
 
 impl Epg {
-    pub fn write_to<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<(), quick_xml::Error> {
+    pub async fn write_to_async<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut quick_xml::writer::Writer<W>,
+        rename_map: Option<&HashMap<&str, &str>>,
+    ) -> Result<(), quick_xml::Error> {
+        // Start tv-element
         let mut elem = BytesStart::new("tv");
-        if let Some(attribs) = self.attributes.as_ref() {
-            for (k, v) in attribs { elem.push_attribute((k.as_str(), v.as_str())); }
+        if let Some(attrs) = &self.attributes {
+            for (k, v) in attrs {
+                elem.push_attribute((k.as_ref(), v.as_str()));
+            }
         }
-        writer.write_event(Event::Start(elem))?;
-        for child in &self.children {
-            child.write_to(writer)?;
+        writer.write_event_async(Event::Start(elem)).await?;
+
+        // Stack for iterative writing
+        // bool = End-Event written?
+        let mut stack: Vec<(&XmlTag, bool)> = self
+            .children
+            .iter()
+            .rev()
+            .map(|c| (c.as_ref(), false))
+            .collect();
+
+        let mut write_counter = 0usize;
+        let mut current_channel_id: Option<String> = None;
+
+        while let Some((tag, ended)) = stack.pop() {
+            if ended {
+                if tag.name.as_ref() == EPG_TAG_CHANNEL {
+                    current_channel_id = None;
+                }
+                // End-Event
+                writer
+                    .write_event_async(Event::End(BytesEnd::new(tag.name.as_ref())))
+                    .await?;
+            } else {
+            // Start-Event for the tag
+                let mut elem = BytesStart::new(tag.name.as_ref());
+                if let Some(attrs) = &tag.attributes {
+                    for (k, v) in attrs {
+                        elem.push_attribute((k.as_ref(), v.as_str()));
+                    }
+                }
+
+                if tag.name.as_ref() == EPG_TAG_CHANNEL {
+                    current_channel_id = tag.get_attribute_value(EPG_ATTRIB_ID).cloned();
+                }
+
+                writer.write_event_async(Event::Start(elem)).await?;
+
+                // write text
+                let value_to_write = if tag.name.as_ref() == EPG_TAG_DISPLAY_NAME {
+                    current_channel_id.as_ref()
+                        .and_then(|cid| rename_map.and_then(|m| m.get(cid.as_str())).copied())
+                        .or(tag.value.as_deref())
+                } else {
+                    tag.value.as_deref()
+                };
+
+                if let Some(text) = value_to_write {
+                    writer.write_event_async(Event::Text(BytesText::new(text))).await?;
+                }
+
+                // End-Marker push + children push
+                stack.push((tag, true));
+                if let Some(children) = &tag.children {
+                    for child in children.iter().rev() {
+                        stack.push((child.as_ref(), false));
+                    }
+                }
+            }
+            write_counter += 1;
+            if write_counter >= 50 {
+                writer.get_mut().flush().await?; // flush underlying writer
+                write_counter = 0;
+            }
         }
-        Ok(writer.write_event(Event::End(BytesEnd::new("tv")))?)
+
+        // write tv-end
+        writer.write_event_async(Event::End(BytesEnd::new("tv"))).await?;
+
+        let inner = writer.get_mut();
+        inner.flush().await?;
+
+        Ok(())
     }
 }
 
@@ -138,18 +191,16 @@ fn filter_channels_and_programmes(
     channels: &mut Vec<EpgChannel>,
     programmes: &mut Vec<EpgProgramme>,
 ) {
-    for channel in channels.iter_mut() {
-        let mut i = 0;
-        while i < programmes.len() {
-            if programmes[i].channel == channel.id {
-                let prog = programmes.swap_remove(i);
-                channel.programmes.push(prog);
-            } else {
-                i += 1;
-            }
-        }
+    let mut prog_map: HashMap<String, Vec<EpgProgramme>> = HashMap::new();
+    for prog in programmes.drain(..) {
+        prog_map.entry(prog.channel.clone()).or_default().push(prog);
+    }
 
-        channel.programmes.sort_by_key(|p| p.start);
+    for channel in channels.iter_mut() {
+        if let Some(mut progs) = prog_map.remove(&channel.id) {
+            progs.sort_by_key(|p| p.start);
+            channel.programmes = progs;
+        }
     }
 
     channels.retain(|c| !c.programmes.is_empty());
@@ -174,11 +225,26 @@ pub async fn parse_xmltv_for_web_ui_from_file(path: &Path) -> Result<EpgTv, Tuli
 
 pub async fn parse_xmltv_for_web_ui_from_url(app_state: &Arc<AppState>, url: &str) -> Result<EpgTv, TuliproxError> {
     if let Ok(request_url) = Url::parse(url) {
-       match get_remote_content_as_stream(
-            Arc::clone(&app_state.http_client.load()),
-            &request_url,
-            InputFetchMethod::GET,
-            None,
+        let client = app_state.http_client.load();
+        let input_source: InputSource = InputSource {
+            name: "xmltv".intern(),
+            url: request_url.to_string(),
+            username: None,
+            password: None,
+            method: InputFetchMethod::GET,
+            headers: HashMap::default(),
+        };
+
+        let disabled_headers = app_state.get_disabled_headers();
+        let default_user_agent = app_state.app_config.config.load().default_user_agent.clone();
+
+        match get_remote_content_as_stream(
+           &client,
+           &input_source,
+           None,
+           &request_url,
+           disabled_headers.as_ref(),
+           default_user_agent.as_deref(),
         ).await {
            Ok((stream, _url)) => {
                parse_xmltv_for_web_ui(stream).await
@@ -203,10 +269,15 @@ fn concat_text(t1: &String, t2: &str) -> String {
     }
 }
 
+pub fn get_attr_value(attr: &quick_xml::events::attributes::Attribute) -> Option<String> {
+    attr.unescape_value().ok().map(|v| v.to_string())
+}
+
+// This function filters a timeslot starting from yesterday.
 #[allow(clippy::too_many_lines)]
 async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Result<EpgTv, TuliproxError> {
 
-    let mut reader = quick_xml::reader::Reader::from_reader(tokio::io::BufReader::new(reader));
+    let mut reader = quick_xml::reader::Reader::from_reader(async_file_reader(reader));
     let mut buf = Vec::new();
 
     let mut channels = Vec::new();
@@ -219,20 +290,14 @@ async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Resul
 
     // only 1 day old epg
     let now = Utc::now();
-    let yesterday_start = Utc.with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0).unwrap()
+    let yesterday_start = Utc.with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0)
+        .single().expect("Current date at midnight should always be valid")
         - chrono::Duration::days(1);
     let threshold_ts = yesterday_start.timestamp();
 
-    let get_attr_value = |attr: &quick_xml::events::attributes::Attribute| {
-        if let Ok(value) = attr.unescape_value() {
-            return Some(value.to_string());
-        }
-        None
-    };
-
     loop {
         match reader.read_event_into_async(&mut buf).await {
-            Ok(Event::Start(e)) => {
+            Ok(Event::Empty(e) | Event::Start(e)) => {
                 let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
                 current_tag.clone_from(&tag);
 

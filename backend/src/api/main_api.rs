@@ -11,25 +11,31 @@ use crate::api::endpoints::xmltv_api::xmltv_api_register;
 use crate::api::endpoints::xtream_api::xtream_api_register;
 use crate::api::hdhomerun_proprietary::spawn_proprietary_tasks;
 use crate::api::hdhomerun_ssdp::spawn_ssdp_discover_task;
-use crate::api::model::{create_cache, create_http_client, ActiveProviderManager, ActiveUserManager, AppState, CancelTokens, ConnectionManager, DownloadQueue, EventManager, HdHomerunAppState, PlaylistStorageState, SharedStreamManager};
-use crate::api::scheduler::exec_scheduler;
+use crate::api::model::{create_cache, create_http_client, ActiveProviderManager, ActiveUserManager, AppState, CancelTokens, ConnectionManager, DownloadQueue, EventManager, HdHomerunAppState, PlaylistStorageState, SharedStreamManager, UpdateGuard};
+use crate::api::scheduler::{exec_interner_prune, exec_scheduler};
 use crate::api::serve::serve;
 use crate::model::{AppConfig, Config, Healthcheck, ProcessTargets, RateLimitConfig};
 use crate::processing::processor::playlist;
-use crate::repository::playlist_repository::load_playlists_into_memory_cache;
+use crate::repository::load_playlists_into_memory_cache;
 use crate::VERSION;
 use arc_swap::{ArcSwap, ArcSwapOption};
 use axum::Router;
-use log::{error, info};
-use shared::utils::concat_path_leading_slash;
+use axum::{middleware::Next, extract::Request};
+use axum::extract::connect_info::ConnectInfo;
+use log::{debug, error, info};
+use shared::utils::{concat_path_leading_slash, sanitize_sensitive_info};
 use std::io::ErrorKind;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicI8;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
-use crate::repository::storage::get_geoip_path;
-use crate::utils::GeoIp;
+use tower_http::services::ServeDir;
+use crate::api::panel_api::sync_panel_api_exp_dates_on_boot;
+use crate::api::sys_usage::exec_system_usage;
+use crate::repository::get_geoip_path;
+use crate::utils::{exec_file_lock_prune, GeoIp};
 
 fn get_web_dir_path(web_ui_enabled: bool, web_root: &str) -> Result<PathBuf, std::io::Error> {
     let web_dir = web_root.to_string();
@@ -75,7 +81,7 @@ async fn create_shared_data(
                 Arc::new(ArcSwapOption::from(Some(Arc::new(db))))
             }
             Err(err) => {
-                error!("Failed to load GeoIp db: {err}");
+                info!("No GeoIp db found: {err}");
                 Arc::new(ArcSwapOption::from(None))
             }
         }
@@ -105,12 +111,13 @@ async fn create_shared_data(
         event_manager,
         cancel_tokens: Arc::new(ArcSwap::from_pointee(CancelTokens::default())),
         playlists: Arc::new(PlaylistStorageState::new()),
-        geoip
+        geoip,
+        update_guard: UpdateGuard::new(),
     }
 }
 
 fn exec_update_on_boot(
-    client: Arc<reqwest::Client>,
+    client: &reqwest::Client,
     app_state: &Arc<AppState>,
     targets: &Arc<ProcessTargets>,
 ) {
@@ -120,11 +127,13 @@ fn exec_update_on_boot(
         config.update_on_boot
     };
     if update_on_boot {
-        let app_state_clone = Arc::clone(&app_state.app_config);
+        let app_config_clone = Arc::clone(&app_state.app_config);
         let targets_clone = Arc::clone(targets);
         let playlist_state = Arc::clone(&app_state.playlists);
+        let client = client.clone();
+        let update_guard = Some(app_state.update_guard.clone());
         tokio::spawn(async move {
-            playlist::exec_processing(client, app_state_clone, targets_clone, None, Some(playlist_state)).await;
+            playlist::exec_processing(&client, app_config_clone, targets_clone, None, Some(playlist_state), update_guard).await;
         });
     }
 }
@@ -266,18 +275,28 @@ pub async fn start_server(
         error!("Failed to load playlists into memory cache: {err}");
     }
 
+    exec_system_usage(&app_state);
+
+    let client = shared_data.http_client.load();
+
+    sync_panel_api_exp_dates_on_boot(&app_state).await;
+
     exec_scheduler(
-        &Arc::clone(&shared_data.http_client.load()),
+        client.as_ref(),
         &app_state,
         &targets,
         &cancel_token_scheduler,
     );
 
     exec_update_on_boot(
-        Arc::clone(&shared_data.http_client.load()),
+        client.as_ref(),
         &app_state,
         &targets,
     );
+
+    exec_file_lock_prune(&app_state);
+
+    exec_interner_prune(&app_state);
 
     exec_config_watch(&app_state, &cancel_token_file_watch);
 
@@ -293,10 +312,7 @@ pub async fn start_server(
         .and_then(|c| c.path.as_ref())
         .cloned()
         .unwrap_or_default();
-    infos.push(format!(
-        "Server running: http://{}:{}",
-        &cfg.api.host, &cfg.api.port
-    ));
+    infos.push(format!("Server running: http://{}:{}", &cfg.api.host, &cfg.api.port));
     for info in &infos {
         info!("{info}");
     }
@@ -304,6 +320,7 @@ pub async fn start_server(
     // Web Server
     let mut router = axum::Router::new()
         .route("/healthcheck", axum::routing::get(healthcheck))
+        .nest_service("/.well-known", ServeDir::new(web_dir_path.join("static/.well-known")))
         .merge(ws_api_register(
             web_auth_enabled,
             web_ui_path.as_str(),
@@ -352,6 +369,7 @@ pub async fn start_server(
     }
 
     router = router
+        .layer(axum::middleware::from_fn(log_req))
         .layer(create_cors_layer())
         .layer(create_compression_layer());
 
@@ -380,4 +398,42 @@ fn add_rate_limiter(
     } else {
         router
     }
+}
+
+async fn log_req(req: Request, next: Next) -> impl axum::response::IntoResponse {
+    if !log::log_enabled!(log::Level::Debug) {
+        return next.run(req).await;
+    }
+
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+
+    let headers = req.headers();
+    let client_ip = headers
+        .get("x-real-ip")
+        .and_then(|h| h.to_str().ok())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            headers
+                .get("x-forwarded-for")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|v| v.split(',').next().map(str::trim))
+                .filter(|v| !v.is_empty())
+                .map(str::to_string)
+        })
+        .or_else(|| {
+            req.extensions()
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|c| c.0.to_string())
+        });
+
+    let safe_ip = client_ip
+        .as_deref().map_or_else(|| sanitize_sensitive_info("<unknown>"), sanitize_sensitive_info);
+    let uri_string = uri.to_string();
+    let safe_uri = sanitize_sensitive_info(&uri_string);
+
+    debug!("Client request [{method}] -> {safe_uri} from {safe_ip}");
+    next.run(req).await
 }

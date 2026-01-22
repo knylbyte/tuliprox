@@ -1,14 +1,56 @@
 #!/bin/bash
 set -euo pipefail
 
-# Check for required environment variable
-if [ ! -f "${HOME}/.ghcr.io" ]; then
-    echo "🧨 Error: ${HOME}/.ghcr.io file not found"
+# Required environment variables (set by CI)
+if [ -z "${REPO_OWNER:-}" ]; then
+    echo "🧨 Error: REPO_OWNER env var is required"
     exit 1
 fi
-source "${HOME}/.ghcr.io"
 
+if [ -z "${GITHUB_IO_TOKEN:-}" ]; then
+    echo "🧨 Error: GITHUB_IO_TOKEN env var is required"
+    exit 1
+fi
+
+# -----------------------------
+# Rust / Cargo Setup
+# -----------------------------
+export RUSTUP_NO_UPDATE_CHECK=1
+export CARGO_NET_GIT_FETCH_WITH_CLI=true
+export RUSTFLAGS="--remap-path-prefix $HOME=~"
+
+REQUIRED_TARGETS=(
+  "x86_64-unknown-linux-musl"
+  "aarch64-unknown-linux-musl"
+)
+
+echo "🦀 Checking Rust toolchain..."
+
+if ! rustup toolchain list | grep -q "^stable"; then
+  echo "🔧 Installing stable toolchain..."
+  rustup toolchain install stable --profile minimal
+fi
+
+rustup default stable
+
+echo "🎯 Ensuring required targets are installed..."
+for TARGET in "${REQUIRED_TARGETS[@]}"; do
+  if ! rustup target list --installed | grep -q "^${TARGET}$"; then
+    echo "➕ Installing target $TARGET"
+    rustup target add "$TARGET"
+  fi
+done
+
+WASM_TARGET="wasm32-unknown-unknown"
+
+if ! rustup target list --installed | grep -q "^${WASM_TARGET}$"; then
+  echo "➕ Installing wasm target for frontend: ${WASM_TARGET}"
+  rustup target add "${WASM_TARGET}"
+fi
+
+# -----------------------------------------
 # Function to print usage instructions
+# -----------------------------------------
 print_usage() {
     echo "Usage: $(basename "$0") <branch>"
     echo
@@ -16,8 +58,8 @@ print_usage() {
     echo "  branch    Git branch name (only 'master' and 'develop' are supported)"
     echo
     echo "Examples:"
-    echo "  $(basename "$0") master    # Builds and pushes with :latest tag"
-    echo "  $(basename "$0") develop   # Builds and pushes with :dev tag"
+    echo "  $(basename "$0") master    # Builds and pushes with :VERSION and :latest tags"
+    echo "  $(basename "$0") develop   # Builds and pushes with :VERSION and :dev tags"
     exit 1
 }
 
@@ -78,7 +120,7 @@ echo "📦 Version: ${VERSION}"
 # Build resources if needed (check if resources are already built)
 # Note: Docker build handles resource creation with its own ffmpeg container
 RESOURCES_BUILT=true
-for resource in "channel_unavailable.ts" "user_connections_exhausted.ts" "provider_connections_exhausted.ts" "user_account_expired.ts"; do
+for resource in "channel_unavailable.ts" "user_connections_exhausted.ts" "provider_connections_exhausted.ts" "user_account_expired.ts" "panel_api_provisioning.ppm"; do
     if [ ! -f "${RESOURCES_DIR}/${resource}" ]; then
         RESOURCES_BUILT=false
         break
@@ -113,15 +155,16 @@ cd "$WORKING_DIR"
 
 # Build binaries for all architectures first
 echo "🏗️ Building binaries for all architectures..."
+
+# Avoid executing stale build artifacts when caches are missing or the runner image changes.
+if [ "${TULIPROX_FORCE_CLEAN:-0}" = "1" ] || [ "${CARGO_DEPS_CACHE_HIT:-false}" != "true" ]; then
+    cargo clean || true
+fi
+
 for PLATFORM in "${!ARCHITECTURES[@]}"; do
     ARCHITECTURE=${ARCHITECTURES[$PLATFORM]}
     
     echo "🔨 Building binary for architecture: $ARCHITECTURE"
-
-    # Don't clean if we have cached dependencies
-    if [ -z "${CARGO_DEPS_CACHE_HIT:-}" ]; then
-        cargo clean || true
-    fi
 
     # Use incremental compilation and enable cache-friendly flags
     env RUSTFLAGS="--remap-path-prefix $HOME=~ -C incremental=/tmp/rust-incremental-${ARCHITECTURE}" \
@@ -150,7 +193,7 @@ cd "${DOCKER_DIR}"
 
 # Login to GitHub Container Registry (needed before buildx push)
 echo "🔑 Logging into GitHub Container Registry..."
-docker login ghcr.io -u euzu -p "${GHCR_IO_TOKEN}"
+printf '%s' "${GITHUB_IO_TOKEN}" | docker login ghcr.io --username "${REPO_OWNER}" --password-stdin
 
 declare -a BUILT_IMAGES=()
 
@@ -161,18 +204,10 @@ for IMAGE_NAME in "${!MULTI_PLATFORM_IMAGES[@]}"; do
     echo "🎯 Building multi-platform image: ${IMAGE_NAME} with target ${BUILD_TARGET}"
     
     # Prepare tags based on branch
-    DOCKER_TAGS=""
-    if [ "$BRANCH" = "master" ]; then
-        # For master branch: create both version and latest tags
-        DOCKER_TAGS="-t ghcr.io/euzu/${IMAGE_NAME}:${VERSION} -t ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}"
-        BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:${VERSION}")
-        BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}")
-    elif [ "$BRANCH" = "develop" ]; then
-        # For develop branch: create only dev tag (no version tag)
-        DOCKER_TAGS="-t ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}"
-        BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}")
-    fi
-    
+    DOCKER_TAGS="-t ghcr.io/${REPO_OWNER}/${IMAGE_NAME}:${VERSION} -t ghcr.io/${REPO_OWNER}/${IMAGE_NAME}:${TAG_SUFFIX}"
+    BUILT_IMAGES+=("ghcr.io/${REPO_OWNER}/${IMAGE_NAME}:${VERSION}")
+    BUILT_IMAGES+=("ghcr.io/${REPO_OWNER}/${IMAGE_NAME}:${TAG_SUFFIX}")
+
     # Build and push multi-platform image directly with cache
     BUILDX_CACHE_ARGS=()
     [ -n "${BUILDX_CACHE_FROM:-}" ] && BUILDX_CACHE_ARGS+=(--cache-from "${BUILDX_CACHE_FROM}")

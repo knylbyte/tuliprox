@@ -94,6 +94,7 @@ pub fn Table<T: PartialEq + Clone>(props: &TableProps<T>) -> Html {
                                              Some(match order {
                                                  SortOrder::Asc => "ascending",
                                                  SortOrder::Desc => "descending",
+                                                 SortOrder::None => "none",
                                              }.to_string())
                                          } else { Some("none".to_string()) }
                                      } else { Some("none".to_string()) }

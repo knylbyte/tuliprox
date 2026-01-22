@@ -4,8 +4,10 @@ use std::str::FromStr;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 use log::{trace};
-use crate::error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result};
-
+use crate::error::{TuliproxError, info_err_res};
+use crate::foundation::filter::{apply_templates_to_pattern_single, get_filter, prepare_templates, Filter};
+use crate::foundation::mapper::MapperScript;
+use crate::model::PatternTemplate;
 pub const COUNTER_FIELDS: &[&str] = &["name", "title", "caption", "chno"];
 
 pub const MAPPER_FIELDS: &[&str] = &[
@@ -14,7 +16,6 @@ pub const MAPPER_FIELDS: &[&str] = &[
     "time_shift", "rec", "url", "epg_channel_id", "epg_id"
 ];
 
-
 #[macro_export]
 macro_rules! valid_property {
   ($key:expr, $array:expr) => {{
@@ -22,10 +23,7 @@ macro_rules! valid_property {
     }};
 }
 pub use valid_property;
-use crate::foundation::filter::{apply_templates_to_pattern_single, get_filter, prepare_templates, Filter};
-use crate::foundation::mapper::MapperScript;
-use crate::info_err;
-use crate::model::PatternTemplate;
+
 
 #[derive(Debug, Default, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq)]
 pub enum CounterModifier {
@@ -65,7 +63,7 @@ impl FromStr for CounterModifier {
         } else if s.eq("prefix") {
             Ok(Self::Prefix)
         } else {
-            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown CounterModifier: {}", s)
+            info_err_res!("Unknown CounterModifier: {}", s)
         }
     }
 }
@@ -124,16 +122,16 @@ impl MapperOperation {
             | MapperOperation::Uppercase { ref field }
             | MapperOperation::Capitalize { ref field } => {
                 if !valid_property!(field.as_str(), MAPPER_FIELDS) {
-                    return Err(info_err!(format!("Invalid mapper attribute field {field}")));
+                    return info_err_res!("Invalid mapper attribute field {field}");
                 }
             }
 
             MapperOperation::Copy { ref field, ref source } => {
                 if !valid_property!(field.as_str(), MAPPER_FIELDS) {
-                    return Err(info_err!(format!("Invalid mapper attribute field {field}")));
+                    return info_err_res!("Invalid mapper attribute field {field}");
                 }
                 if !valid_property!(source.as_str(), MAPPER_FIELDS) {
-                    return Err(info_err!(format!("Invalid mapper source field {source}")));
+                    return info_err_res!("Invalid mapper source field {source}");
                 }
             }
 
@@ -141,7 +139,7 @@ impl MapperOperation {
             | MapperOperation::Prefix { ref field, ref mut value }
             | MapperOperation::Set { ref field, ref mut value } => {
                 if !valid_property!(field.as_str(), MAPPER_FIELDS) {
-                    return Err(info_err!(format!("Invalid mapper attribute field {field}")));
+                    return info_err_res!("Invalid mapper attribute field {field}");
                 }
 
                 if templates.is_some() {
@@ -208,7 +206,7 @@ impl MappingDto {
             let mut counters = vec![];
             for def in counter_def_list {
                 if !valid_property!(def.field.as_str(), COUNTER_FIELDS) {
-                    return Err(info_err!(format!("Invalid counter field {}", def.field)));
+                    return info_err_res!("Invalid counter field {}", def.field);
                 }
                 match get_filter(&def.filter, templates) {
                     Ok(flt) => {
@@ -221,7 +219,7 @@ impl MappingDto {
                             padding: def.padding,
                         });
                     }
-                    Err(e) => return Err(info_err!(e.to_string()))
+                    Err(e) => return info_err_res!("Counter field error: {}", e.to_string())
                 }
             }
             self.t_counter = Some(counters);

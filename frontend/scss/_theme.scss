@@ -32,7 +32,10 @@
 
   --epg-row-height: 4rem;
   --epg-header-height: 2rem;
-  --epg-channels-width: 200px;
+  --epg-channels-width: 300px;
+
+  --epg-past-background: rgba(0, 0, 0, 0.4);
+  --epg-now-line-color: red;
 
 }
 
@@ -169,6 +172,9 @@
   --popup-border-color: rgba(80, 100, 160, 0.25);
   --popup-color: #ffffff;
 
+  --tooltip-background-color: rgba(30, 34, 48, 0.9);
+  --tooltip-color: #ffffff;
+
   --attention-color: #f57170;
   --warn-color: #e1b842;
   --active-color: #3ae093;
@@ -239,6 +245,7 @@
   --menu-button-hover-color: #ffffff;
   --menu-button-hover-background-color: rgba(32, 39, 51, 0.8);
 
+  --menu-button-warn-color: #b96665;
   --menu-button-warn-hover-color: #dd7573;
   --menu-button-warn-hover-background-color: #4c3434;
 
@@ -302,9 +309,9 @@
 
   --toolbar-bg-color: #161b25;
 
-  --epg-program-background-color: #1a222b88;
+  --epg-program-background-color: #1a222b;
   --epg-program-color: #ffffff;
-  --epg-program-active-background-color: #26314088;
+  --epg-program-active-background-color: #263140;
   --epg-program-active-color: #ffffff;
   --epg-program-time-color: #707f99;
   --epg-program-active-time-color: #778295;
@@ -323,10 +330,19 @@
   --graph-paper-line-color-2: #c0c0c030;
 
 
-  /* INPUT BLOCKS — cool blues */
-  --brick-input-border-color: #4a90e2cc;
-  --brick-input-background-color: #4a90e288;
-  --brick-input-shadow-color: #4a90e280;
+  /* INPUT BLOCKS — cool blues (distinct per type) */
+
+  --brick-input-xtream-border-color: #1565c0cc;
+  --brick-input-xtream-background-color: #1565c088;
+  --brick-input-xtream-shadow-color: #1565c080;
+
+  --brick-input-m3u-border-color: #409affcc;
+  --brick-input-m3u-background-color: #409aff88;
+  --brick-input-m3u-shadow-color: #409aff80;
+
+  --brick-input-library-border-color: #64b5f6cc;
+  --brick-input-library-background-color: #64b5f688;
+  --brick-input-library-shadow-color: #64b5f680;
 
   /* TARGET BLOCKS — balanced green/teal */
   --brick-target-border-color: #2aa198cc; /* Solarized teal */
@@ -635,5 +651,8 @@ body[data-theme="bright"] {
 
   --source-editor-line-color: #000000;
   --source-editor-pending-line-color: yellow;
+  
+  --tooltip-background-color: rgba(250, 252, 255, 0.95);
+  --tooltip-color: #0a0b10;
 
 }

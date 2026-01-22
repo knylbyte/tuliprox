@@ -1,12 +1,13 @@
 use crate::model::{Epg, TVGuide, XmlTag, XmlTagIcon, EPG_ATTRIB_ID};
 use crate::model::{EpgConfig, EpgSmartMatchConfig};
-use crate::model::{FetchedPlaylist};
+use crate::model::FetchedPlaylist;
 use crate::processing::parser::xmltv::normalize_channel_name;
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use rphonetic::{DoubleMetaphone, Encoder};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use shared::model::{EpgSmartMatchConfigDto, PlaylistItem, XtreamCluster};
+use std::sync::Arc;
 
 pub struct EpgIdCache<'a> {
     pub channel_epg_id: HashSet<Cow<'a, str>>,
@@ -64,7 +65,7 @@ impl EpgIdCache<'_> {
     /// cache.normalize_and_store("Discovery Channel", Some(&"discovery.epg".to_string()));
     /// assert!(cache.normalized.contains_key(&cache.normalize("Discovery Channel")));
     /// ```
-    fn normalize_and_store(&mut self, name: &str, epg_id: Option<&String>) {
+    fn normalize_and_store(&mut self, name: &str, epg_id: Option<&str>) {
         self.insert_normalized(name);
 
         if let Some(chan_epg_id) = epg_id {
@@ -108,10 +109,12 @@ impl EpgIdCache<'_> {
         let smart_match_enabled = self.smart_match_enabled;
         let fuzzy_matching = self.fuzzy_match_enabled;
 
-        for channel in fp.playlistgroups.iter().flat_map(|g| &g.channels) {
+        // Helper closure to process a single item
+        // We use a closure here to capture `self` and avoid code duplication
+        let mut process_item = |name: &str, epg_channel_id: Option<&str>| {
             let mut missing_epg_id = true;
             // insert epg_id to known channel epg_ids
-            if let Some(id) = channel.header.epg_channel_id.as_deref() {
+            if let Some(id) = epg_channel_id {
                 if !id.is_empty() {
                     missing_epg_id = false;
                     self.channel_epg_id.insert(Cow::Owned(id.to_string()));
@@ -123,8 +126,13 @@ impl EpgIdCache<'_> {
             let needs_normalization = smart_match_enabled && (fuzzy_matching || missing_epg_id);
 
             if needs_normalization {
-                let name = &channel.header.name;
-                self.normalize_and_store(name, channel.header.epg_channel_id.as_ref());
+                self.normalize_and_store(name, epg_channel_id);
+            }
+        };
+
+        for channel in fp.items() {
+            if channel.header.xtream_cluster == XtreamCluster::Live && channel.header.item_type.is_live() {
+                process_item(&channel.header.name, channel.header.epg_channel_id.as_deref());
             }
         }
     }
@@ -161,9 +169,9 @@ async fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist<'_>
             let mut icon_assigned = HashSet::new();
             for epg_source in epg_sources {
                 // icon tags
-                let icon_tags: HashMap<&String, &XmlTag> = epg_source.children.iter()
+                let icon_tags: HashMap<&str, &Arc<XmlTag>> = epg_source.children.iter()
                     .filter(|tag| tag.icon != XmlTagIcon::Undefined)
-                    .filter_map(|tag| tag.get_attribute_value(EPG_ATTRIB_ID).map(|id| (id, tag)))
+                    .filter_map(|tag| tag.get_attribute_value(EPG_ATTRIB_ID).map(|id| (id.as_str(), tag)))
                     .collect();
 
                 let assign_values = |chan: &mut PlaylistItem| {
@@ -172,7 +180,7 @@ async fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist<'_>
                         // if the channel has no epg_id or the epg_id is not present in xmltv/tvguide then we need to match one from existing tvguide
                         let not_found_in_epg = match &chan.header.epg_channel_id {
                             None => true,
-                            Some(epg_id) => !id_cache.processed.contains(epg_id),
+                            Some(epg_id) => !id_cache.processed.contains(&**epg_id),
                         };
                         if not_found_in_epg {
                             let try_match = |key: &str| {
@@ -187,22 +195,22 @@ async fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist<'_>
                             if let Some(new_id) = try_match(&chan.header.name)
                                 .or_else(|| chan.header.epg_channel_id.as_deref().and_then(try_match))
                             {
-                                chan.header.epg_channel_id = Some(new_id);
+                                chan.header.epg_channel_id = Some(new_id.into());
                             }
                         }
                     }
                     if let Some(epg_channel_id) = chan.header.epg_channel_id.as_ref() {
                         if !icon_assigned.contains(epg_channel_id) &&
                             (epg_source.logo_override || chan.header.logo.is_empty() || chan.header.logo_small.is_empty()) {
-                            if let Some(icon_tag) = icon_tags.get(epg_channel_id) {
+                            if let Some(icon_tag) = icon_tags.get(&**epg_channel_id) {
                                 if let XmlTagIcon::Src(icon) = &icon_tag.icon {
                                     icon_assigned.insert(epg_channel_id.clone());
                                     if epg_source.logo_override || chan.header.logo.is_empty() {
                                         trace!("Matched channel {} to epg icon {icon}", chan.header.name);
-                                        chan.header.logo = (*icon).clone();
+                                        chan.header.logo = icon.clone().into();
                                     }
                                     if epg_source.logo_override || chan.header.logo_small.is_empty() {
-                                        chan.header.logo_small = (*icon).clone();
+                                        chan.header.logo_small = icon.clone().into();
                                     }
                                 }
                             }
@@ -210,11 +218,13 @@ async fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist<'_>
                     }
                 };
 
-                let filter_live = |c: &&mut PlaylistItem| c.header.xtream_cluster == XtreamCluster::Live;
-                fp.playlistgroups.iter_mut()
-                    .flat_map(|g| &mut g.channels)
-                    .filter(filter_live)
-                    .for_each(assign_values);
+                let filter_live = |c: &&mut PlaylistItem| c.header.xtream_cluster == XtreamCluster::Live && c.header.item_type.is_live();
+
+                if fp.is_memory() {
+                    fp.items_mut().filter(filter_live).for_each(assign_values);
+                } else {
+                    warn!("Disk based playlist modification is not supported!");
+                }
                 processed_epgs.push(epg_source);
             }
         }
@@ -237,6 +247,9 @@ async fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist<'_>
 /// process_playlist_epg(&mut playlist, &mut epg_data);
 /// ```
 pub async fn process_playlist_epg(fp: &mut FetchedPlaylist<'_>, epg: &mut Vec<Epg>) {
+    if fp.input.epg.is_none() {
+        return;
+    }
     // collect all epg_channel ids
     let mut id_cache = EpgIdCache::new(fp.input.epg.as_ref());
     id_cache.collect_epg_id(fp);

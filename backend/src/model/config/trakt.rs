@@ -4,18 +4,20 @@ use crate::model::macros;
 
 #[derive(Debug, Clone)]
 pub struct TraktApiConfig {
-    pub key: String,
+    pub api_key: String,
     pub version: String,
     pub url: String,
+    pub user_agent: String,
 }
 
 macros::from_impl!(TraktApiConfig);
 impl From<&TraktApiConfigDto> for TraktApiConfig {
     fn from(dto: &TraktApiConfigDto) -> Self {
         Self {
-            key: dto.key.clone(),
+            api_key: dto.api_key.clone(),
             version: dto.version.clone(),
             url: dto.url.clone(),
+            user_agent: dto.user_agent.clone(),
         }
     }
 }
@@ -23,9 +25,10 @@ impl From<&TraktApiConfigDto> for TraktApiConfig {
 impl From<&TraktApiConfig> for TraktApiConfigDto {
     fn from(instance: &TraktApiConfig) -> Self {
         Self {
-            key: instance.key.clone(),
+            api_key: instance.api_key.clone(),
             version: instance.version.clone(),
             url: instance.url.clone(),
+            user_agent: instance.user_agent.clone(),
         }
     }
 }
@@ -66,6 +69,7 @@ impl From<&TraktListConfig> for TraktListConfigDto {
 
 #[derive(Debug, Clone)]
 pub struct TraktConfig {
+    pub enabled: bool,
     pub api: TraktApiConfig,
     pub lists: Vec<TraktListConfig>,
 }
@@ -74,6 +78,7 @@ macros::from_impl!(TraktConfig);
 impl From<&TraktConfigDto>  for TraktConfig {
     fn from(dto: &TraktConfigDto) -> Self {
         Self {
+            enabled: dto.enabled,
             api: TraktApiConfig::from(&dto.api),
             lists: dto.lists.iter().map(Into::into).collect(),
         }
@@ -82,6 +87,7 @@ impl From<&TraktConfigDto>  for TraktConfig {
 impl From<&TraktConfig>  for TraktConfigDto {
     fn from(dto: &TraktConfig) -> Self {
         Self {
+            enabled: dto.enabled,
             api: TraktApiConfigDto::from(&dto.api),
             lists: dto.lists.iter().map(TraktListConfigDto::from).collect(),
         }

@@ -1,13 +1,20 @@
+use std::sync::Arc;
 use crate::error::{TuliproxError};
 use crate::foundation::filter::{get_filter, Filter};
-use crate::model::{PatternTemplate};
+use crate::model::{PatternTemplate, XtreamCluster};
+use crate::utils::{arc_str_serde, xtream_cluster_serde};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigFavouritesDto {
-    pub group: String,
+    #[serde(with = "xtream_cluster_serde")]
+    pub cluster: XtreamCluster,
+    #[serde(with = "arc_str_serde")]
+    pub group: Arc<str>,
     #[serde(default)]
     pub filter: String,
+    #[serde(default)]
+    pub match_as_ascii: bool,
     #[serde(skip)]
     pub t_filter: Option<Filter>,
 }

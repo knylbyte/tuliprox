@@ -1,6 +1,7 @@
 use std::io;
+use std::sync::Arc;
 use bytes::Bytes;
-use crate::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState, StatusCheck};
+use crate::model::{ActiveUserConnectionChange, ConfigType, LibraryScanSummary, PlaylistUpdateState, StatusCheck, SystemInfo};
 use serde::{Deserialize, Serialize};
 use crate::model::user_command::UserCommand;
 
@@ -83,13 +84,15 @@ pub enum ProtocolMessage {
     // Responses
     StatusResponse(StatusCheck),
     ActiveUserResponse(ActiveUserConnectionChange),
-    ActiveProviderResponse(String, usize), // single provider
+    ActiveProviderResponse(Arc<str>, usize), // single provider
     ActiveProviderCountRequest(String),
     ActiveProviderCountResponse(usize),
     ConfigChangeResponse(ConfigType),
     PlaylistUpdateResponse(PlaylistUpdateState),
     PlaylistUpdateProgressResponse(String, String),
     UserActionResponse(bool),
+    SystemInfoResponse(SystemInfo),
+    LibraryScanProgressResponse(LibraryScanSummary),
 }
 
 impl ProtocolMessage {

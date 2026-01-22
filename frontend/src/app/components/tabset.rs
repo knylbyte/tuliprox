@@ -12,19 +12,6 @@ pub struct TabItem {
     pub inactive_class: Option<String>,
 }
 
-// impl TabItem {
-//     pub fn new(id: String, title: String, icon: String, children: Html) -> Self {
-//         Self {
-//             id,
-//             title,
-//             icon,
-//             children,
-//             active_class: None,
-//             inactive_class: None,
-//         }
-//     }
-// }
-
 #[derive(Properties, Clone, PartialEq)]
 pub struct TabSetProps {
     pub tabs: Rc<Vec<TabItem>>,

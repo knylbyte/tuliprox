@@ -1,6 +1,6 @@
 use crate::model::WebConfig;
 use crate::services::{get_base_href, request_get, request_post, EventService};
-use shared::model::{AppConfigDto, ConfigDto, ConfigInputDto, IpCheckDto, TargetOutputDto};
+use shared::model::{AppConfigDto, ConfigDto, ConfigInputDto, IpCheckDto, LibraryScanRequest,  SourcesConfigDto, TargetOutputDto};
 use std::cell::RefCell;
 use std::future::Future;
 use std::rc::Rc;
@@ -19,24 +19,29 @@ pub struct ConfigService {
     config_channel: Mutable<Option<Rc<AppConfigDto>>>,
     is_fetching: AtomicBool,
     config_path: String,
+    sources_path: String,
     ip_check_path: String,
     batch_input_content_path: String,
     geoip_path: String,
+    library_path: String,
     event_service: Rc<EventService>
 }
 
 impl ConfigService {
     pub fn new(config: &WebConfig, event_service: Rc<EventService>) -> Self {
         let base_href = get_base_href();
+        let config_path = concat_path_leading_slash(&base_href, "api/v1/config");
         Self {
             ui_config: Rc::new(config.clone()),
             server_config: RefCell::new(None),
             config_channel: Mutable::new(None),
             is_fetching: AtomicBool::new(false),
-            config_path: concat_path_leading_slash(&base_href, "api/v1/config"),
+            config_path: config_path.clone(),
+            sources_path: concat_path(&config_path, "sources"),
             ip_check_path: concat_path_leading_slash(&base_href, "api/v1/ipinfo"),
             batch_input_content_path: concat_path_leading_slash(&base_href, "api/v1/config/batchContent"),
             geoip_path: concat_path_leading_slash(&base_href, "api/v1/geoip/update"),
+            library_path: concat_path_leading_slash(&base_href, "api/v1/library"),
             event_service
         }
     }
@@ -56,7 +61,7 @@ impl ConfigService {
     }
 
     async fn fetch_server_config(&self) {
-        if self.is_fetching.swap(true, Ordering::SeqCst) {
+        if self.is_fetching.swap(true, Ordering::AcqRel) {
             return;
         }
         let result = match request_get::<AppConfigDto>(&self.config_path, None, None).await {
@@ -72,6 +77,11 @@ impl ConfigService {
                 for source in app_config.sources.sources.iter_mut() {
                     for target in source.targets.iter_mut() {
                         target.t_filter = get_filter(target.filter.as_str(), templates.as_ref()).ok();
+                        if let Some(sort) = target.sort.as_mut() {
+                            for rule in sort.rules.iter_mut() {
+                                rule.t_filter = get_filter(&rule.filter, templates.as_ref()).map_err(|e| error!("Failed to parse sort rule filter: {}", e)).ok();
+                            }
+                        }
                         for output in target.output.iter_mut() {
                             match output {
                                 TargetOutputDto::Xtream(o) =>
@@ -109,7 +119,7 @@ impl ConfigService {
         };
         self.server_config.replace(result.clone());
         self.config_channel.set(result);
-        self.is_fetching.store(false, Ordering::SeqCst);
+        self.is_fetching.store(false, Ordering::Release);
     }
 
     pub async fn get_ip_info(&self) -> Option<IpCheckDto> {
@@ -144,8 +154,30 @@ impl ConfigService {
         }
     }
 
+    pub async fn save_sources(&self, dto: SourcesConfigDto) -> Result<(), Error> {
+        self.event_service.set_config_change_message_blocked(true);
+        match request_post::<SourcesConfigDto, ()>(&self.sources_path, dto, None, None).await {
+            Ok(_) => {
+                self.event_service.set_config_change_message_blocked(false);
+                Ok(())
+            }
+            Err(err) => {
+                self.event_service.set_config_change_message_blocked(false);
+                error!("{err}");
+                Err(err)
+            }
+        }
+    }
+
     pub async fn update_geoip(&self) -> Result<Option<()>, Error> {
         request_get::<()>(&self.geoip_path, None, None).await
     }
 
+    pub async fn update_library(&self) -> Result<Option<()>, Error> {
+        let path = concat_path(&self.library_path, "scan");
+        let params = LibraryScanRequest {
+            force_rescan: false,
+        };
+        request_post::<LibraryScanRequest, ()>(&path, params, None, None).await
+    }
 }

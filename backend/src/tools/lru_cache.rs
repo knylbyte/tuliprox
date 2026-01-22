@@ -1,9 +1,15 @@
-use crate::utils::{traverse_dir};
-use shared::utils::{hash_string_as_hex, human_readable_byte_size};
+use crate::utils::{decode_base64_string, encode_base64_hash, encode_base64_string, traverse_dir};
+use shared::utils::{human_readable_byte_size, sanitize_sensitive_info};
 use log::{debug, error, info, trace};
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::PathBuf;
+use crate::utils::{trace_if_enabled};
+
+#[inline]
+fn encode_cache_key(key: &str) -> String {
+    encode_base64_hash(key)
+}
 
 /// `LRUResourceCache`
 ///
@@ -21,7 +27,7 @@ pub struct LRUResourceCache {
     capacity: usize,  // Maximum size in bytes
     cache_dir: PathBuf,
     current_size: usize,  // Current size in bytes
-    cache: HashMap<String, (PathBuf, usize)>,
+    cache: HashMap<String, (PathBuf, Option<String>, usize)>,
     usage_order: VecDeque<String>,
 }
 
@@ -32,11 +38,13 @@ impl LRUResourceCache {
     ///     - `cache_dir`: The directory path where cached files are stored.
     ///
     pub fn new(capacity: usize, cache_dir: &str) -> Self {
+        // Estimate: assume average file size of 256KB
+        let estimated_entries = (capacity / (256 * 1024)).clamp(64, 16384);
         Self {
             capacity,
             cache_dir: PathBuf::from(cache_dir),
             current_size: 0,
-            cache: HashMap::<String, (PathBuf, usize)>::new(),
+            cache: HashMap::<String, (PathBuf, Option<String>, usize)>::with_capacity(estimated_entries),
             usage_order: VecDeque::new(),
         }
     }
@@ -52,15 +60,22 @@ impl LRUResourceCache {
     pub fn scan(&mut self) -> std::io::Result<()> {
         let mut visit = |entry: &std::fs::DirEntry, metadata: &std::fs::Metadata| {
             let path = entry.path();
-            if let Some(file_name) = path.file_name() {
-                let key = String::from(file_name.to_string_lossy());
+            if let Some(os_file_name) = path.file_name() {
+                let file_name = String::from(os_file_name.to_string_lossy());
+                let (key, mime_type) = if let Some((part1, part2)) = file_name.split_once('.') {
+                    (part1.to_string(), String::from_utf8(decode_base64_string(part2)).ok())
+                } else {
+                    (file_name.clone(), None)
+                };
+
                 let file_size = usize::try_from(metadata.len()).unwrap_or(0);
-                // we need to duplicate because of closure we cant call insert_to_cache
+                // we need to duplicate because of closure we can't call insert_to_cache
                 {  // insert_to_cache
+
                     let mut path = self.cache_dir.clone();
-                    path.push(&key);
+                    path.push(&file_name);
                     trace!("Added file to cache: {}", &path.to_string_lossy());
-                    self.cache.insert(key.clone(), (path.clone(), file_size));
+                    self.cache.insert(key.clone(), (path.clone(), mime_type, file_size));
                     self.usage_order.push_back(key);
                     self.current_size += file_size;
                 }
@@ -82,31 +97,39 @@ impl LRUResourceCache {
     ///     - `file_size`: The size of the file in bytes.
     ///   - Returns:
     ///     - The `PathBuf` where the file is stored.
-    pub fn add_content(&mut self, url: &str, file_size: usize) -> std::io::Result<PathBuf> {
-        let key = hash_string_as_hex(url);
-        let path = self.insert_to_cache(key, file_size);
+    pub fn add_content(&mut self, url: &str, mime_type: Option<String>, file_size: usize) -> std::io::Result<PathBuf> {
+        let key = encode_cache_key(url);
+        let path = self.insert_to_cache(key, mime_type, file_size);
         if self.current_size > self.capacity {
             self.evict_if_needed();
         }
         Ok(path)
     }
 
-    fn insert_to_cache(&mut self, key: String, file_size: usize) -> PathBuf {
-        let mut path = self.cache_dir.clone();
-        path.push(&key);
+    fn insert_to_cache(&mut self, key: String, mime_type: Option<String>, file_size: usize) -> PathBuf {
+        let path = self.get_store_path(&key, mime_type.as_deref());
         debug!("Added file to cache: {}", &path.to_string_lossy());
-        self.cache.insert(key.clone(), (path.clone(), file_size));
+        self.cache.insert(key.clone(), (path.clone(), mime_type, file_size));
         self.usage_order.push_back(key);
         self.current_size += file_size;
         path
     }
 
-    pub fn store_path(&self, url: &str) -> PathBuf {
-        let key = hash_string_as_hex(url);
+    pub fn store_path(&self, url: &str, mime_type: Option<&str>) -> PathBuf {
+        self.get_store_path(&encode_cache_key(url), mime_type)
+    }
+
+    fn get_store_path(&self, cache_key: &str, mime_type: Option<&str>) -> PathBuf {
+        let key = if let Some(mime) = mime_type {
+            format!("{cache_key}.{}", encode_base64_string(mime.as_bytes()))
+        } else {
+            cache_key.to_string()
+        };
         let mut path = self.cache_dir.clone();
         path.push(&key);
         path
     }
+
 
     ///   - Retrieves a file from the cache if it exists.
     ///   - Moves the file's key to the end of the usage queue to mark it as recently used.
@@ -114,21 +137,27 @@ impl LRUResourceCache {
     ///     - `url`: The unique identifier for the file.
     ///   - Returns:
     ///     - The `PathBuf` of the file if it exists; `None` otherwise.
-    pub fn get_content(&mut self, url: &str) -> Option<PathBuf> {
-        let key = hash_string_as_hex(url);
+    pub fn get_content(&mut self, url: &str) -> Option<(PathBuf, Option<String>)> {
+        let key = encode_cache_key(url);
         {
-            if let Some((path, size)) = self.cache.get(&key) {
+            if let Some((path, mime_type, size)) = self.cache.get(&key) {
                 if path.exists() {
+                    trace_if_enabled!("Responding resource from cache with key: {key} for url: {}", sanitize_sensitive_info(url));
                     // Move to the end of the queue
-                    self.usage_order.retain(|k| k != &key);   // remove from queue
+                    if let Some(pos) = self.usage_order.iter().position(|k| k == &key) {
+                        self.usage_order.remove(pos); // remove from queue
+                    }
                     self.usage_order.push_back(key);  // add to the to end
-                    return Some(path.clone());
+                    return Some((path.clone(), mime_type.clone()));
                 }
                 {
+                    trace_if_enabled!("Cache inconsistency: file missing for key: {key}, url: {}", sanitize_sensitive_info(url));
                     // this should not happen, someone deleted the file manually and the cache is not in sync
                     self.current_size -= size;
                     self.cache.remove(&key);
-                    self.usage_order.retain(|k| k != &key);
+                    if let Some(pos) = self.usage_order.iter().position(|k| k == &key) {
+                        self.usage_order.remove(pos);
+                    }
                 }
             }
         }
@@ -139,7 +168,7 @@ impl LRUResourceCache {
         // if the cache size is to small and one element exceeds the size than the cache won't work, we ignore this
         while self.current_size > self.capacity {
             if let Some(oldest_file) = self.usage_order.pop_front() {
-                if let Some((file, size)) = self.cache.remove(&oldest_file) {
+                if let Some((file, _mime_type, size)) = self.cache.remove(&oldest_file) {
                     self.current_size -= size;
                     if let Err(err) = fs::remove_file(&file) {
                         error!("Failed to delete cached file {} {err}", file.to_string_lossy());

@@ -1,35 +1,31 @@
 use std::collections::HashSet;
-use crate::create_tuliprox_error_result;
-use crate::error::{handle_tuliprox_error_result_list, TuliproxError, TuliproxErrorKind};
+use std::sync::Arc;
+use crate::info_err_res;
+use crate::error::{TuliproxError};
 use crate::foundation::filter::prepare_templates;
 use crate::model::{ConfigInputDto, HdHomeRunDeviceOverview, PatternTemplate};
 use crate::model::config::target::ConfigTargetDto;
-use crate::utils::default_as_default;
+use crate::utils::{arc_str_vec_serde, default_as_default, Internable};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigSourceDto {
-    pub inputs: Vec<ConfigInputDto>,
+    #[serde(with = "arc_str_vec_serde")]
+    pub inputs: Vec<Arc<str>>,
     pub targets: Vec<ConfigTargetDto>,
 }
 
 impl ConfigSourceDto {
     #[allow(clippy::cast_possible_truncation)]
-    pub fn prepare(&mut self, index: u16, include_computed: bool) -> Result<u16, TuliproxError> {
-        let mut current_index = index;
+    pub fn prepare(&mut self, index: u16, _include_computed: bool) -> Result<u16, TuliproxError> {
+        let current_index = index;
         if self.inputs.is_empty() {
-            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "At least one input should be defined at source: {index}");
+            return info_err_res!("At least one input should be defined at source: {index}");
         }
-        handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, self.inputs.iter_mut()
-            .map(|i|
-                match i.prepare(current_index, include_computed) {
-                    Ok(new_idx) => {
-                        current_index = new_idx;
-                        Ok(())
-                    },
-                    Err(err) => Err(err)
-                }
-            ));
+        // Trim all input names
+        for input in &mut self.inputs {
+            *input = input.trim().intern();
+        }
         Ok(current_index)
     }
 }
@@ -39,6 +35,7 @@ impl ConfigSourceDto {
 pub struct SourcesConfigDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub templates: Option<Vec<PatternTemplate>>,
+    pub inputs: Vec<ConfigInputDto>,
     pub sources: Vec<ConfigSourceDto>,
 }
 
@@ -55,11 +52,21 @@ impl SourcesConfigDto {
         let mut source_index: u16 = 0;
         let mut input_index: u16 = 0;
         let mut target_index: u16 = 1;
+        // Prepare global inputs
+        for input in &mut self.inputs {
+            input_index = input.prepare(input_index, include_computed)?;
+        }
+
         for source in &mut self.sources {
             source_index = source.prepare(source_index, include_computed)?;
-            for input in &mut source.inputs {
-               input_index = input.prepare(input_index, include_computed)?;
+
+            // Validate referenced inputs
+            for name in &source.inputs {
+                if !self.inputs.iter().any(|i| &i.name == name) {
+                     return info_err_res!("Source references unknown input: '{name}'");
+                }
             }
+
             for target in &mut source.targets {
                 // prepare target templates
                 let prepare_result = match &self.templates {
@@ -96,12 +103,16 @@ impl SourcesConfigDto {
                 let target_name = target.name.as_str();
                 if !default_target_name.eq_ignore_ascii_case(target_name) {
                     if seen_names.contains(target_name) {
-                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "target names should be unique: {target_name}");
+                        return info_err_res!("target names should be unique: {target_name}");
                     }
                     seen_names.insert(target_name);
                 }
             }
         }
         Ok(())
+    }
+
+    pub fn get_input(&self, name: &Arc<str>) -> Option<&ConfigInputDto> {
+        self.inputs.iter().find(|i| &i.name == name)
     }
 }

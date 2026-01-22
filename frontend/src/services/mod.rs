@@ -8,6 +8,7 @@ mod websocket_service;
 mod toastr_service;
 mod event_service;
 mod user_service;
+mod user_api_service;
 mod streams_service;
 
 pub use self::auth_service::*;
@@ -20,4 +21,5 @@ pub use self::websocket_service::*;
 pub use self::toastr_service::*;
 pub use self::event_service::*;
 pub use self::user_service::*;
+pub use self::user_api_service::*;
 pub use self::streams_service::*;

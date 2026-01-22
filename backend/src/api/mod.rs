@@ -1,5 +1,6 @@
 pub mod model;
 pub mod api_utils;
+mod panel_api;
 mod scheduler;
 mod endpoints;
 pub mod main_api;
@@ -7,3 +8,5 @@ mod config_watch;
 mod serve;
 pub(crate) mod hdhomerun_ssdp;
 pub(crate) mod hdhomerun_proprietary;
+mod sys_usage;
+mod config_file;

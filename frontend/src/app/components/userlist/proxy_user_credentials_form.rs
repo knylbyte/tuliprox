@@ -246,14 +246,14 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
 
           </div>
           <div class="tp__proxy-user-credentials-form__toolbar tp__form-page__toolbar">
-             <TextButton class="primary" name="save_user"
-                icon="Save"
-                title={ translate.t("LABEL.SAVE")}
-                onclick={handle_save_user}></TextButton>
              <TextButton class="secondary" name="cancel_user"
                 icon="Cancel"
                 title={ translate.t("LABEL.CANCEL")}
                 onclick={handle_cancel}></TextButton>
+             <TextButton class="primary" name="save_user"
+                icon="Save"
+                title={ translate.t("LABEL.SAVE")}
+                onclick={handle_save_user}></TextButton>
           </div>
         </div>
     }

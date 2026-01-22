@@ -60,6 +60,7 @@ pub struct ContentRequest {
     pub content: Html,
     pub actions: DialogActions,
     pub resolve: Rc<RefCell<Option<DialogResultCallback>>>,
+    pub close_on_backdrop_click: bool,
 }
 
 #[derive(Clone)]
@@ -98,7 +99,7 @@ impl DialogService {
         future
     }
 
-    pub fn content(&self, content: Html, actions: Option<DialogActions>) -> DialogFuture {
+    pub fn content(&self, content: Html, actions: Option<DialogActions>, close_on_backdrop_click: bool) -> DialogFuture {
         let (future, resolver) = DialogFuture::new();
         let request = ContentRequest {
             content,
@@ -107,6 +108,7 @@ impl DialogService {
                 right: vec![DialogAction::new_focused("close", "LABEL.CLOSE", DialogResult::Cancel, Some("Close".to_owned()), None)],
             }),
             resolve: Rc::new(RefCell::new(Some(Box::new(resolver)))),
+            close_on_backdrop_click
         };
 
         if let Some(cb) = &*self.inner.borrow() {

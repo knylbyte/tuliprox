@@ -8,6 +8,9 @@ working_dir: ${env:TULIPROX_HOME}/data
 backup_dir: ${env:TULIPROX_HOME}/backup
 custom_stream_response_path: ${env:TULIPROX_HOME}/resources
 connect_timeout_secs: 10
+# Used when no `User-Agent` is provided by the client request and none is set in input headers.
+# If omitted, the built-in default is used.
+default_user_agent: "VLC/3.0.16 LibVLC/3.0.16"
 user_access_control: false
 
 schedules:
@@ -72,3 +75,51 @@ reverse_proxy:
     backoff_multiplier: 1.0
   stream:
     shared_burst_buffer_mb: 12 # default 12 MB
+
+library:
+  enabled: true
+  scan_directories:
+    - path: "/media/movies"
+      enabled: true
+
+    - path: "/media/tvshows"
+      enabled: true
+
+    # You can add more directories as needed
+    # - path: "/mnt/videos"
+    #   enabled: false
+
+  supported_extensions:
+    - "mp4"
+    - "mkv"
+    - "avi"
+    - "mov"
+    - "ts"
+    - "m4v"
+    - "webm"
+
+  # Metadata configuration
+  metadata:
+    # Location to store metadata cache (JSON files)
+    path: "${env:TULIPROX_HOME}/library_metadata"
+
+    # TMDB (The Movie Database) API integration
+    tmdb:
+      enabled: true
+      # api_key: ""  # Get your API key from https://www.themoviedb.org/settings/api
+      rate_limit_ms: 250  # Milliseconds between API calls (default: 250ms)
+
+    # Fallback to filename parsing if no metadata found
+    fallback_to_filename: true
+
+    # Metadata output formats
+    formats:
+      # - "nfo"  # Optionally write Kodi-compatible NFO files
+
+  # Playlist integration
+  playlist:
+    # Group name for movies in M3U/Xtream playlist
+    movie_category: "Local Movies"
+
+    # Group name for series in M3U/Xtream playlist
+    series_category: "Local Series"

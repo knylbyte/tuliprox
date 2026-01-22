@@ -1,222 +1,147 @@
-use shared::model::InputType;
-use shared::error::{TuliproxError};
+use crate::model::FetchedPlaylist;
 use crate::model::{AppConfig, ConfigTarget};
-use crate::model::{FetchedPlaylist};
-use shared::model::{PlaylistGroup, PlaylistItem, PlaylistItemType, XtreamCluster};
-use crate::processing::processor::playlist::ProcessingPipe;
 use crate::processing::parser::xtream::parse_xtream_series_info;
-use crate::processing::processor::xtream::{create_resolve_episode_wal_files, create_resolve_info_wal_files, playlist_resolve_download_playlist_item, read_processed_info_ids, should_update_info};
-use crate::repository::storage::get_input_storage_path;
-use crate::repository::xtream_repository::{write_series_info_to_wal_file, xtream_get_info_file_paths, xtream_update_input_info_file, xtream_update_input_series_episodes_record_from_wal_file, xtream_update_input_series_record_from_wal_file};
-use crate::repository::IndexedDocumentReader;
-use shared::error::{notify_err, info_err};
-use crate::processing::processor::{handle_error, handle_error_and_return, create_resolve_options_function_for_xtream_target};
+use crate::processing::processor::create_resolve_options_function_for_xtream_target;
+use crate::processing::processor::playlist::ProcessingPipe;
+use crate::processing::processor::xtream::playlist_resolve_download_playlist_item;
+use crate::repository::{get_input_storage_path, persist_input_series_info_batch, MemoryPlaylistSource, PlaylistSource};
+use log::{error, info, log_enabled, Level};
+use shared::error::TuliproxError;
+use shared::model::{InputType, PlaylistEntry, SeriesStreamProperties, StreamProperties, XtreamSeriesInfo};
+use shared::model::{PlaylistGroup, PlaylistItemType, XtreamCluster};
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufWriter, Write};
 use std::sync::Arc;
 use std::time::Instant;
-use log::{error, info, log_enabled, warn, Level};
-use crate::model::{XtreamSeriesEpisode, XtreamSeriesInfoEpisode};
-use crate::utils;
-use crate::processing::processor::xtream::normalize_json_content;
-use crate::utils::bincode_serialize;
 
 create_resolve_options_function_for_xtream_target!(series);
 
-async fn read_processed_series_info_ids(cfg: &AppConfig, errors: &mut Vec<TuliproxError>, fpl: &FetchedPlaylist<'_>) -> HashMap<u32, u64> {
-    read_processed_info_ids(cfg, errors, fpl, PlaylistItemType::SeriesInfo, |ts: &u64| *ts).await
-}
+const BATCH_SIZE: usize = 100;
 
-fn write_series_episode_record_to_wal_file(
-    writer: &mut BufWriter<&File>,
-    provider_id: u32,
-    episode: &XtreamSeriesInfoEpisode,
-) -> std::io::Result<()> {
-    let series_episode = XtreamSeriesEpisode::from(episode);
-    if let Ok(content_bytes) = bincode_serialize(&series_episode) {
-        writer.write_all(&provider_id.to_le_bytes())?;
-        if let Ok(len)  = u32::try_from(content_bytes.len()) {
-            writer.write_all(&len.to_le_bytes())?;
-            writer.write_all(&content_bytes)?;
-        } else {
-            error!("Cant write to WAL file, content length exceeds u32");
-        }
-    }
-    Ok(())
-}
+#[allow(clippy::too_many_lines)]
+async fn playlist_resolve_series_info(app_config: &Arc<AppConfig>, client: &reqwest::Client,
+                                      errors: &mut Vec<TuliproxError>,
+                                      fpl: &mut FetchedPlaylist<'_>,
+                                      resolve_series: bool,
+                                      resolve_delay: u16) -> Vec<PlaylistGroup> {
 
-fn should_update_series_info(pli: &mut PlaylistItem, processed_provider_ids: &HashMap<u32, u64>) -> (bool, u32, u64) {
-    should_update_info(pli, processed_provider_ids, crate::model::XC_TAG_SERIES_INFO_LAST_MODIFIED)
-}
-
-async fn playlist_resolve_series_info(cfg: &AppConfig, client: Arc<reqwest::Client>, errors: &mut Vec<TuliproxError>,
-                                      fpl: &mut FetchedPlaylist<'_>, resolve_delay: u16) -> bool {
-    let mut processed_info_ids = read_processed_series_info_ids(cfg, errors, fpl).await;
-    // we cant write to the indexed-document directly because of the write lock and time-consuming operation.
-    // All readers would be waiting for the lock and the app would be unresponsive.
-    // We collect the content into a wal file and write it once we collected everything.
-    let Some((wal_content_file, wal_record_file, wal_content_path, wal_record_path)) = create_resolve_info_wal_files(&cfg.config.load(), fpl.input, XtreamCluster::Series)
-    else { return !processed_info_ids.is_empty(); };
-
-    let mut content_writer = utils::file_writer(&wal_content_file);
-    let mut record_writer = utils::file_writer(&wal_record_file);
-    let mut content_updated = false;
-
-    // TODO merge both filters to one
-    let series_info_count = fpl.playlistgroups.iter()
-        .filter(|&plg| plg.xtream_cluster == XtreamCluster::Series)
-        .flat_map(|plg| &plg.channels)
-        .filter(|&pli| pli.header.item_type == PlaylistItemType::SeriesInfo).count();
-
-    let series_info_iter = fpl.playlistgroups.iter_mut()
-        .filter(|plg| plg.xtream_cluster == XtreamCluster::Series)
-        .flat_map(|plg| &mut plg.channels)
-        .filter(|pli| pli.header.item_type == PlaylistItemType::SeriesInfo);
-
-
-    info!("Found {series_info_count} series info to resolve");
-    let start_time = Instant::now();
-    let mut processed_series_info_count = 0;
-    let mut last_processed_series_info_count = 0;
-    for pli in series_info_iter {
-        let (should_update, provider_id, ts) = should_update_series_info(pli, &processed_info_ids);
-        if should_update {
-            if let Some(content) = playlist_resolve_download_playlist_item(Arc::clone(&client), pli, fpl.input, errors, resolve_delay, XtreamCluster::Series).await {
-                let normalized_content = normalize_json_content(content);
-                handle_error_and_return!(write_series_info_to_wal_file(provider_id, ts, &normalized_content, &mut content_writer, &mut record_writer),
-                        |err| errors.push(notify_err!(format!("Failed to resolve series, could not write to wal file {err}"))));
-                processed_info_ids.insert(provider_id, ts);
-                content_updated = true;
-            }
-        }
-        if log_enabled!(Level::Info) {
-            processed_series_info_count += 1;
-            let elapsed = start_time.elapsed().as_secs();
-            if elapsed > 0 &&  ((processed_series_info_count - last_processed_series_info_count) > 50) && elapsed.is_multiple_of(30) {
-                info!("resolved {processed_series_info_count}/{series_info_count} series info");
-                last_processed_series_info_count = processed_series_info_count;
-            }
-        }
-    }
-    if last_processed_series_info_count != processed_series_info_count {
-        info!("resolved {processed_series_info_count}/{series_info_count} series info");
-    }
-    // content_wal contains the provider_id and series_info with episode listing
-    // record_wal contains provider_id and timestamp
-    if content_updated {
-        handle_error!(content_writer.flush(),
-            |err| errors.push(notify_err!(format!("Failed to resolve vod, could not write to wal file {err}"))));
-        handle_error!(record_writer.flush(),
-            |err| errors.push(notify_err!(format!("Failed to resolve vod tmdb, could not write to wal file {err}"))));
-        handle_error!(content_writer.get_ref().sync_all(), |err| errors.push(notify_err!(format!("Failed to sync series info to wal file {err}"))));
-        handle_error!(record_writer.get_ref().sync_all(), |err| errors.push(notify_err!(format!("Failed to sync series info record to wal file {err}"))));
-        drop(content_writer);
-        drop(wal_content_file);
-        drop(record_writer);
-        drop(wal_record_file);
-        handle_error!(xtream_update_input_info_file(cfg, fpl.input, &wal_content_path, XtreamCluster::Series).await,
-            |err| errors.push(err));
-        handle_error!(xtream_update_input_series_record_from_wal_file(cfg, fpl.input, &wal_record_path).await,
-            |err| errors.push(err));
-    }
-
-    // TODO better approach for transactional updates is multiplexed WAL file.
-    // we updated now
-    // - series_info.db  which contains the original series_info json
-    // - series_record.db which contains the series_info provider_id and timestamp
-    !processed_info_ids.is_empty()
-}
-async fn process_series_info(
-    app_config: &AppConfig,
-    fpl: &mut FetchedPlaylist<'_>,
-    errors: &mut Vec<TuliproxError>,
-) -> Vec<PlaylistGroup> {
-    let mut result: Vec<PlaylistGroup> = vec![];
     let input = fpl.input;
-    let config = app_config.config.load();
-    let Ok(Some((info_path, idx_path))) = get_input_storage_path(&input.name, &config.working_dir)
-        .map(|storage_path| xtream_get_info_file_paths(&storage_path, XtreamCluster::Series))
-    else {
-        errors.push(notify_err!("Failed to open input info file for series".to_string()));
-        return result;
+    let working_dir = &app_config.config.load().working_dir;
+    let storage_path = match get_input_storage_path(&input.name, working_dir) {
+        Ok(storage_path) => storage_path,
+        Err(err) => {
+            error!("Can't resolve series info, input storage directory for input '{}' failed: {err}", input.name);
+            return vec![];
+        }
     };
 
-    let _file_lock = app_config.file_locks.read_lock(&info_path).await;
-
-    // Contains the Series Info with episode listing
-    let Ok(mut info_reader) = IndexedDocumentReader::<u32, String>::new(&info_path, &idx_path) else { return result; };
-
-    let Some((wal_file, wal_path)) = create_resolve_episode_wal_files(&config, input) else {
-        errors.push(notify_err!("Could not create wal file for series episodes record".to_string()));
-        return result;
+    let series_info_count = if resolve_series {
+        let series_info_count = fpl.get_missing_series_info_count();
+        if series_info_count > 0 {
+            info!("Found {series_info_count} series info to resolve");
+        }
+        series_info_count
+    } else {
+        0
     };
-    let mut wal_writer = utils::file_writer(&wal_file);
 
-    for plg in fpl
-        .playlistgroups
-        .iter_mut()
-        .filter(|plg| plg.xtream_cluster == XtreamCluster::Series)
-    {
-        let mut group_series = vec![];
+    let mut last_log_time = Instant::now();
+    let mut processed_series_info_count = 0;
+    let mut group_series: HashMap<u32, PlaylistGroup> = HashMap::new();
+    let mut batch = Vec::with_capacity(BATCH_SIZE);
+    let default_user_agent = app_config.config.load().default_user_agent.clone();
 
-        for pli in plg
-            .channels
-            .iter_mut()
-            .filter(|pli| pli.header.item_type == PlaylistItemType::SeriesInfo)
-        {
-            let Some(provider_id) = pli.header.get_provider_id() else { continue; };
-            let Ok(content) = info_reader.get(&provider_id)  else { continue; };
-            if content.is_empty() {
-                warn!("Series info content is empty, skipping series with provider id: {provider_id}");
-                continue;
-            }
-            match serde_json::from_str::<serde_json::Value>(&content) {
-                Ok(series_content) => {
-                    let (group, series_name) = {
-                        let header = &pli.header;
-                        (header.group.clone(), if header.name.is_empty() {header.title.clone()} else { header.name.clone()})
-                    };
-                    match parse_xtream_series_info(&series_content, &group, &series_name, input) {
-                        Ok(Some(mut series)) => {
-                            for (episode, pli_episode) in &mut series {
-                                let Some(provider_id) = &pli_episode.header.get_provider_id() else { continue; };
-                                handle_error!(write_series_episode_record_to_wal_file(&mut wal_writer, *provider_id, episode),
-                                |err| errors.push(info_err!(format!("Failed to write to series episode wal file: {err}"))));
+    let input = fpl.input;
+    for pli in fpl.items_mut() {
+        if pli.header.xtream_cluster != XtreamCluster::Series
+            || pli.header.item_type != PlaylistItemType::SeriesInfo {
+            continue;
+        }
+
+        let Some(provider_id) = pli.get_provider_id() else { continue; };
+        if provider_id == 0 {
+            continue;
+        }
+
+        let should_download = resolve_series && !pli.has_details();
+        if should_download {
+            processed_series_info_count += 1;
+            if let Some(content) = playlist_resolve_download_playlist_item(
+                client,
+                pli,
+                input,
+                errors,
+                resolve_delay,
+                XtreamCluster::Series,
+                default_user_agent.as_deref(),
+            )
+                .await
+            {
+                if !content.is_empty() {
+                    //tokio::fs::write(&storage_path.join(format!("{provider_id}_series_info.json")), &content).await.ok();
+                    match serde_json::from_str::<XtreamSeriesInfo>(&content) {
+                        Ok(info) => {
+                            let series_stream_props = SeriesStreamProperties::from_info(&info, pli);
+
+                            batch.push((provider_id, series_stream_props.clone()));
+                            if batch.len() >= BATCH_SIZE {
+                                if let Err(err) = persist_input_series_info_batch(app_config, &storage_path, XtreamCluster::Series, &input.name, std::mem::take(&mut batch)).await {
+                                    error!("Failed to persist batch series info: {err}");
+                                }
                             }
-                            group_series.extend(series.into_iter().map(|(_, pli)| pli));
+
+                            // Update in-memory playlist items with the newly fetched vod info.
+                            // This makes the data available for later processing steps like STRM export.
+                            pli.header.additional_properties = Some(StreamProperties::Series(Box::new(series_stream_props)));
                         }
-                        Ok(None) => {}
                         Err(err) => {
-                            errors.push(err);
+                            error!("Failed to parse series info for provider_id {provider_id}: {err}");
                         }
                     }
                 }
-                Err(err) => errors.push(info_err!(format!("Failed to parse JSON: {err}"))),
             }
         }
-        if !group_series.is_empty() {
-            result.push(PlaylistGroup {
-                id: plg.id,
-                title: plg.title.clone(),
-                channels: group_series,
-                xtream_cluster: XtreamCluster::Series,
-            });
+
+        // extract episodes from info
+        if let Some(StreamProperties::Series(properties)) = pli.header.additional_properties.as_ref() {
+            let (group, series_name) = {
+                let header = &pli.header;
+                (header.group.clone(), if header.name.is_empty() { header.title.clone() } else { header.name.clone() })
+            };
+            if let Some(episodes) = parse_xtream_series_info(&pli.get_uuid(), properties, &group, &series_name, input) {
+                let group = group_series.entry(pli.header.category_id)
+                    .or_insert_with(|| {
+                        PlaylistGroup {
+                            id: pli.header.category_id,
+                            title: pli.header.group.clone(),
+                            channels: Vec::new(),
+                            xtream_cluster: XtreamCluster::Series,
+                        }
+                    });
+                group.channels.extend(episodes.into_iter());
+            }
+        }
+
+        if resolve_series && log_enabled!(Level::Info) && last_log_time.elapsed().as_secs() >= 30 {
+            info!("resolved {processed_series_info_count}/{series_info_count} series info");
+            last_log_time = Instant::now();
         }
     }
 
-    handle_error!(wal_writer.flush(),
-            |err| errors.push(notify_err!(format!("Failed to resolve series episodes, could not write to wal file {err}"))));
-    drop(wal_writer);
-    drop(wal_file);
-    handle_error!(xtream_update_input_series_episodes_record_from_wal_file(app_config, input, &wal_path).await,
-            |err| errors.push(err));
-    result
+    if !batch.is_empty() {
+        if let Err(err) = persist_input_series_info_batch(app_config, &storage_path, XtreamCluster::Series, &input.name, batch).await {
+            error!("Failed to persist final batch series info: {err}");
+        }
+    }
+
+    if resolve_series {
+        info!("resolved {processed_series_info_count}/{series_info_count} series info");
+    }
+    group_series.into_values().collect()
 }
 
-
-pub async fn playlist_resolve_series(cfg: &AppConfig,
-                                     client: Arc<reqwest::Client>,
+#[allow(clippy::too_many_arguments)]
+pub async fn playlist_resolve_series(cfg: &Arc<AppConfig>,
+                                     client: &reqwest::Client,
                                      target: &ConfigTarget,
                                      errors: &mut Vec<TuliproxError>,
                                      pipe: &ProcessingPipe,
@@ -224,24 +149,31 @@ pub async fn playlist_resolve_series(cfg: &AppConfig,
                                      processed_fpl: &mut FetchedPlaylist<'_>,
 ) {
     let (resolve_series, resolve_delay) = get_resolve_series_options(target, processed_fpl);
-    if !resolve_series { return; }
 
-    if !playlist_resolve_series_info(cfg, client, errors, processed_fpl, resolve_delay).await { return; }
-    let series_playlist = process_series_info(cfg, provider_fpl, errors).await;
+    provider_fpl.source.release_resources(XtreamCluster::Series);
+    let series_playlist = playlist_resolve_series_info(cfg, client, errors, processed_fpl, resolve_series, resolve_delay).await;
+    provider_fpl.source.obtain_resources().await;
     if series_playlist.is_empty() { return; }
-    // original content saved into original list
-    for plg in &series_playlist {
-        provider_fpl.update_playlist(plg);
-    }
-    // run processing pipe over new items
-    let mut new_playlist = series_playlist;
-    for f in pipe {
-        if let Some(v) = f(&mut new_playlist, target) {
-            new_playlist = v;
+
+    if provider_fpl.is_memory() {
+        // original content saved into original list
+        for plg in &series_playlist {
+            provider_fpl.update_playlist(plg).await;
         }
     }
+    // run the processing pipe over new items
+    let mut new_playlist = series_playlist;
+    for f in pipe {
+        let mut source = MemoryPlaylistSource::new(new_playlist);
+        if let Some(v) = f(&mut source, target) {
+            new_playlist = v;
+        } else {
+            new_playlist = source.take_groups();
+        }
+    }
+
     // assign new items to the new playlist
     for plg in &new_playlist {
-        processed_fpl.update_playlist(plg);
+        processed_fpl.update_playlist(plg).await;
     }
 }

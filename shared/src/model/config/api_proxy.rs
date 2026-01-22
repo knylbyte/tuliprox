@@ -1,5 +1,7 @@
+use crate::utils::is_false;
+use crate::utils::is_blank_optional_string;
 use std::collections::HashSet;
-use crate::error::{info_err, TuliproxError};
+use crate::error::{info_err_res, TuliproxError};
 use crate::model::{ProxyUserCredentialsDto};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -14,20 +16,22 @@ pub struct ApiProxyServerInfoDto {
     pub name: String,
     pub protocol: String,
     pub host: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub port: Option<String>,
     pub timezone: String,
     pub message: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ApiProxyConfigDto {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub server: Vec<ApiProxyServerInfoDto>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user: Vec<TargetUserDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub use_user_db: bool,
 }
 
@@ -35,22 +39,22 @@ impl ApiProxyServerInfoDto {
     pub fn prepare(&mut self) -> Result<(), TuliproxError> {
         self.name = self.name.trim().to_string();
         if self.name.is_empty() {
-            return Err(info_err!("Server info name is empty ".to_string()));
+            return info_err_res!("Server info name is empty ");
         }
         self.protocol = self.protocol.trim().to_string();
         if self.protocol.is_empty() {
-            return Err(info_err!("protocol cant be empty for api server config".to_string()));
+            return info_err_res!("protocol can't be empty for api server config");
         }
         self.host = self.host.trim().to_string();
         if self.host.is_empty() {
-            return Err(info_err!("host cant be empty for api server config".to_string()));
+            return info_err_res!("host can't be empty for api server config");
         }
         if let Some(port) = self.port.as_ref() {
             let port = port.trim().to_string();
             if port.is_empty() {
                 self.port = None;
             } else if port.parse::<u16>().is_err() {
-                return Err(info_err!("invalid port for api server config".to_string()));
+                return info_err_res!("invalid port for api server config");
             } else {
                 self.port = Some(port);
             }
@@ -147,7 +151,7 @@ impl ApiProxyConfigDto {
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(info_err!(errors.join("\n")))
+            info_err_res!("{}", errors.join("\n"))
         }
     }
 }

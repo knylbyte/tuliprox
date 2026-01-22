@@ -8,7 +8,7 @@ pub fn format_elapsed_time(seconds: u64) -> String {
     } else {
         let minutes = seconds / 60;
         let seconds = seconds % 60;
-        format!("{minutes}:{seconds} mins")
+        format!("{minutes}:{seconds:02} mins")
     }
 }
 

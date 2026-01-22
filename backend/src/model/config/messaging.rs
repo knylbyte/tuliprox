@@ -1,5 +1,6 @@
-use shared::model::{MessagingConfigDto, MsgKind, PushoverMessagingConfigDto, RestMessagingConfigDto, TelegramMessagingConfigDto};
+use log::warn;
 use crate::model::macros;
+use shared::model::{DiscordMessagingConfigDto, MessagingConfigDto, MsgKind, PushoverMessagingConfigDto, RestMessagingConfigDto, TelegramMessagingConfigDto};
 
 #[derive(Debug, Clone)]
 pub struct TelegramMessagingConfig {
@@ -9,7 +10,7 @@ pub struct TelegramMessagingConfig {
 }
 
 macros::from_impl!(TelegramMessagingConfig);
-impl From<&TelegramMessagingConfigDto>  for TelegramMessagingConfig {
+impl From<&TelegramMessagingConfigDto> for TelegramMessagingConfig {
     fn from(dto: &TelegramMessagingConfigDto) -> Self {
         Self {
             bot_token: dto.bot_token.clone(),
@@ -19,7 +20,7 @@ impl From<&TelegramMessagingConfigDto>  for TelegramMessagingConfig {
     }
 }
 
-impl From<&TelegramMessagingConfig>  for TelegramMessagingConfigDto {
+impl From<&TelegramMessagingConfig> for TelegramMessagingConfigDto {
     fn from(instance: &TelegramMessagingConfig) -> Self {
         Self {
             bot_token: instance.bot_token.clone(),
@@ -32,21 +33,66 @@ impl From<&TelegramMessagingConfig>  for TelegramMessagingConfigDto {
 #[derive(Debug, Clone)]
 pub struct RestMessagingConfig {
     pub url: String,
+    pub method: String,
+    pub headers: std::collections::HashMap<String, String>,
+    pub template: Option<String>,
 }
 
 macros::from_impl!(RestMessagingConfig);
 impl From<&RestMessagingConfigDto> for RestMessagingConfig {
     fn from(dto: &RestMessagingConfigDto) -> Self {
+        let mut headers = std::collections::HashMap::new();
+        for h in &dto.headers {
+            if let Some((k, v)) = h.split_once(':') {
+                headers.insert(k.trim().to_string(), v.trim().to_string());
+            } else if !h.trim().is_empty() {
+                warn!("Ignoring malformed header (missing ':'): {h}");
+            }
+        }
         Self {
             url: dto.url.clone(),
+            method: dto.method.clone().unwrap_or_else(|| "POST".to_string()),
+            headers,
+            template: dto.template.clone(),
         }
     }
 }
 
 impl From<&RestMessagingConfig> for RestMessagingConfigDto {
-    fn from(instance: &RestMessagingConfig) -> Self {
+    fn from(model: &RestMessagingConfig) -> Self {
+        let headers = model.headers.iter()
+            .map(|(k, v)| format!("{k}: {v}"))
+            .collect();
+        Self {
+            url: model.url.clone(),
+            method: Some(model.method.clone()),
+            headers,
+            template: model.template.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DiscordMessagingConfig {
+    pub url: String,
+    pub template: Option<String>,
+}
+
+macros::from_impl!(DiscordMessagingConfig);
+impl From<&DiscordMessagingConfigDto> for DiscordMessagingConfig {
+    fn from(dto: &DiscordMessagingConfigDto) -> Self {
+        Self {
+            url: dto.url.clone(),
+            template: dto.template.clone(),
+        }
+    }
+}
+
+impl From<&DiscordMessagingConfig> for DiscordMessagingConfigDto {
+    fn from(instance: &DiscordMessagingConfig) -> Self {
         Self {
             url: instance.url.clone(),
+            template: instance.template.clone(),
         }
     }
 }
@@ -85,6 +131,7 @@ pub struct MessagingConfig {
     pub telegram: Option<TelegramMessagingConfig>,
     pub rest: Option<RestMessagingConfig>,
     pub pushover: Option<PushoverMessagingConfig>,
+    pub discord: Option<DiscordMessagingConfig>,
 }
 
 macros::from_impl!(MessagingConfig);
@@ -95,6 +142,7 @@ impl From<&MessagingConfigDto> for MessagingConfig {
             telegram: dto.telegram.as_ref().map(Into::into),
             rest: dto.rest.as_ref().map(Into::into),
             pushover: dto.pushover.as_ref().map(Into::into),
+            discord: dto.discord.as_ref().map(Into::into),
         }
     }
 }
@@ -106,6 +154,7 @@ impl From<&MessagingConfig> for MessagingConfigDto {
             telegram: instance.telegram.as_ref().map(Into::into),
             rest: instance.rest.as_ref().map(Into::into),
             pushover: instance.pushover.as_ref().map(Into::into),
+            discord: instance.discord.as_ref().map(Into::into),
         }
     }
 }

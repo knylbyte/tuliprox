@@ -1,14 +1,14 @@
-use crate::model::mapping::Mapping;
+use crate::model::config::favourites::ConfigFavourites;
 use crate::model::config::trakt::TraktConfig;
+use crate::model::mapping::Mapping;
+use crate::model::{macros, ConfigRename, ConfigSort};
 use arc_swap::ArcSwapOption;
-use shared::model::{ConfigTargetDto, ConfigTargetOptions, HdHomeRunTargetOutputDto, M3uTargetOutputDto, ProcessingOrder, StrmExportStyle, StrmTargetOutputDto, TargetOutputDto, TargetType, TraktConfigDto, XtreamTargetOutputDto};
+use shared::model::{ConfigTargetDto, ConfigTargetOptions, HdHomeRunTargetOutputDto, M3uTargetOutputDto,
+                    ProcessingOrder, StrmExportStyle, StrmTargetOutputDto, TargetOutputDto, TargetType, TraktConfigDto, XtreamTargetOutputDto};
 use shared::model::PlaylistItemType;
 use std::sync::Arc;
-use regex::Regex;
 use shared::foundation::filter::Filter;
 use shared::foundation::filter::ValueProvider;
-use crate::model::{macros, ConfigRename, ConfigSort};
-use crate::model::config::favourites::ConfigFavourites;
 
 #[derive(Clone, Debug)]
 pub struct ProcessTargets {
@@ -196,9 +196,9 @@ impl From<&TargetOutputDto> for TargetOutput {
     fn from(dto: &TargetOutputDto) -> Self {
         match dto {
             TargetOutputDto::Xtream(o) => TargetOutput::Xtream(XtreamTargetOutput::from(o)),
-            TargetOutputDto::M3u(o)  => TargetOutput::M3u(M3uTargetOutput::from(o)),
-            TargetOutputDto::Strm(o)  => TargetOutput::Strm(StrmTargetOutput::from(o)),
-            TargetOutputDto::HdHomeRun(o) =>  TargetOutput::HdHomeRun(HdHomeRunTargetOutput::from(o)),
+            TargetOutputDto::M3u(o) => TargetOutput::M3u(M3uTargetOutput::from(o)),
+            TargetOutputDto::Strm(o) => TargetOutput::Strm(StrmTargetOutput::from(o)),
+            TargetOutputDto::HdHomeRun(o) => TargetOutput::HdHomeRun(HdHomeRunTargetOutput::from(o)),
         }
     }
 }
@@ -207,9 +207,9 @@ impl From<&TargetOutput> for TargetOutputDto {
     fn from(instance: &TargetOutput) -> Self {
         match instance {
             TargetOutput::Xtream(o) => TargetOutputDto::Xtream(XtreamTargetOutputDto::from(o)),
-            TargetOutput::M3u(o)  => TargetOutputDto::M3u(M3uTargetOutputDto::from(o)),
-            TargetOutput::Strm(o)  => TargetOutputDto::Strm(StrmTargetOutputDto::from(o)),
-            TargetOutput::HdHomeRun(o) =>  TargetOutputDto::HdHomeRun(HdHomeRunTargetOutputDto::from(o)),
+            TargetOutput::M3u(o) => TargetOutputDto::M3u(M3uTargetOutputDto::from(o)),
+            TargetOutput::Strm(o) => TargetOutputDto::Strm(StrmTargetOutputDto::from(o)),
+            TargetOutput::HdHomeRun(o) => TargetOutputDto::HdHomeRun(HdHomeRunTargetOutputDto::from(o)),
         }
     }
 }
@@ -228,14 +228,13 @@ pub struct ConfigTarget {
     pub mapping: Arc<ArcSwapOption<Vec<Mapping>>>,
     pub favourites: Option<Vec<ConfigFavourites>>,
     pub processing_order: ProcessingOrder,
-    pub watch: Option<Vec<regex::Regex>>,
+    pub watch: Option<Vec<Arc<regex::Regex>>>,
     pub use_memory_cache: bool,
 }
 
 impl ConfigTarget {
-
     pub fn filter(&self, provider: &ValueProvider) -> bool {
-      self.filter.filter(provider)
+        self.filter.filter(provider)
     }
 
     pub(crate) fn get_xtream_output(&self) -> Option<&XtreamTargetOutput> {
@@ -283,6 +282,9 @@ impl ConfigTarget {
     }
 
     pub fn is_force_redirect(&self, item_type: PlaylistItemType) -> bool {
+        if item_type.is_local() {
+            return false;
+        }
         self.options
             .as_ref()
             .and_then(|options| options.force_redirect.as_ref())
@@ -293,7 +295,6 @@ impl ConfigTarget {
 macros::from_impl!(ConfigTarget);
 impl From<&ConfigTargetDto> for ConfigTarget {
     fn from(dto: &ConfigTargetDto) -> Self {
-
         Self {
             id: dto.id,
             enabled: dto.enabled,
@@ -307,7 +308,14 @@ impl From<&ConfigTargetDto> for ConfigTarget {
             mapping: Arc::new(ArcSwapOption::new(None)),
             favourites: dto.favourites.as_ref().map(|f| f.iter().map(Into::into).collect()),
             processing_order: dto.processing_order,
-            watch: dto.watch.as_ref().map(|list| list.iter().filter_map(|s| Regex::new(s).ok()).collect()),
+            watch: dto.watch.as_ref().map(|list| list.iter().filter_map(|s|
+                match shared::model::REGEX_CACHE.get_or_compile(s) {
+                    Ok(re) => Some(re),
+                    Err(e) => {
+                        log::warn!("Invalid watch regex pattern '{s}': {e}");
+                        None
+                    }
+                }).collect()),
             use_memory_cache: dto.use_memory_cache,
         }
     }

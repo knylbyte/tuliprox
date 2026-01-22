@@ -1,4 +1,4 @@
-use crate::api::api_utils::{create_session_fingerprint, try_unwrap_body};
+use crate::api::api_utils::{create_session_fingerprint, local_stream_response, try_unwrap_body};
 use crate::api::api_utils::{
     force_provider_stream_response, get_user_target, get_user_target_by_credentials,
     is_seek_request, redirect, redirect_response, resource_response, separate_number_and_remainder,
@@ -10,8 +10,9 @@ use crate::api::model::AppState;
 use crate::api::model::UserApiRequest;
 use crate::api::model::{create_custom_video_stream_response, CustomVideoStreamType};
 use crate::auth::Fingerprint;
-use crate::repository::m3u_repository::{m3u_get_item_for_stream_id, m3u_load_rewrite_playlist};
+use crate::repository::{m3u_get_item_for_stream_id, m3u_load_rewrite_playlist};
 use crate::repository::storage_const;
+use crate::utils::debug_if_enabled;
 use axum::response::IntoResponse;
 use bytes::Bytes;
 use futures::stream;
@@ -92,6 +93,9 @@ async fn m3u_api_stream(
             stream_req.username
         )
     );
+
+    let _guard =  app_state.app_config.file_locks.write_lock_str(&user.username).await;
+
     if user.permission_denied(app_state) {
         return create_custom_video_stream_response(
             app_state, &fingerprint.addr,
@@ -114,16 +118,40 @@ async fn m3u_api_stream(
         format!("Failed to read m3u item for stream id {req_virtual_id}")
     );
     let virtual_id = pli.virtual_id;
-    let input = try_option_bad_request!(
-        app_state
-            .app_config
-            .get_input_by_name(pli.input_name.as_str()),
-        true,
-        format!("Cant find input for target {target_name}, stream_id {virtual_id}")
-    );
-    let cluster = XtreamCluster::try_from(pli.item_type).unwrap_or(XtreamCluster::Live);
 
-    let session_key = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
+    if app_state.active_users.is_user_blocked_for_stream(&user.username, virtual_id).await {
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
+    }
+
+    let input = try_option_bad_request!(
+      app_state
+      .app_config
+      .get_input_by_name(&pli.input_name),
+      true,
+      format!("Can't find input {} for target {target_name}, stream_id {virtual_id}", pli.input_name)
+    );
+
+    if pli.item_type.is_local() {
+        let connection_permission = user.connection_permission(app_state).await;
+        return local_stream_response(
+            fingerprint,
+            app_state,
+            pli.to_stream_channel(target.id),
+            req_headers,
+            &input,
+            &target,
+            &user,
+            connection_permission,
+            true,
+        ).await.into_response();
+    }
+
+    let cluster = XtreamCluster::try_from(pli.item_type).unwrap_or(XtreamCluster::Live);
+    
+    debug_if_enabled!(
+        "ID chain for m3u endpoint: request_stream_id={} -> action_stream_id={action_stream_id} -> req_virtual_id={req_virtual_id} -> virtual_id={virtual_id}",
+        stream_req.stream_id);
+    let session_key = create_session_fingerprint(fingerprint, &user.username, virtual_id);
     let user_session = app_state
         .active_users
         .get_and_update_user_session(&user.username, &session_key).await;
@@ -154,7 +182,7 @@ async fn m3u_api_stream(
                 fingerprint,
                 app_state,
                 session,
-                pli.to_stream_channel(),
+                pli.to_stream_channel(target.id),
                 req_headers,
                 &input,
                 &user,
@@ -162,9 +190,9 @@ async fn m3u_api_stream(
             .await
             .into_response();
         }
-        session.stream_url.as_str()
+        session.stream_url.clone()
     } else {
-        pli.url.as_str()
+        pli.url.clone()
     };
 
     let connection_permission = user.connection_permission(app_state).await;
@@ -224,8 +252,8 @@ async fn m3u_api_stream(
         fingerprint,
         app_state,
         &session_key,
-        pli.to_stream_channel(),
-        session_url,
+        pli.to_stream_channel(target.id),
+        &session_url,
         req_headers,
         &input,
         &target,

@@ -5,10 +5,10 @@ use crate::utils::{CONSTANTS, DASH_EXT, DASH_EXT_FRAGMENT, DASH_EXT_QUERY, HLS_E
 
 
 pub fn set_sanitize_sensitive_info(value: bool) {
-    CONSTANTS.sanitize.store(value, Ordering::SeqCst);
+    CONSTANTS.sanitize.store(value, Ordering::Relaxed);
 }
 pub fn sanitize_sensitive_info(query: &str) -> Cow<'_, str> {
-    if !CONSTANTS.sanitize.load(Ordering::SeqCst) {
+    if !CONSTANTS.sanitize.load(Ordering::Relaxed) {
         return Cow::Borrowed(query);
     }
 
@@ -79,17 +79,14 @@ pub fn replace_url_extension(url: &str, new_ext: &str) -> String {
         // Find the last dot in the file name to replace the extension
         if let Some(dot_pos) = file_name_with_extension.rfind('.') {
             return format!(
-                "{}{}.{}{}",
-                path_part,
+                "{path_part}{}.{ext}{suffix}",
                 &file_name_with_extension[..dot_pos], // Keep the name part before the dot
-                ext, // Add the new extension
-                suffix // Add the query or fragment if any
             );
         }
     }
 
     // If no extension is found, add the new extension to the base URL
-    format!("{}{}.{}{}", base_url, "", ext, suffix)
+    format!("{base_url}.{ext}{suffix}")
 }
 
 pub fn get_credentials_from_url(url: &Url) -> (Option<String>, Option<String>) {

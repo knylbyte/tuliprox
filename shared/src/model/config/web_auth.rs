@@ -1,19 +1,15 @@
-use crate::utils::{default_as_true, is_blank_optional_string};
-/// 30 minutes by default; `0` still means “no expiration.”
-fn default_token_ttl_mins() -> u32 {
-    30
-}
+use crate::utils::{is_true, default_as_true, default_token_ttl_mins, is_default_token_ttl_mins, is_blank_optional_string, is_blank_optional_str};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct WebAuthConfigDto {
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
     pub enabled: bool,
     pub issuer: String,
     pub secret: String,
-    #[serde(default = "default_token_ttl_mins")]
+    #[serde(default = "default_token_ttl_mins", skip_serializing_if = "is_default_token_ttl_mins")]
     pub token_ttl_mins: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub userfile: Option<String>,
 }
 
@@ -36,6 +32,6 @@ impl WebAuthConfigDto {
             && self.token_ttl_mins == empty.token_ttl_mins
             && self.issuer.trim().is_empty()
             && self.secret.trim().is_empty()
-            && is_blank_optional_string(&self.userfile)
+            && is_blank_optional_str(self.userfile.as_deref())
     }
 }

@@ -2,7 +2,7 @@ use crate::app::components::{AppIcon, Card, Chip};
 use crate::app::context::ConfigContext;
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::config_page::{ConfigForm, LABEL_WEB_UI_CONFIG};
-use crate::{config_field, config_field_bool, config_field_child, config_field_hide, config_field_optional, edit_field_bool, edit_field_list_option, edit_field_number, edit_field_text, edit_field_text_option, generate_form_reducer, html_if};
+use crate::{config_field, config_field_bool, config_field_child, config_field_hide, config_field_optional, edit_field_bool, edit_field_list_option, edit_field_number, edit_field_number_u64, edit_field_text, edit_field_text_option, generate_form_reducer, html_if};
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::{WebUiConfigDto, ContentSecurityPolicyConfigDto, WebAuthConfigDto};
@@ -15,6 +15,7 @@ const LABEL_SECRET: &str = "LABEL.SECRET";
 const LABEL_TOKEN_TTL_MINS: &str = "LABEL.TOKEN_TTL_MINS";
 const LABEL_USERFILE: &str = "LABEL.USERFILE";
 const LABEL_PLAYER_SERVER: &str = "LABEL.PLAYER_SERVER";
+const LABEL_KICK_DURATION: &str = "LABEL.KICK_DURATION";
 const LABEL_USER_UI_ENABLED: &str = "LABEL.USER_UI_ENABLED";
 const LABEL_CONTENT_SECURITY_POLICY: &str = "LABEL.CONTENT_SECURITY_POLICY";
 const LABEL_CONTENT_SECURITY_POLICY_CUSTOM_ATTRIBUTES: &str = "LABEL.CUSTOM_ATTRIBUTES";
@@ -29,6 +30,7 @@ generate_form_reducer!(
         UserUiEnabled => user_ui_enabled: bool,
         Path => path: Option<String>,
         PlayerServer => player_server: Option<String>,
+        KickSecs => kick_secs: u64,
     }
 );
 
@@ -122,10 +124,14 @@ pub fn WebUiConfigView() -> Html {
     let render_view_mode = || {
         html! {
         <>
+            <Card class="tp__config-view__card">
             { config_field_bool!(webui_state.form, translate.t(LABEL_ENABLED), enabled) }
             { config_field_bool!(webui_state.form, translate.t(LABEL_USER_UI_ENABLED), user_ui_enabled) }
             { config_field_optional!(webui_state.form, translate.t(LABEL_PATH), path) }
             { config_field_optional!(webui_state.form, translate.t(LABEL_PLAYER_SERVER), player_server) }
+            { config_field!(webui_state.form, translate.t(LABEL_KICK_DURATION), kick_secs) }
+            </Card>
+
             <Card class="tp__config-view__card">
                 <h1>{translate.t(LABEL_CONTENT_SECURITY_POLICY)}</h1>
                 { config_field_bool!(csp_state.form, translate.t(LABEL_ENABLED), enabled) }
@@ -159,11 +165,14 @@ pub fn WebUiConfigView() -> Html {
     let render_edit_mode = || {
         html! {
             <>
+            <Card class="tp__config-view__card">
                 { edit_field_bool!(webui_state, translate.t(LABEL_ENABLED), enabled, WebUiConfigFormAction::Enabled) }
                 { edit_field_bool!(webui_state, translate.t(LABEL_USER_UI_ENABLED), user_ui_enabled, WebUiConfigFormAction::UserUiEnabled) }
                 { edit_field_text_option!(webui_state, translate.t(LABEL_PATH), path, WebUiConfigFormAction::Path) }
                 { edit_field_text_option!(webui_state, translate.t(LABEL_PLAYER_SERVER), player_server, WebUiConfigFormAction::PlayerServer) }
-                <Card class="tp__config-view__card">
+                { edit_field_number_u64!(webui_state, translate.t(LABEL_KICK_DURATION), kick_secs, WebUiConfigFormAction::KickSecs) }
+            </Card>
+            <Card class="tp__config-view__card">
                     <h1>{translate.t(LABEL_CONTENT_SECURITY_POLICY)}</h1>
                     { edit_field_bool!(csp_state, translate.t(LABEL_ENABLED), enabled, CspConfigFormAction::Enabled) }
                     { edit_field_list_option!(csp_state, translate.t(LABEL_CONTENT_SECURITY_POLICY_CUSTOM_ATTRIBUTES), custom_attributes, CspConfigFormAction::CustomAttributes, translate.t("LABEL.ADD_ATTRIBUTE")) }

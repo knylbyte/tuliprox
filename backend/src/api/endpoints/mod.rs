@@ -14,3 +14,4 @@ mod v1_api_playlist;
 mod v1_api_user;
 mod v1_api_config;
 mod extract_accept_header;
+mod library_api;

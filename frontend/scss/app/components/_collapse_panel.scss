@@ -13,6 +13,7 @@
     cursor: pointer;
     box-sizing: border-box;
     width: 100%;
+    padding: var(--padding-small);
 
     &:hover {
       color: var(--menu-button-hover-color);
@@ -23,6 +24,7 @@
       flex: 1 1 auto;
       white-space: nowrap;
       text-overflow: ellipsis;
+      overflow: hidden;
     }
     span {
       pointer-events: none;

@@ -7,15 +7,20 @@ mod step_measure;
 mod logging;
 mod trakt;
 mod json_utils;
-mod bincode_utils;
+mod binary_utils;
 mod telegram;
 mod geoip;
+mod db_viewer;
+mod epg_parser;
 
-pub use self::bincode_utils::*;
+pub use self::binary_utils::*;
 pub use self::logging::*;
 pub use self::trakt::*;
 pub use self::telegram::*;
 pub use self::geoip::*;
+pub use self::db_viewer::*;
+pub use shared::utils::*;
+pub use self::epg_parser::*;
 
 #[macro_export]
 macro_rules! debug_if_enabled {
@@ -27,7 +32,7 @@ macro_rules! debug_if_enabled {
 
     ($txt:expr) => {
         if log::log_enabled!(log::Level::Debug) {
-            log::log!(Level::Debug, $txt);
+            log::log!(log::Level::Debug, $txt);
         }
     };
 }
@@ -42,7 +47,7 @@ macro_rules! trace_if_enabled {
 
     ($txt:expr) => {
         if log::log_enabled!(log::Level::Trace) {
-            log::log!(Level::Trace, $txt);
+            log::log!(log::Level::Trace, $txt);
         }
     };
 }

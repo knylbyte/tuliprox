@@ -1,4 +1,4 @@
-use crate::api::api_utils::{json_or_bin_response, try_unwrap_body};
+use crate::api::api_utils::{json_or_bin_response, try_unwrap_body, internal_server_error};
 use crate::api::endpoints::download_api;
 use crate::api::endpoints::user_api::user_api_register;
 use crate::api::endpoints::v1_api_playlist::v1_api_playlist_register;
@@ -9,15 +9,16 @@ use crate::utils::ip_checker::get_ips;
 use crate::{VERSION};
 use axum::response::IntoResponse;
 use shared::model::{default_geoip_url, InputFetchMethod, IpCheckDto, StatusCheck};
-use shared::utils::{concat_path_leading_slash};
+use shared::utils::{concat_path_leading_slash, Internable};
 use std::collections::{BTreeMap, HashMap};
 use std::io::{Cursor};
 use std::sync::Arc;
-use log::error;
+use log::{error, info};
 use crate::api::endpoints::extract_accept_header::ExtractAcceptHeader;
 use crate::api::endpoints::v1_api_config::v1_api_config_register;
+use crate::api::endpoints::library_api::library_api_register;
 use crate::model::InputSource;
-use crate::repository::storage::get_geoip_path;
+use crate::repository::get_geoip_path;
 use crate::utils::GeoIp;
 use crate::utils::request::download_text_content;
 
@@ -51,7 +52,6 @@ pub async fn create_status_check(app_state: &Arc<AppState>) -> StatusCheck {
         version: VERSION.to_string(),
         build_time: crate::api::api_utils::get_build_time(),
         server_time: crate::api::api_utils::get_server_time(),
-        memory: crate::api::api_utils::get_memory_usage(),
         active_users,
         active_user_connections,
         active_provider_connections,
@@ -71,7 +71,7 @@ async fn status(axum::extract::State(app_state): axum::extract::State<Arc<AppSta
 async fn streams(ExtractAcceptHeader(accept): ExtractAcceptHeader,
                  axum::extract::State(app_state): axum::extract::State<Arc<AppState>>) -> axum::response::Response {
     let streams = app_state.active_users.active_streams().await;
-    json_or_bin_response(accept.as_ref(), &streams).into_response()
+    json_or_bin_response(accept.as_deref(), &streams).into_response()
 }
 
 async fn geoip_update(axum::extract::State(app_state): axum::extract::State<Arc<AppState>>) -> axum::response::Response {
@@ -83,18 +83,26 @@ async fn geoip_update(axum::extract::State(app_state): axum::extract::State<Arc<
 
             let url = if geoip.url.trim().is_empty() { default_geoip_url() } else { geoip.url.clone() };
             let input_source =  InputSource {
-                name: String::from("GeoIP"),
+                name: "GeoIP".intern(),
                 url,
                 username: None,
                 password: None,
                 method: InputFetchMethod::GET,
                 headers: HashMap::default(),
             };
-            let disabled_headers = config
-                .reverse_proxy
-                .as_ref()
-                .and_then(|r| r.disabled_header.clone());
-            return match download_text_content(Arc::clone(&app_state.http_client.load()), disabled_headers.as_ref(), &input_source, None, None).await {
+            let disabled_headers = app_state.get_disabled_headers();
+            let default_user_agent = config.default_user_agent.clone();
+            return match download_text_content(
+                &app_state.http_client.load(),
+                disabled_headers.as_ref(),
+                &input_source,
+                None,
+                None,
+                false,
+                default_user_agent.as_deref(),
+            )
+                .await
+            {
                    Ok((content, _)) => {
                        let reader = Cursor::new(content);
                        let mut geoip = GeoIp::new();
@@ -109,16 +117,15 @@ async fn geoip_update(axum::extract::State(app_state): axum::extract::State<Arc<
 
                        return match result {
                            (Some(_), None) => {
+                               info!("GeoIp db updated");
                                app_state.geoip.store(Some(Arc::new(geoip)));
                                axum::http::StatusCode::OK.into_response()
                            },
                            (None, Some(err)) => {
                                error!("Failed to process geoip db: {err}");
-                               axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                               internal_server_error!()
                            },
-                           _ => {
-                               axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
-                           }
+                           _ => internal_server_error!()
                        }
                    }
                    Err(err) => {
@@ -130,7 +137,6 @@ async fn geoip_update(axum::extract::State(app_state): axum::extract::State<Arc<
     }
     axum::http::StatusCode::BAD_REQUEST.into_response()
 }
-
 
 async fn ipinfo(axum::extract::State(app_state): axum::extract::State<Arc<AppState>>) -> axum::response::Response {
     if let Some((ipv4, ipv6)) = create_ipinfo_check(&app_state).await {
@@ -159,6 +165,7 @@ pub fn v1_api_register(web_auth_enabled: bool, app_state: Arc<AppState>, web_ui_
     router = v1_api_config_register(router);
     router = v1_api_user_register(router);
     router = v1_api_playlist_register(router);
+    router = library_api_register(router);
     if web_auth_enabled {
         router = router.route_layer(axum::middleware::from_fn_with_state(Arc::clone(&app_state), validator_admin));
     }

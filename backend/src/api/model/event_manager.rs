@@ -1,21 +1,22 @@
+use std::sync::Arc;
 use log::{trace};
-use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState};
+use shared::model::{ActiveUserConnectionChange, ConfigType, LibraryScanSummary, PlaylistUpdateState, SystemInfo};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq)]
 pub enum EventMessage {
     ServerError(String),
     ActiveUser(ActiveUserConnectionChange), // user_count, connection count
-    ActiveProvider(String, usize), // provider name, connections
+    ActiveProvider(Arc<str>, usize), // provider name, connections
     ConfigChange(ConfigType),
     PlaylistUpdate(PlaylistUpdateState),
     PlaylistUpdateProgress(String, String),
+    SystemInfoUpdate(SystemInfo),
+    LibraryScanProgress(LibraryScanSummary),
 }
 
 pub struct EventManager {
     channel_tx: tokio::sync::broadcast::Sender<EventMessage>,
-    // #[allow(dead_code)]
-    //channel_rx: tokio::sync::broadcast::Receiver<EventMessage>,
 }
 
 impl EventManager {
@@ -41,9 +42,15 @@ impl EventManager {
         }
     }
 
-    pub fn send_provider_event(&self, provider: &str, connection_count: usize) {
-        if !self.send_event(EventMessage::ActiveProvider(String::from(provider), connection_count)) {
+    pub fn send_provider_event(&self, provider: &Arc<str>, connection_count: usize) {
+        if !self.send_event(EventMessage::ActiveProvider(Arc::clone(provider), connection_count)) {
             trace!("Failed to send connection change: {provider}: {connection_count}");
+        }
+    }
+
+    pub fn send_system_info(&self, system_info: SystemInfo) {
+        if !self.send_event(EventMessage::SystemInfoUpdate(system_info)) {
+            trace!("Failed to send system info");
         }
     }
 }

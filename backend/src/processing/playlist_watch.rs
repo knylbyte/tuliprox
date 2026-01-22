@@ -1,14 +1,14 @@
 use std::collections::BTreeSet;
-use std::path::{Path};
 use std::sync::Arc;
+use std::path::{Path};
 use log::{error, info};
 use shared::model::{MsgKind, PlaylistGroup};
 use crate::messaging::{send_message};
 use crate::model::Config;
 use crate::utils;
-use crate::utils::{bincode_deserialize, bincode_serialize};
+use crate::utils::{binary_deserialize, binary_serialize};
 
-pub async fn process_group_watch(client: &Arc<reqwest::Client>, cfg: &Config, target_name: &str, pl: &PlaylistGroup) {
+pub async fn process_group_watch(client: &reqwest::Client, cfg: &Config, target_name: &str, pl: &PlaylistGroup) {
     let mut new_tree = BTreeSet::new();
     pl.channels.iter().for_each(|chan| {
         let header = &chan.header;
@@ -21,11 +21,11 @@ pub async fn process_group_watch(client: &Arc<reqwest::Client>, cfg: &Config, ta
         Some(path) => {
             let save_path = path.as_path();
             let mut changed = false;
-            if path.exists() {
+            if let Ok(true) = tokio::fs::try_exists(&path).await {
                 if let Some(loaded_tree) = load_watch_tree(&path).await {
                     // Find elements in set2 but not in set1
-                    let added_difference: BTreeSet<String> = new_tree.difference(&loaded_tree).cloned().collect();
-                    let removed_difference: BTreeSet<String> = loaded_tree.difference(&new_tree).cloned().collect();
+                    let added_difference: BTreeSet<Arc<str>> = new_tree.difference(&loaded_tree).cloned().collect();
+                    let removed_difference: BTreeSet<Arc<str>> = loaded_tree.difference(&new_tree).cloned().collect();
                     if !added_difference.is_empty() || !removed_difference.is_empty() {
                         changed = true;
                         handle_watch_notification(client, cfg, &added_difference, &removed_difference, target_name, &pl.title).await;
@@ -60,7 +60,7 @@ struct WatchChanges {
     pub removed: Vec<String>,
 }
 
-async fn handle_watch_notification(client: &Arc<reqwest::Client>, cfg: &Config, added: &BTreeSet<String>, removed: &BTreeSet<String>, target_name: &str, group_name: &str) {
+async fn handle_watch_notification(client: &reqwest::Client, cfg: &Config, added: &BTreeSet<Arc<str>>, removed: &BTreeSet<Arc<str>>, target_name: &str, group_name: &str) {
     let added = added.iter().map(std::string::ToString::to_string).collect::<Vec<String>>();
     let removed = removed.iter().map(std::string::ToString::to_string).collect::<Vec<String>>();
     if !added.is_empty() || !removed.is_empty() {
@@ -78,13 +78,13 @@ async fn handle_watch_notification(client: &Arc<reqwest::Client>, cfg: &Config, 
     }
 }
 
-async fn load_watch_tree(path: &Path) -> Option<BTreeSet<String>> {
+async fn load_watch_tree(path: &Path) -> Option<BTreeSet<Arc<str>>> {
      let encoded = tokio::fs::read(path).await.ok()?;
-     bincode_deserialize(&encoded[..]).ok()
+     binary_deserialize(&encoded[..]).ok()
 }
 
-async fn save_watch_tree(path: &Path, tree: &BTreeSet<String>) -> std::io::Result<()> {
-    let encoded: Vec<u8> = bincode_serialize(&tree)?;
+async fn save_watch_tree(path: &Path, tree: &BTreeSet<Arc<str>>) -> std::io::Result<()> {
+    let encoded: Vec<u8> = binary_serialize(&tree)?;
     tokio::fs::write(path, encoded).await
 }
 

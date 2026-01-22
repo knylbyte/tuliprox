@@ -43,3 +43,4 @@ cargo set-version "$NEW_VERSION"
 
 VERSION=v$NEW_VERSION
 echo "🛠️ Set version $VERSION"
+echo 

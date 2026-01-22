@@ -13,6 +13,7 @@ use web_sys::{window, HtmlElement};
 use yew::platform::spawn_local;
 use yew::{classes, function_component, html, use_effect_with, use_memo, use_node_ref, use_state, Callback, Html, UseStateHandle};
 use yew_i18n::use_translation;
+use shared::concat_string;
 
 const TIME_BLOCK_WIDTH: f64 = 210.0;
 const TIME_BLOCK_MINS: i64 = 30;
@@ -69,7 +70,7 @@ pub fn EpgView() -> Html {
                             let start_window_secs = (tv.start / (TIME_BLOCK_MINS * 60)) * (TIME_BLOCK_MINS * 60);
                             let start_window = (start_window_secs / 60).max(0);
                             let now_line_pos = get_pos(now, start_window);
-                            now_line.style().set_property("left", &format!("{now_line_pos}px")).unwrap();
+                            now_line.style().set_property("width", &format!("{now_line_pos}px")).unwrap();
                             now_line.style().set_property("display", "block").unwrap();
                             if recenter {
                                 let container_width = div.client_width();
@@ -185,7 +186,8 @@ pub fn EpgView() -> Html {
                             <div style={format!("height:{}px", start_index * channel_row_height)}></div>
                             { for tv.channels.iter().enumerate().skip(start_index).take(end_index - start_index).map(|(_i, ch)| {
                                 html! {
-                                    <div class="tp__epg__channel" style={format!("max-height:{channel_row_height}px;min-height:{channel_row_height}px;height:{channel_row_height}px")}>
+                                    <div class="tp__epg__channel" title={concat_string!(&ch.title, " (",  &ch.id, ")")}
+                                         style={format!("max-height:{channel_row_height}px;min-height:{channel_row_height}px;height:{channel_row_height}px")}>
                                         <div class="tp__epg__channel-icon">
                                             { if let Some(icon) = &ch.icon {
                                                 html! { <img src={icon.clone()} alt={ch.title.clone()} /> }

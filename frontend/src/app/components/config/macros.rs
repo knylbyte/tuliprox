@@ -94,6 +94,20 @@ macro_rules! config_field_custom {
 }
 
 #[macro_export]
+macro_rules! config_field_custom_hide {
+    ($label:expr, $value:expr) => {
+        html! {
+            <div class="tp__form-field tp__form-field__text">
+                <label>{$label}</label>
+                <span class="tp__form-field__value">
+                    <$crate::app::components::HideContent content={$value}></$crate::app::components::HideContent>
+                </span>
+            </div>
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! config_field_child {
     ($label:expr, $body:block) => {
         html! {
@@ -171,9 +185,9 @@ macro_rules! edit_field_text {
                     hidden={$hidden}
                     name={stringify!($field)}
                     autocomplete={true}
-                    value={instance.form.$field.clone()}
+                    value={instance.form.$field.to_string()}
                     on_change={Callback::from(move |value: String| {
-                        instance.dispatch($action(value));
+                        instance.dispatch($action(value.into()));
                     })}
                 />
             </div>
@@ -484,7 +498,7 @@ macro_rules! generate_form_reducer {
                     $(
                         $action_name::$set_name(v) => {
                             let mut new_data = self.$data_field.clone();
-                            new_data.$field_name = v;
+                            new_data.$field_name = v.into();
                             if !modified { modified = true; }
                             new_data
                         },

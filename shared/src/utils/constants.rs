@@ -2,7 +2,7 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::string::ToString;
 use std::sync::atomic::AtomicBool;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 
 pub const USER_FILE: &str = "user.txt";
@@ -11,7 +11,6 @@ pub const CONFIG_FILE: &str = "config.yml";
 pub const SOURCE_FILE: &str = "source.yml";
 pub const MAPPING_FILE: &str = "mapping.yml";
 pub const API_PROXY_FILE: &str = "api-proxy.yml";
-
 
 pub const ENCODING_GZIP: &str = "gzip";
 pub const ENCODING_DEFLATE: &str = "deflate";
@@ -42,6 +41,7 @@ const SUPPORTED_RESPONSE_HEADERS: &[&str] = &[
     "access-control-allow-origin",
     "access-control-allow-credentials",
     "icy-metadata",
+    "icy-metaint",
     "referer",
     "last-modified",
     "cache-control",
@@ -83,7 +83,7 @@ pub struct Constants {
     pub re_base_href_wasm: Regex,
     pub re_env_var: Regex,
     pub re_memory_usage: Regex,
-    pub re_epg_normalize: Regex,
+    pub re_epg_normalize: Arc<Regex>,
     pub re_template_var: Regex,
     pub re_template_tag: Regex,
     pub re_template_attribute: Regex,
@@ -95,8 +95,15 @@ pub struct Constants {
     pub export_style_config: ExportStyleConfig,
     pub country_codes: HashSet<&'static str>,
     pub allowed_output_formats: Vec<String>,
-    pub re_trakt_year:  Regex,
-    pub re_quality:  Regex,
+    pub re_trakt_year: Regex,
+    pub re_quality: Regex,
+    pub re_classifier_year: Regex,
+    pub re_classifier_cleanup: Regex,
+    pub re_classifier_episode: Regex,
+    pub re_classifier_season: Regex,
+    pub re_classifier_moviedb_id: Regex,
+    pub re_classifier_camel_case: Regex,
+    pub re_classifier_brackets_info: Regex,
 }
 
 pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
@@ -112,14 +119,14 @@ pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
         re_base_href_wasm: Regex::new("'(/frontend\\-)").unwrap(),
         re_env_var: Regex::new(r"\$\{env:(?P<var>[a-zA-Z_][a-zA-Z0-9_]*)}").unwrap(),
         re_memory_usage: Regex::new(r"VmRSS:\s+(\d+) kB").unwrap(),
-        re_epg_normalize: Regex::new(r"[^a-zA-Z0-9\-]").unwrap(),
+        re_epg_normalize: Arc::new(Regex::new(r"[^a-zA-Z0-9\-]").unwrap()),
         re_template_var: Regex::new("!(.*?)!").unwrap(),
         re_template_tag: Regex::new("<tag:(.*?)>").unwrap(),
         re_template_attribute: Regex::new("<(.*?)>").unwrap(),
         re_filename: Regex::new(r"[^A-Za-z0-9_.-]").unwrap(),
         re_remove_filename_ending: Regex::new(r"[_.\s-]$").unwrap(),
         re_whitespace: Regex::new(r"\s+").unwrap(),
-        re_hls_uri: Regex::new(r#"URI="([^"]+)""#).unwrap(),
+        re_hls_uri: Regex::new(r#"URI=["']([^"']+)["']"#).unwrap(),
 
         sanitize: AtomicBool::new(true),
         export_style_config: ExportStyleConfig {
@@ -133,20 +140,27 @@ pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
         allowed_output_formats: Vec::from(["m3u8".to_string(), "ts".to_string()]),
         country_codes: vec![
             "af", "al", "dz", "ad", "ao", "ag", "ar", "am", "au", "at", "az", "bs", "bh", "bd", "bb", "by",
-            "be", "bz", "bj", "bt", "bo", "ba", "bw", "br", "bn", "bg", "bf", "bi", "cv", "kh", "cm", "ca",
-            "cf", "td", "cl", "cn", "co", "km", "cg", "cr", "hr", "cu", "cy", "cz", "cd", "dk", "dj", "dm",
-            "do", "tl", "ec", "eg", "sv", "gq", "er", "ee", "sz", "et", "fj", "fi", "fr", "ga", "gm", "ge",
-            "de", "gh", "gr", "gd", "gt", "gn", "gw", "gy", "ht", "hn", "hu", "is", "in", "id", "ir", "iq",
-            "ie", "il", "it", "ci", "jm", "jp", "jo", "kz", "ke", "ki", "kp", "kr", "kw", "kg", "la", "lv",
-            "lb", "ls", "lr", "ly", "li", "lt", "lu", "mg", "mw", "my", "mv", "ml", "mt", "mh", "mr", "mu",
-            "mx", "fm", "md", "mc", "mn", "me", "ma", "mz", "mm", "na", "nr", "np", "nl", "nz", "ni", "ne",
-            "ng", "mk", "no", "om", "pk", "pw", "pa", "pg", "py", "pe", "ph", "pl", "pt", "qa", "ro", "ru",
-            "rw", "kn", "lc", "vc", "ws", "sm", "st", "sa", "sn", "rs", "sc", "sl", "sg", "sk", "si", "sb",
-            "so", "za", "ss", "es", "lk", "sd", "sr", "se", "ch", "sy", "tw", "tj", "tz", "th", "tg", "to",
-            "tt", "tn", "tr", "tm", "tv", "ug", "ua", "ae", "gb", "us", "uy", "uz", "vu", "va", "ve", "vn",
-            "ye", "zm", "zw",
+            "be", "bz", "bj", "bt", "bo", "ba", "bw", "br", "bn", "bg", "bf", "bi", "bu", "cv", "kh", "cm",
+            "ca", "cf", "td", "cl", "cn", "co", "km", "cg", "cr", "hr", "cu", "cy", "cz", "cd", "dk", "dj",
+            "dm", "do", "tl", "ec", "eg", "sv", "gq", "er", "ee", "sz", "et", "fj", "fi", "fr", "ga", "gm",
+            "ge", "de", "gh", "gr", "gd", "gt", "gn", "gw", "gy", "ht", "hn", "hu", "is", "in", "id", "ir",
+            "iq", "ie", "il", "it", "ci", "jm", "jp", "jo", "kz", "ke", "ki", "kp", "kr", "kw", "kg", "la",
+            "lv", "lb", "ls", "lr", "ly", "li", "lt", "lu", "mg", "mw", "my", "mv", "ml", "mt", "mh", "mr",
+            "mu", "mx", "fm", "md", "mc", "mn", "me", "ma", "mz", "mm", "na", "nr", "np", "nl", "nz", "ni",
+            "ne", "ng", "mk", "no", "om", "pk", "pw", "pa", "pg", "py", "pe", "ph", "pl", "pt", "qa", "ro",
+            "ru", "rw", "kn", "lc", "vc", "ws", "sm", "st", "sa", "sn", "rs", "sc", "sl", "sg", "sk", "si",
+            "sb", "so", "za", "ss", "es", "lk", "sd", "sr", "se", "ch", "sy", "tw", "tj", "tz", "th", "tg",
+            "to", "tt", "tn", "tr", "tm", "tv", "ug", "ua", "ae", "gb", "us", "uy", "uz", "vu", "va", "ve",
+            "vn", "ye", "zm", "zw", "sat", "4k",
         ].into_iter().collect::<HashSet<&str>>(),
         re_trakt_year: Regex::new(r"\(?(\d{4})\)?$").unwrap(),
-        re_quality: Regex::new(r"(?i)\b(4K|UHD|8K|2160p?|1080p?|720p?|480p?|BLURAY|HDTV|DVDRIP|CAM|TS|HDR|DV|SDR)\b").unwrap(),
+        re_quality: Regex::new(r"(?i)\b(x265|4K|UHD|8K|2160p?|1080p?|720p?|480p?|BLURAY|HDTV|DVDRIP|BRRIP|CAM|TS|HDR|DV|SDR)\b").unwrap(),
+        re_classifier_year: Regex::new(r"[\(\[]?(\d{4})[\)\]]?").unwrap(),
+        re_classifier_cleanup: Regex::new(r"(?i)[\s\._-]*(?:s\d+e\d+|\d+x\d+|season[\s\._-]*\d+|episode[\s\._-]*\d+).*$").unwrap(),
+        re_classifier_episode: Regex::new(r"(?i)(?:e|episode|x)[\s\._-]*(\d+)").unwrap(),
+        re_classifier_season: Regex::new(r"(?i)(?:s|season)[\s\._-]*(\d+)").unwrap(),
+        re_classifier_moviedb_id: Regex::new(r"(?i)\b(tmdb|tvdb|imdb)[\s._=-]?(\d+)\b").unwrap(),
+        re_classifier_camel_case: Regex::new(r"([a-z])([A-Z])").unwrap(),
+        re_classifier_brackets_info: Regex::new(r"[\[\{\(].*?[\]\}\)]").unwrap(),
     }
 );

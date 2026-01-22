@@ -25,11 +25,12 @@ pub fn RevealContent(props: &RevealContentProps) -> Html {
         let actions = props.actions.clone();
         Callback::from(move |e: MouseEvent| {
             e.prevent_default();
+            e.stop_propagation();
             let content = content.clone();
             let actions = actions.clone();
             let dlg = dialog.clone();
             spawn_local(async move {
-                let _result = dlg.content(content, actions).await;
+                let _result = dlg.content(content, actions, true).await;
             });
         })
     };

@@ -1,7 +1,7 @@
 #![allow(clippy::empty_docs)]
 
 use pest_derive::Parser;
-use std::borrow::Cow;
+
 use enum_iterator::all;
 use indexmap::IndexSet;
 use log::{error, log_enabled, trace, Level};
@@ -9,36 +9,36 @@ use pest::iterators::Pair;
 use pest::Parser;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use crate::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
+use std::sync::Arc;
+use crate::error::{info_err_res, TuliproxError};
 use crate::info_err;
 pub use crate::model::{ItemField, PatternTemplate, PlaylistItem, PlaylistItemType, FieldGetAccessor, FieldSetAccessor, TemplateValue};
-use crate::utils::{DirectedGraph, CONSTANTS};
+use crate::utils::{deunicode_string, DirectedGraph, Internable, CONSTANTS};
 
-pub fn get_field_value(pli: &PlaylistItem, field: ItemField) -> String {
+pub fn get_field_value(pli: &PlaylistItem, field: ItemField) -> Arc<str> {
     let header = &pli.header;
-    let value = match field {
-        ItemField::Group => header.group.to_string(),
-        ItemField::Name => header.name.to_string(),
-        ItemField::Title => header.title.to_string(),
-        ItemField::Url => header.url.to_string(),
-        ItemField::Input => header.input_name.to_string(),
-        ItemField::Type => header.item_type.to_string(),
-        ItemField::Caption => if header.title.is_empty() { header.name.to_string() } else { header.title.to_string() },
-    };
-    value.to_string()
+    match field {
+        ItemField::Group => Arc::clone(&header.group),
+        ItemField::Name => Arc::clone(&header.name),
+        ItemField::Title => Arc::clone(&header.title),
+        ItemField::Url => Arc::clone(&header.url),
+        ItemField::Input => Arc::clone(&header.input_name),
+        ItemField::Type => header.item_type.intern(),
+        ItemField::Caption => if header.title.is_empty() { Arc::clone(&header.name) } else { Arc::clone(&header.title) },
+    }
 }
 
 pub fn set_field_value(pli: &mut PlaylistItem, field: ItemField, value: String) -> bool {
     let header = &mut pli.header;
     match field {
-        ItemField::Group => header.group = value,
-        ItemField::Name => header.name = value,
-        ItemField::Title => header.title = value,
-        ItemField::Url => header.url = value,
-        ItemField::Input => header.input_name = value,
+        ItemField::Group => header.group = value.intern(),
+        ItemField::Name => header.name = value.intern(),
+        ItemField::Title => header.title = value.intern(),
+        ItemField::Url => header.url = value.intern(),
+        ItemField::Input => header.input_name = value.intern(),
         ItemField::Caption => {
-            header.title.clone_from(&value);
-            header.name = value;
+            header.title = value.intern();
+            header.name = header.title.clone();
         }
         ItemField::Type => {},
     }
@@ -47,21 +47,32 @@ pub fn set_field_value(pli: &mut PlaylistItem, field: ItemField, value: String) 
 
 pub struct ValueProvider<'a> {
     pub pli: &'a PlaylistItem,
+    pub match_as_ascii: bool,
 }
 
 impl ValueProvider<'_> {
-    pub fn get(&self, field: &str) -> Option<Cow<'_, str>> {
-        self.pli.header.get_field(field)
+    pub fn get(&self, field: &str) -> Option<Arc<str>> {
+        let val = self.pli.header.get_field(field)?;
+        if self.match_as_ascii {
+            return Some(deunicode_string(&val).into_owned().into())
+        }
+        Some(val)
     }
 }
 
 pub struct ValueAccessor<'a> {
     pub pli: &'a mut PlaylistItem,
+    pub virtual_items: Vec<(String, PlaylistItem)>,
+    pub match_as_ascii: bool,
 }
 
 impl ValueAccessor<'_> {
-    pub fn get(&self, field: &str) -> Option<Cow<'_, str>> {
-        self.pli.header.get_field(field)
+    pub fn get(&self, field: &str) -> Option<Arc<str>> {
+        let val = self.pli.header.get_field(field)?;
+        if self.match_as_ascii {
+            return Some(deunicode_string(&val).into_owned().into())
+        }
+        Some(val)
     }
 
     pub fn set(&mut self, field: &str, value: &str) {
@@ -76,7 +87,7 @@ impl ValueAccessor<'_> {
 #[derive(Debug, Clone)]
 pub struct CompiledRegex {
     pub restr: String,
-    pub re: regex::Regex,
+    pub re: Arc<regex::Regex>,
 }
 
 impl PartialEq for CompiledRegex {
@@ -145,19 +156,25 @@ pub enum Filter {
     BinaryExpression(Box<Filter>, BinaryOperator, Box<Filter>),
 }
 
-fn get_caption<'a>(provider: &'a ValueProvider<'a>, rewc: &'a CompiledRegex) -> (bool, Cow<'a, str>) {
+impl Default for Filter {
+    fn default() -> Self {
+        Self::Group(Box::new(Filter::FieldComparison(ItemField::Group, CompiledRegex { restr: ".*".to_string(), re: crate::model::REGEX_CACHE.get_or_compile(".*").unwrap() })))
+    }
+}
+
+fn get_caption<'a>(provider: &'a ValueProvider<'a>, rewc: &'a CompiledRegex) -> (bool, Arc<str>) {
     if let Some(value) = provider.get("title") {
         if rewc.re.is_match(&value) {
             return (true, value);
         }
     }
 
-    if let Some(value) = provider.get("title") {
+    if let Some(value) = provider.get("name") {
         if rewc.re.is_match(&value) {
             return (true, value);
         }
     }
-    (false, Cow::Borrowed(""))
+    (false, "".intern())
 }
 
 impl Filter {
@@ -169,7 +186,7 @@ impl Filter {
                } else if let Some(value) = provider.get(field.as_str()) {
                     (rewc.re.is_match(&value), value)
                 } else {
-                    (false, Cow::Borrowed(""))
+                    (false, "".intern())
                 };
                 if log_enabled!(Level::Trace) {
                     if is_match {
@@ -183,7 +200,11 @@ impl Filter {
             Self::TypeComparison(field, item_type) => {
                 if let Some(value) = provider.get(field.as_str()) {
                     get_filter_item_type(&value).is_some_and(|pli_type| {
-                        let is_match = pli_type.eq(item_type);
+                        let is_match = match item_type {
+                            PlaylistItemType::Video => matches!(pli_type, PlaylistItemType::Video | PlaylistItemType::LocalVideo),
+                            PlaylistItemType::Series => matches!(pli_type, PlaylistItemType::Series | PlaylistItemType::LocalSeries),
+                            _ => pli_type.eq(item_type),
+                        };
                         if log_enabled!(Level::Trace) {
                             if is_match {
                                 trace!("Match found: {field:?} {value}");
@@ -230,8 +251,12 @@ impl std::fmt::Display for Filter {
             Self::TypeComparison(field, item_type) => {
                 write!(f, "{} = {}", field, match item_type {
                     PlaylistItemType::Live => Self::LIVE,
-                    PlaylistItemType::Video => Self::MOVIE,
-                    PlaylistItemType::Series | PlaylistItemType::SeriesInfo => Self::SERIES, // yes series-info is handled as series in filter
+                    PlaylistItemType::Video
+                    | PlaylistItemType::LocalVideo => Self::MOVIE,
+                    PlaylistItemType::Series
+                    | PlaylistItemType::SeriesInfo
+                    | PlaylistItemType::LocalSeries
+                    | PlaylistItemType::LocalSeriesInfo => Self::SERIES, // yes series-info is handled as series in filter
                     _ => Self::UNSUPPORTED
                 })
             }
@@ -260,7 +285,7 @@ fn get_parser_item_field(expr: &Pair<Rule>) -> Result<ItemField, TuliproxError> 
             }
         }
     }
-    create_tuliprox_error_result!(TuliproxErrorKind::Info, "unknown field: {}", expr.as_str())
+    info_err_res!("unknown field: {}", expr.as_str())
 }
 
 fn get_parser_regexp(
@@ -272,9 +297,9 @@ fn get_parser_regexp(
         parsed_text.pop();
         parsed_text.remove(0);
         let regstr = apply_templates_to_pattern_single(&parsed_text, templates)?;
-        let re = regex::Regex::new(regstr.as_str());
+        let re = crate::model::REGEX_CACHE.get_or_compile(regstr.as_str());
         if re.is_err() {
-            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "cant parse regex: {}", regstr);
+            return info_err_res!("can't parse regex: {}", regstr);
         }
         let regexp = re.unwrap();
         if log_enabled!(Level::Trace) {
@@ -285,7 +310,7 @@ fn get_parser_regexp(
             re: regexp,
         });
     }
-    create_tuliprox_error_result!(TuliproxErrorKind::Info, "unknown field: {}", expr.as_str())
+    info_err_res!("unknown field: {}", expr.as_str())
 }
 
 fn get_parser_field_comparison(
@@ -325,7 +350,7 @@ fn get_parser_type_comparison(expr: Pair<Rule>) -> Result<Filter, TuliproxError>
     let expr_inner = expr.into_inner();
     let text_item_type = expr_inner.as_str();
     let item_type = get_filter_item_type(text_item_type);
-    item_type.map_or_else(|| create_tuliprox_error_result!(TuliproxErrorKind::Info, "cant parse item type: {text_item_type}"),
+    item_type.map_or_else(|| info_err_res!("can't parse item type: {text_item_type}"),
                           |itype| Ok(Filter::TypeComparison(ItemField::Type, itype)))
 }
 
@@ -417,11 +442,7 @@ fn get_parser_binary_op(expr: &Pair<Rule>) -> Result<BinaryOperator, TuliproxErr
     match expr.as_rule() {
         Rule::and => Ok(BinaryOperator::And),
         Rule::or => Ok(BinaryOperator::Or),
-        _ => create_tuliprox_error_result!(
-            TuliproxErrorKind::Info,
-            "Unknown binary operator {}",
-            expr.as_str()
-        ),
+        _ => info_err_res!("Unknown binary operator {}",expr.as_str()),
     }
 }
 
@@ -484,21 +505,12 @@ pub fn get_filter(
 
             if !errors.is_empty() {
                 errors.push(format!("Unable to parse filter: {}", &filter_text));
-                return Err(info_err!(errors.join("\n")));
+                return info_err_res!("{}", errors.join("\n"));
             }
 
-            result.map_or_else(
-                || {
-                    create_tuliprox_error_result!(
-                        TuliproxErrorKind::Info,
-                        "Unable to parse filter: {}",
-                        &filter_text
-                    )
-                },
-                Ok,
-            )
+            result.map_or_else(|| info_err_res!("Unable to parse filter: {}", &filter_text), Ok)
         }
-        Err(err) => create_tuliprox_error_result!(TuliproxErrorKind::Info, "{}", err),
+        Err(err) => info_err_res!("{err}"),
     }
 }
 
@@ -532,10 +544,7 @@ fn build_dependency_graph(
         );
     }
     if !cycles.is_empty() {
-        return create_tuliprox_error_result!(
-            TuliproxErrorKind::Info,
-            "Cyclic dependencies in templates detected!"
-        );
+        return info_err_res!("Cyclic dependencies in templates detected!");
     }
     Ok(graph)
 }
@@ -558,7 +567,7 @@ pub fn prepare_templates(templates: &mut Vec<PatternTemplate>) -> Result<Vec<Pat
                 if let Some(depends_on) = dependencies.get(&template_name) {
                     let mut templ_value = template_values.get(&template_name).unwrap().clone();
                     for dep_templ_name in depends_on {
-                        let dep_value = template_values.get(dep_templ_name).ok_or_else(|| info_err!(format!("Failed to load template {dep_templ_name}")))?;
+                        let dep_value = template_values.get(dep_templ_name).ok_or_else(|| info_err!("Failed to load template {dep_templ_name}"))?;
                         let dep_templ = template_map.get_mut(dep_templ_name).unwrap();
                         templ_value = match dep_value {
                             TemplateValue::Single(dep_val) => {
@@ -694,13 +703,13 @@ pub fn apply_templates_to_pattern(
             TemplateValue::Multi(multi_vals) => {
                 match multi_vals.len().cmp(&1) {
                     Ordering::Less => {
-                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Empty multi value templates are not supported for pattern! {pattern}");
+                        return info_err_res!("Empty multi value templates are not supported for pattern! {pattern}");
                     }
                     Ordering::Equal => {
                         new_pattern = TemplateValue::Single(multi_vals.first().unwrap().to_owned());
                     }
                     Ordering::Greater => {
-                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Multi value templates are not supported for pattern! {pattern}");
+                        return info_err_res!("Multi value templates are not supported for pattern! {pattern}");
                     }
                 }
             }
@@ -713,7 +722,7 @@ pub fn apply_templates_to_pattern(
 pub fn apply_templates_to_pattern_single(pattern: &str, templates: Option<&Vec<PatternTemplate>>) -> Result<String, TuliproxError> {
     match apply_templates_to_pattern(pattern, templates, false)? {
         TemplateValue::Single(value) => Ok(value),
-        TemplateValue::Multi(_) => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Multi value templates are not supported for pattern!"),
+        TemplateValue::Multi(_) => info_err_res!("Multi value templates are not supported for pattern!"),
     }
 }
 
@@ -721,13 +730,13 @@ pub fn apply_templates_to_pattern_single(pattern: &str, templates: Option<&Vec<P
 mod tests {
     use crate::foundation::filter::{get_filter, ValueProvider};
     use crate::model::{PlaylistItem, PlaylistItemHeader};
-    use crate::utils::CONSTANTS;
+    use crate::utils::{Internable, CONSTANTS};
 
     fn create_mock_pli(name: &str, group: &str) -> PlaylistItem {
         PlaylistItem {
             header: PlaylistItemHeader {
-                name: name.to_string(),
-                group: group.to_string(),
+                name: name.into(),
+                group: group.intern(),
                 ..Default::default()
             },
         }
@@ -741,7 +750,7 @@ mod tests {
                 assert_eq!(format!("{filter}"), flt1);
             }
             Err(e) => {
-                panic!("{}", e)
+                panic!("{e}")
             }
         }
     }
@@ -754,20 +763,20 @@ mod tests {
                 assert_eq!(format!("{filter}"), flt2);
             }
             Err(e) => {
-                panic!("{}", e)
+                panic!("{e}")
             }
         }
     }
 
     #[test]
     fn test_filter_3() {
-        let flt = r#"Group ~ "d" AND ((Name ~ "e" AND NOT ((Name ~ "c" OR Name ~ "f"))) OR (Name ~ "a" OR Name ~ "b")) AND (Type = vod)"#;
+        let flt = r#"Group ~ "d" AND ((Name ~ "e" AND NOT ((Name ~ "c" OR Name ~ "f"))) OR (Name ~ "a" OR Name ~ "b")) AND (Type = movie)"#;
         match get_filter(flt, None) {
             Ok(filter) => {
                 assert_eq!(format!("{filter}"), flt);
             }
             Err(e) => {
-                panic!("{}", e)
+                panic!("{e}")
             }
         }
     }
@@ -788,6 +797,7 @@ mod tests {
                     .filter(|&chan| {
                         let provider = ValueProvider {
                             pli: chan,
+                            match_as_ascii: false,
                         };
                         filter.filter(&provider)
                     })
@@ -816,7 +826,7 @@ mod tests {
                 );
             }
             Err(e) => {
-                panic!("{}", e)
+                panic!("{e}")
             }
         }
     }
@@ -840,6 +850,7 @@ mod tests {
                     .filter(|&chan| {
                         let provider = ValueProvider {
                             pli: chan,
+                            match_as_ascii: false,
                         };
                         filter.filter(&provider)
                     })
@@ -847,7 +858,7 @@ mod tests {
                 assert_eq!(filtered.len(), 1);
             }
             Err(e) => {
-                panic!("{}", e)
+                panic!("{e}")
             }
         }
     }
@@ -880,7 +891,7 @@ mod tests {
                 assert_eq!(format!("{filter}"), result.trim());
             }
             Err(e) => {
-                panic!("{}", e)
+                panic!("{e}")
             }
         }
     }
@@ -901,6 +912,7 @@ mod tests {
                     .filter(|&chan| {
                         let provider = ValueProvider {
                             pli: chan,
+                            match_as_ascii: false,
                         };
                         filter.filter(&provider)
                     })
@@ -915,8 +927,33 @@ mod tests {
                 );
             }
             Err(e) => {
-                panic!("{}", e)
+                panic!("{e}")
             }
+        }
+    }
+
+    #[test]
+    fn test_filter_match_as_ascii() {
+        let flt = r#"Name ~ "Cinema""#;
+        match get_filter(flt, None) {
+            Ok(filter) => {
+                let chan = create_mock_pli("Cinéma", "Some Group");
+
+                // Without match_as_ascii (should fail)
+                let provider_fail = ValueProvider {
+                    pli: &chan,
+                    match_as_ascii: false,
+                };
+                assert!(!filter.filter(&provider_fail));
+
+                // With match_as_ascii (should succeed)
+                let provider_success = ValueProvider {
+                    pli: &chan,
+                    match_as_ascii: true,
+                };
+                assert!(filter.filter(&provider_success));
+            }
+            Err(e) => panic!("{e}"),
         }
     }
 }

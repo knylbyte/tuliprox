@@ -2,26 +2,25 @@ use crate::api::config_watch::exec_config_watch;
 use crate::api::model::{ActiveProviderManager, ConnectionManager, EventManager, PlaylistStorage, PlaylistStorageState, SharedStreamManager};
 use crate::api::model::{ActiveUserManager, DownloadQueue};
 use crate::api::scheduler::exec_scheduler;
-use crate::model::{
-    AppConfig, Config, ConfigTarget, HdHomeRunConfig, HdHomeRunDeviceConfig, ProcessTargets,
-    ScheduleConfig, SourcesConfig,
-};
-use crate::repository::playlist_repository::load_target_into_memory_cache;
+use crate::model::{AppConfig, Config, ConfigTarget, HdHomeRunConfig, HdHomeRunDeviceConfig, ProcessTargets, ReverseProxyDisabledHeaderConfig, ScheduleConfig, SourcesConfig};
+use crate::repository::load_target_into_memory_cache;
 use crate::tools::lru_cache::LRUResourceCache;
 use crate::utils::request::create_client;
 use arc_swap::{ArcSwap, ArcSwapOption};
-use log::error;
+use log::{error, info};
 use reqwest::Client;
 use shared::error::TuliproxError;
-use shared::model::UserConnectionPermission;
+use shared::model::{UserConnectionPermission};
 use shared::utils::small_vecs_equal_unordered;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicI8;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex};
+use tokio::task;
 use tokio_util::sync::CancellationToken;
-use crate::repository::storage::get_geoip_path;
+use crate::api::model::UpdateGuard;
+use crate::repository::get_geoip_path;
 use crate::utils::GeoIp;
 
 macro_rules! cancel_service {
@@ -206,12 +205,16 @@ pub fn create_cache(config: &Config) -> Option<Arc<Mutex<LRUResourceCache>>> {
         });
     let cache_enabled = lru_cache.is_some();
     if cache_enabled {
+        info!("Scanning cache");
         if let Some(res_cache) = lru_cache {
             let cache = Arc::new(Mutex::new(res_cache));
             let cache_scanner = Arc::clone(&cache);
             tokio::spawn(async move {
-                let mut c = cache_scanner.lock().await;
-                if let Err(err) = (*c).scan() {
+                let scan_result = {
+                    let mut cache = cache_scanner.lock().await;
+                    task::block_in_place(|| cache.scan())
+                };
+                if let Err(err) = scan_result {
                     error!("Failed to scan cache {err}");
                 }
             });
@@ -261,6 +264,7 @@ pub struct AppState {
     pub cancel_tokens: Arc<ArcSwap<CancelTokens>>,
     pub playlists: Arc<PlaylistStorageState>,
     pub geoip: Arc<ArcSwapOption<GeoIp>>,
+    pub update_guard: UpdateGuard,
 }
 
 impl AppState {
@@ -274,9 +278,7 @@ impl AppState {
 
         self.active_users.update_config(&config);
         self.app_config.set_config(config)?;
-        self.active_provider
-            .update_config(&self.app_config)
-            .await;
+        self.active_provider.update_config(&self.app_config).await;
         self.update_config().await;
 
         if changes.geoip {
@@ -291,6 +293,7 @@ impl AppState {
             self.geoip.store(new_geoip);
         }
 
+        shared::model::REGEX_CACHE.sweep();
         Ok(changes)
     }
 
@@ -322,10 +325,9 @@ impl AppState {
     pub(in crate::api::model) async fn set_sources(&self,sources: SourcesConfig) -> Result<UpdateChanges, TuliproxError> {
         let changes = self.detect_changes_for_sources(&sources);
         self.app_config.set_sources(sources)?;
-        self.active_provider
-            .update_config(&self.app_config)
-            .await;
+        self.active_provider.update_config(&self.app_config).await;
 
+        shared::model::REGEX_CACHE.sweep();
         Ok(changes)
     }
 
@@ -438,6 +440,16 @@ impl AppState {
 
     pub async fn cache_playlist(&self, target_name: &str, playlist: PlaylistStorage) {
         self.playlists.cache_playlist(target_name, playlist).await;
+    }
+
+    pub fn get_disabled_headers(&self) -> Option<ReverseProxyDisabledHeaderConfig> {
+        self
+            .app_config
+            .config
+            .load()
+            .reverse_proxy
+            .as_ref()
+            .and_then(|r| r.disabled_header.clone())
     }
 }
 

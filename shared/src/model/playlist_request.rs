@@ -1,7 +1,9 @@
-use crate::model::{PlaylistItemType, SearchRequest, XtreamCluster};
+use crate::model::{PlaylistItemType, SearchRequest, StreamProperties, XtreamCluster};
+use crate::utils::{arc_str_serde, arc_str_option_serde};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct PlaylistRequestXtream {
@@ -26,90 +28,63 @@ pub enum PlaylistRequest {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct CommonPlaylistItem {
     pub virtual_id: u32,
-    pub provider_id: String,
-    pub name: String,
-    pub chno: String,
-    pub logo: String,
-    pub logo_small: String,
-    pub group: String,
-    pub title: String,
-    pub parent_code: String,
-    pub audio_track: String,
-    pub time_shift: String,
-    pub rec: String,
-    pub url: String,
-    pub input_name: String,
+    #[serde(with = "arc_str_serde")]
+    pub provider_id: Arc<str>,
+    #[serde(with = "arc_str_serde")]
+    pub name: Arc<str>,
+    pub chno: u32,
+    #[serde(with = "arc_str_serde")]
+    pub logo: Arc<str>,
+    #[serde(with = "arc_str_serde")]
+    pub logo_small: Arc<str>,
+    #[serde(with = "arc_str_serde")]
+    pub group: Arc<str>,
+    #[serde(with = "arc_str_serde")]
+    pub title: Arc<str>,
+    #[serde(with = "arc_str_serde")]
+    pub parent_code: Arc<str>,
+    #[serde(with = "arc_str_serde")]
+    pub audio_track: Arc<str>,
+    #[serde(with = "arc_str_serde")]
+    pub time_shift: Arc<str>,
+    #[serde(with = "arc_str_serde")]
+    pub rec: Arc<str>,
+    #[serde(with = "arc_str_serde")]
+    pub url: Arc<str>,
+    #[serde(with = "arc_str_serde")]
+    pub input_name: Arc<str>,
     pub item_type: PlaylistItemType,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub epg_channel_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, with = "arc_str_option_serde")]
+    pub epg_channel_id: Option<Arc<str>>,
+    #[serde(default)]
     pub xtream_cluster: Option<XtreamCluster>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub additional_properties: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub additional_properties: Option<StreamProperties>,
+    #[serde(default)]
     pub category_id: Option<u32>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub struct PlaylistResponseGroup {
-    pub id: u32,
-    pub title: String,
-    pub channels: Vec<CommonPlaylistItem>,
-    pub xtream_cluster: XtreamCluster,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct UiPlaylistGroup {
     pub id: u32,
-    pub title: String,
+    #[serde(with = "arc_str_serde")]
+    pub title: Arc<str>,
     pub channels: Vec<Rc<CommonPlaylistItem>>,
     pub xtream_cluster: XtreamCluster,
 }
 
-impl From<PlaylistResponseGroup> for UiPlaylistGroup {
-    fn from(response: PlaylistResponseGroup) -> Self {
-        Self {
-            id: response.id,
-            title: response.title,
-            channels: response.channels.into_iter().map(Rc::new).collect(),
-            xtream_cluster: response.xtream_cluster,
-        }
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub struct PlaylistCategoriesResponse {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub live: Option<Vec<PlaylistResponseGroup>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vod: Option<Vec<PlaylistResponseGroup>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub series: Option<Vec<PlaylistResponseGroup>>,
-}
-
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct UiPlaylistCategories {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub live: Option<Vec<Rc<UiPlaylistGroup>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub vod: Option<Vec<Rc<UiPlaylistGroup>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub series: Option<Vec<Rc<UiPlaylistGroup>>>,
 }
 
-impl From<PlaylistCategoriesResponse> for UiPlaylistCategories {
-    fn from(response: PlaylistCategoriesResponse) -> Self {
-        Self {
-            live: response.live.map(|groups| groups.into_iter().map(Into::into).map(Rc::new).collect()),
-            vod: response.vod.map(|groups| groups.into_iter().map(Into::into).map(Rc::new).collect()),
-            series: response.series.map(|groups| groups.into_iter().map(Into::into).map(Rc::new).collect()),
-        }
-    }
-}
-
 fn filter_channels(
-    groups: &Option<Vec<Rc<UiPlaylistGroup>>>,
+    groups: Option<&Vec<Rc<UiPlaylistGroup>>>,
     text: &str,
 ) -> Option<Vec<Rc<UiPlaylistGroup>>> {
     // normalize search text (lowercase)
@@ -149,7 +124,7 @@ fn filter_channels(
     })
 }
 
-fn filter_channels_re(groups: &Option<Vec<Rc<UiPlaylistGroup>>>, regex: &Regex) -> Option<Vec<Rc<UiPlaylistGroup>>> {
+fn filter_channels_re(groups: Option<&Vec<Rc<UiPlaylistGroup>>>, regex: &Regex) -> Option<Vec<Rc<UiPlaylistGroup>>> {
     groups.as_ref().map(|gs| {
         gs.iter()
             .filter_map(|group| {
@@ -199,16 +174,16 @@ impl UiPlaylistCategories {
             SearchRequest::Clear => None,
             SearchRequest::Text(text, _search_fields) => {
                 let text_lc = text.to_lowercase();
-                let live = filter_channels(&self.live, &text_lc);
-                let video = filter_channels(&self.vod, &text_lc);
-                let series = filter_channels(&self.series, &text_lc);
+                let live = filter_channels(self.live.as_ref(), &text_lc);
+                let video = filter_channels(self.vod.as_ref(), &text_lc);
+                let series = filter_channels(self.series.as_ref(), &text_lc);
                 build_result(live, video, series)
             }
             SearchRequest::Regexp(text, _search_fields) => {
-                if let Ok(regex) = Regex::new(text) {
-                    let live = filter_channels_re(&self.live, &regex);
-                    let video = filter_channels_re(&self.vod, &regex);
-                    let series = filter_channels_re(&self.series, &regex);
+                if let Ok(regex) = crate::model::REGEX_CACHE.get_or_compile(text) {
+                    let live = filter_channels_re(self.live.as_ref(), &regex);
+                    let video = filter_channels_re(self.vod.as_ref(), &regex);
+                    let series = filter_channels_re(self.series.as_ref(), &regex);
                     build_result(live, video, series)
                 } else {
                     None

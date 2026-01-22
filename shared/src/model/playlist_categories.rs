@@ -1,43 +1,35 @@
-
-// #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
-// pub struct PlaylistCategories {
-//     #[serde(skip_serializing_if = "Option::is_none")]
-//     pub live: Option<Vec<String>>,
-//     #[serde(skip_serializing_if = "Option::is_none")]
-//     pub vod: Option<Vec<String>>,
-//     #[serde(skip_serializing_if = "Option::is_none")]
-//     pub series: Option<Vec<String>>,
-// }
-
-#[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
-pub struct PlaylistCategoryDto {
-    pub id: String,
-    pub name: String,
-}
-#[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
-pub struct PlaylistCategoriesDto {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub live: Option<Vec<PlaylistCategoryDto>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vod: Option<Vec<PlaylistCategoryDto>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub series: Option<Vec<PlaylistCategoryDto>>,
-}
-
-#[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
-pub struct TargetBouquetDto {
-    #[serde(skip_serializing_if = "Option::is_none")]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+pub struct PlaylistClusterCategoriesDto {
+    #[serde(default)]
     pub live: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub vod: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub series: Option<Vec<String>>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+pub struct PlaylistCategoriesDto {
+    #[serde(default)]
+    pub xtream: Option<PlaylistClusterCategoriesDto>,
+    #[serde(default)]
+    pub m3u: Option<PlaylistClusterCategoriesDto>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+pub struct PlaylistClusterBouquetDto {
+    #[serde(default)]
+    pub live: Option<Vec<String>>,
+    #[serde(default)]
+    pub vod: Option<Vec<String>>,
+    #[serde(default)]
+    pub series: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 pub struct PlaylistBouquetDto {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub xtream: Option<TargetBouquetDto>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub m3u: Option<TargetBouquetDto>,
+    #[serde(default)]
+    pub xtream: Option<PlaylistClusterBouquetDto>,
+    #[serde(default)]
+    pub m3u: Option<PlaylistClusterBouquetDto>,
 }

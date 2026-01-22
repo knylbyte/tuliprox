@@ -9,6 +9,8 @@ pub struct ContentDialogProps {
     pub content: Html,
     pub actions: DialogActions,
     pub on_confirm: Callback<DialogResult>,
+    #[prop_or(true)]
+    pub close_on_backdrop_click: bool,
 }
 
 #[function_component]
@@ -68,7 +70,7 @@ pub fn ContentDialog(props: &ContentDialogProps) -> Html {
             open={*is_open} 
             class="tp__content-dialog" 
             modal=true 
-            close_on_backdrop_click=true
+            close_on_backdrop_click={props.close_on_backdrop_click}
             on_close={on_close}
         >
             { props.content.clone() }
