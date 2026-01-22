@@ -282,15 +282,45 @@ if ! command -v cross >/dev/null 2>&1; then
   die "'cross' is required to install Rust targets."
 fi
 
+if ! command -v docker >/dev/null 2>&1; then
+  die "'docker' is required for 'cross' builds. Install/start Docker Desktop (macOS) or Docker Engine (Linux)."
+fi
+
+if ! docker info >/dev/null 2>&1; then
+  die "Docker daemon is not available. Start Docker so 'cross' can run builds in containers (otherwise it may fall back to host builds)."
+fi
+
+# On Apple Silicon, many cross images are linux/amd64-only. Force linux/amd64 containers so Docker
+# doesn't fail with 'no matching manifest' and cross doesn't fall back to host builds.
+HOST_OS="$(uname -s)"
+HOST_ARCH="$(uname -m)"
+if [ "${HOST_OS}" = "Darwin" ] && [ "${HOST_ARCH}" = "arm64" ]; then
+  CROSS_PLATFORM_OPT="--platform=linux/amd64"
+  if [ -z "${CROSS_CONTAINER_OPTS:-}" ]; then
+    export CROSS_CONTAINER_OPTS="${CROSS_PLATFORM_OPT}"
+    echo "🧰 Using CROSS_CONTAINER_OPTS='${CROSS_CONTAINER_OPTS}' (Apple Silicon compatibility)"
+  elif [[ " ${CROSS_CONTAINER_OPTS} " == *" ${CROSS_PLATFORM_OPT} "* ]]; then
+    echo "🧰 Keeping existing CROSS_CONTAINER_OPTS='${CROSS_CONTAINER_OPTS}' (Apple Silicon compatibility)"
+  else
+    export CROSS_CONTAINER_OPTS="${CROSS_CONTAINER_OPTS} ${CROSS_PLATFORM_OPT}"
+    echo "🧰 Extending CROSS_CONTAINER_OPTS='${CROSS_CONTAINER_OPTS}' (Apple Silicon compatibility)"
+  fi
+fi
+
 if ! command -v rustup >/dev/null 2>&1; then
   die "'rustup' is required to install Rust targets."
 fi
 
-if ! docker info >/dev/null 2>&1; then
-  die "Docker daemon is not available. Start Docker so 'cross' can run builds in containers (otherwise it may try to install non-host toolchains and fail)."
+if command -v rustc >/dev/null 2>&1; then
+  RUSTC_HOST_TRIPLE="$(rustc -vV 2>/dev/null | awk -F': ' '/^host:/{print $2}' | head -n 1)"
+  if [ -n "${RUSTC_HOST_TRIPLE}" ]; then
+    echo "🧾 rustc host triple: ${RUSTC_HOST_TRIPLE}"
+  fi
 fi
 
 echo "🧰 Ensuring rustup targets are installed"
+RUSTUP_TOOLCHAIN_FOR_TARGETS="${RUSTUP_TOOLCHAIN_FOR_TARGETS:-stable}"
+echo "🧰 Using rustup toolchain for target installs: ${RUSTUP_TOOLCHAIN_FOR_TARGETS}"
 RUSTUP_REQUIRED_TARGETS=(
   wasm32-unknown-unknown
 )
@@ -299,11 +329,11 @@ for TARGET in "${ARCHITECTURES[@]}"; do
 done
 
 for TARGET in "${RUSTUP_REQUIRED_TARGETS[@]}"; do
-  if rustup target list --installed | grep -Fxq "${TARGET}"; then
+  if rustup --toolchain "${RUSTUP_TOOLCHAIN_FOR_TARGETS}" target list --installed | grep -Fxq "${TARGET}"; then
     echo "✅ rust target already installed: ${TARGET}"
   else
     echo "➕ Installing rust target: ${TARGET}"
-    rustup target add "${TARGET}"
+    rustup --toolchain "${RUSTUP_TOOLCHAIN_FOR_TARGETS}" target add "${TARGET}"
   fi
 done
 
@@ -335,7 +365,7 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
     fi
 
     # Ensure target is installed (guarded above, keep here as a safety net)
-    rustup target add "$ARCHITECTURE"
+    rustup --toolchain "${RUSTUP_TOOLCHAIN_FOR_TARGETS}" target add "$ARCHITECTURE"
 
     # Build for each platform
     cd "$WORKING_DIR"
