@@ -1,14 +1,16 @@
 use crate::api::model::persist_pipe_stream::tee_dyn_reader;
-use crate::model::ConfigInput;
+use crate::api::model::AppState;
 use crate::model::{format_elapsed_time, AppConfig, InputSource, ReverseProxyDisabledHeaderConfig};
+use crate::model::{ConfigInput, ResourceRetryConfig};
 use crate::utils::compression::compression_utils::{is_deflate, is_gzip};
-use crate::utils::{async_file_reader, async_file_writer, debug_if_enabled, IO_BUFFER_SIZE};
+use crate::utils::{async_file_reader, async_file_writer, debug_if_enabled};
 use crate::utils::{get_file_path, persist_file};
+use axum::http::header::RETRY_AFTER;
 use futures::{StreamExt, TryStreamExt};
 use log::{debug, error, log_enabled, trace, Level};
 use reqwest::header::CONTENT_ENCODING;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-use reqwest::StatusCode;
+use reqwest::{StatusCode};
 use shared::error::{notify_err_res, string_to_io_error, TuliproxError};
 use shared::model::{InputFetchMethod, DEFAULT_USER_AGENT};
 use shared::utils::{
@@ -74,13 +76,124 @@ pub fn content_type_from_ext(ext: &str) -> &'static str {
     }
 }
 
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+pub fn calculate_retry_backoff(base_delay_ms: u64, multiplier: f64, attempt: u32) -> u64 {
+    let base = base_delay_ms.max(1);
+    if multiplier <= 1.0 {
+        return base;
+    }
+    let delay = (base as f64) * multiplier.powi(i32::try_from(attempt).unwrap_or(i32::MAX));
+    if !delay.is_finite() || delay < 1.0 {
+        base
+    } else if delay >= u64::MAX as f64 {
+        u64::MAX
+    } else {
+        delay as u64
+    }
+}
+
+pub async fn send_with_retry(
+    app_config: &Arc<AppConfig>,
+    url: &Url,
+    mut send: impl FnMut() -> reqwest::RequestBuilder,
+) -> Result<reqwest::Response, std::io::Error> {
+    let config = app_config.config.load();
+    let (max_attempts, backoff_ms, backoff_multiplier) = config
+        .reverse_proxy
+        .as_ref()
+        .map_or_else(
+            ResourceRetryConfig::get_default_retry_values,
+            |rp| rp.resource_retry.get_retry_values(),
+        );
+    drop(config);
+
+    for attempt in 0..max_attempts {
+        match send().send().await {
+            Ok(response) => {
+                let status = response.status();
+
+                if status.is_success() {
+                    return Ok(response);
+                }
+
+                let should_retry = status.is_server_error()
+                    || matches!(
+                        status,
+                        StatusCode::REQUEST_TIMEOUT
+                            | StatusCode::TOO_EARLY
+                            | StatusCode::TOO_MANY_REQUESTS
+                    );
+
+                if attempt < max_attempts - 1 && should_retry {
+                    let wait_dur = response
+                        .headers()
+                        .get(RETRY_AFTER)
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .map_or_else(
+                            || {
+                                let delay = calculate_retry_backoff(
+                                    backoff_ms,
+                                    backoff_multiplier,
+                                    attempt,
+                                );
+                                Duration::from_millis(delay)
+                            },
+                            Duration::from_secs,
+                        );
+
+                    tokio::time::sleep(wait_dur).await;
+                    continue;
+                }
+
+                return Err(string_to_io_error(format!(
+                    "Request failed with status {} {}",
+                    format_http_status(status),
+                    sanitize_sensitive_info(url.as_str())
+                )));
+            }
+
+            Err(err) => {
+                if (err.is_timeout() || err.is_connect()) && attempt < max_attempts - 1 {
+                    let delay = calculate_retry_backoff(
+                        backoff_ms,
+                        backoff_multiplier,
+                        attempt,
+                    );
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    continue;
+                }
+
+                error!(
+                    "Received failure from server {}: {}",
+                    sanitize_sensitive_info(url.as_str()),
+                    sanitize_sensitive_info(err.to_string().as_str())
+                );
+
+                return Err(string_to_io_error(format!(
+                    "Request failed: {} {}",
+                    sanitize_sensitive_info(url.as_str()),
+                    sanitize_sensitive_info(err.to_string().as_str())
+                )));
+            }
+        }
+    }
+
+    Err(string_to_io_error(format!(
+        "Failed to download file from {} after all retry attempts",
+        sanitize_sensitive_info(url.as_str())
+    )))
+}
+
 pub async fn get_input_epg_content_as_file(
+    app_config: &Arc<AppConfig>,
     client: &reqwest::Client,
     input: &ConfigInput,
+    headers: Option<&HeaderMap>,
     working_dir: &str,
     url_str: &str,
     persist_filepath: &Path,
-    default_user_agent: Option<&str>,
 ) -> Result<PathBuf, TuliproxError> {
     debug_if_enabled!(
         "getting input epg content working_dir: {}, url: {}",
@@ -89,13 +202,14 @@ pub async fn get_input_epg_content_as_file(
     );
     if url_str.parse::<url::Url>().is_ok() {
         match download_epg_content_as_file(
+            app_config,
             client,
             input,
+            headers,
             url_str,
             persist_filepath,
-            default_user_agent,
         )
-        .await
+            .await
         {
             Ok(content) => Ok(content),
             Err(e) => {
@@ -132,11 +246,11 @@ pub async fn get_input_epg_content_as_file(
 }
 
 pub async fn get_input_text_content(
+    app_state: &Arc<AppState>,
     client: &reqwest::Client,
     input: &InputSource,
     working_dir: &str,
     persist_filepath: Option<PathBuf>,
-    default_user_agent: Option<&str>,
 ) -> Result<String, TuliproxError> {
     debug_if_enabled!(
         "getting input text content working_dir: {}, url: {}",
@@ -146,15 +260,14 @@ pub async fn get_input_text_content(
 
     if input.url.parse::<url::Url>().is_ok() {
         match download_text_content(
+            &app_state.app_config,
             client,
-            None,
             input,
             None,
             persist_filepath,
             false,
-            default_user_agent,
         )
-        .await
+            .await
         {
             Ok((content, _response_url)) => Ok(content),
             Err(e) => {
@@ -195,11 +308,11 @@ pub async fn get_input_text_content(
 }
 
 pub async fn get_input_text_content_as_stream(
+    app_config: &Arc<AppConfig>,
     client: &reqwest::Client,
     input: &InputSource,
     working_dir: &str,
     persist_filepath: Option<PathBuf>,
-    default_user_agent: Option<&str>,
 ) -> Result<DynReader, TuliproxError> {
     debug_if_enabled!(
         "getting input text content working_dir: {}, url: {}",
@@ -209,14 +322,12 @@ pub async fn get_input_text_content_as_stream(
 
     if input.url.parse::<url::Url>().is_ok() {
         match download_text_content_as_stream(
+            app_config,
             client,
-            None,
             input,
-            None,
             persist_filepath,
-            default_user_agent,
         )
-        .await
+            .await
         {
             Ok((content, _response_url)) => Ok(content),
             Err(e) => {
@@ -245,7 +356,7 @@ pub async fn get_input_text_content_as_stream(
                                         );
                                     })),
                                 )
-                                .await;
+                                    .await;
                                 Some(tee)
                             } else {
                                 Some(content)
@@ -455,138 +566,79 @@ pub async fn get_local_file_content_as_stream(
     }
 }
 
-// pub fn get_local_file_content_blocking(file_path: &PathBuf) -> Result<String, Error> {
-//     match fs::read(file_path) {
-//         Ok(content) => decode_local_file_bytes(content).await,
-//         Err(_) => Err(local_file_not_found(file_path)),
-//     }
-// }
-
-async fn get_remote_content_as_file(
+pub async fn get_remote_content_as_file(
+    app_config: &Arc<AppConfig>,
     client: &reqwest::Client,
     input: &ConfigInput,
-    url: &Url,
-    file_path: &Path,
-    default_user_agent: Option<&str>,
-) -> Result<PathBuf, std::io::Error> {
-    let start_time = Instant::now();
-    let request = get_client_request(
-        client,
-        input.method,
-        Some(&input.headers),
-        url,
-        None,
-        None,
-        default_user_agent,
-    );
-    match request.send().await {
-        Ok(response) => {
-            if response.status().is_success() {
-                // Open a file in write mode
-                let mut writer = async_file_writer(File::create(file_path).await?);
-                let mut write_counter = 0;
-                // Stream the response body in chunks
-                let mut stream = response.bytes_stream();
-                while let Some(chunk) = stream.next().await {
-                    match chunk {
-                        Ok(bytes) => {
-                            write_counter += bytes.len();
-                            writer.write_all(&bytes).await?;
-                            if write_counter >= IO_BUFFER_SIZE {
-                                writer.flush().await?;
-                                write_counter = 0;
-                            }
-                        }
-                        Err(err) => {
-                            let _ = writer.flush().await;
-                            let _ = writer.shutdown().await;
-                            return Err(string_to_io_error(format!("Failed to read chunk: {err}")));
-                        }
-                    }
-                }
-
-                writer.flush().await?;
-                writer.shutdown().await?;
-                let elapsed = start_time.elapsed().as_secs();
-                debug!(
-                    "File downloaded successfully to {}, took:{}",
-                    file_path.display(),
-                    format_elapsed_time(elapsed)
-                );
-                Ok(file_path.to_path_buf())
-            } else {
-                Err(string_to_io_error(format!(
-                    "Request failed with status {} {}",
-                    format_http_status(response.status()),
-                    sanitize_sensitive_info(url.as_str())
-                )))
-            }
-        }
-        Err(err) => Err(string_to_io_error(format!(
-            "Request failed: {} {err}",
-            sanitize_sensitive_info(url.as_str())
-        ))),
-    }
-}
-
-pub type DynReader = Pin<Box<dyn AsyncRead + Send>>;
-
-#[allow(clippy::implicit_hasher)]
-pub async fn get_remote_content_as_stream(
-    client: &reqwest::Client,
-    input: &InputSource,
     headers: Option<&HeaderMap>,
     url: &Url,
-    disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
-    default_user_agent: Option<&str>,
-) -> Result<(DynReader, String), Error> {
+    file_path: &Path,
+) -> Result<PathBuf, std::io::Error> {
     let custom_headers = headers.map(|h| {
         h.iter()
             .map(|(k, v)| (k.as_str().to_string(), v.as_bytes().to_vec()))
             .collect::<HashMap<_, _>>()
     });
-    let merged = get_request_headers(
-        Some(&input.headers),
-        custom_headers.as_ref(),
-        disabled_headers,
-        default_user_agent,
-    );
-    let headers: HashMap<String, String> = merged
-        .iter()
-        .map(|(k, v)| {
-            (
-                k.as_str().to_string(),
-                String::from_utf8_lossy(v.as_bytes()).to_string(),
-            )
-        })
-        .collect();
 
-    let request = get_client_request(
-        client,
-        input.method,
-        Some(&headers),
+    let config = app_config.config.load();
+    let default_user_agent = config.default_user_agent.clone();
+    drop(config);
+
+    let response = send_with_retry(
+        app_config,
         url,
-        None,
-        None,
-        default_user_agent,
-    );
-    let response = request.send().await.map_err(std::io::Error::other)?;
+        || {
+            get_client_request(
+                client,
+                input.method,
+                Some(&input.headers),
+                url,
+                custom_headers.as_ref(),
+                None,
+                default_user_agent.as_deref(),
+            )
+        },
+    )
+        .await?;
 
-    if !response.status().is_success() {
-        return Err(string_to_io_error(format!(
-            "Request failed with status {} {}",
-            format_http_status(response.status()),
-            sanitize_sensitive_info(url.as_str())
-        )));
+    let start_time = Instant::now();
+    let mut writer = async_file_writer(File::create(file_path).await?);
+
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| {
+            string_to_io_error(format!("Failed to read chunk: {e}"))
+        })?;
+        writer.write_all(&bytes).await?;
     }
 
-    let response_url = response.url().to_string();
+    writer.flush().await?;
+    writer.shutdown().await?;
+
+    debug!(
+        "File downloaded successfully to {}, took {}",
+        file_path.display(),
+        format_elapsed_time(start_time.elapsed().as_secs())
+    );
+
+    Ok(file_path.to_path_buf())
+}
+
+pub type DynReader = Pin<Box<dyn AsyncRead + Send>>;
+
+async fn build_decoded_stream_reader(
+    response: reqwest::Response,
+) -> Result<DynReader, std::io::Error> {
     let headers = response.headers();
     let header_value = headers.get(CONTENT_ENCODING);
-    let mut encoding = header_value.and_then(|h| h.to_str().ok()).map(ToString::to_string);
+    let mut encoding = header_value
+        .and_then(|h| h.to_str().ok())
+        .map(ToString::to_string);
 
-    let stream_reader = StreamReader::new(response.bytes_stream().map_err(std::io::Error::other));
+    let stream_reader =
+        StreamReader::new(response.bytes_stream().map_err(std::io::Error::other));
     let mut buf_reader = async_file_reader(stream_reader);
+
     let peek = buf_reader.fill_buf().await?;
 
     if peek.len() >= 2 {
@@ -615,27 +667,85 @@ pub async fn get_remote_content_as_stream(
         Box::pin(buf_reader)
     };
 
-    Ok((reader, response_url))
+    Ok(reader)
 }
 
-async fn get_remote_content(
+
+#[allow(clippy::implicit_hasher)]
+pub async fn get_remote_content_as_stream(
+    app_config: &Arc<AppConfig>,
     client: &reqwest::Client,
     input: &InputSource,
     headers: Option<&HeaderMap>,
     url: &Url,
-    disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
-    default_user_agent: Option<&str>,
+) -> Result<(DynReader, String), Error> {
+    let custom_headers = headers.map(|h| {
+        h.iter()
+            .map(|(k, v)| (k.as_str().to_string(), v.as_bytes().to_vec()))
+            .collect::<HashMap<_, _>>()
+    });
+
+    let config = app_config.config.load();
+    let default_user_agent = config.default_user_agent.clone();
+    let disabled_headers = config.get_disabled_headers();
+    drop(config);
+
+    let merged = get_request_headers(
+        Some(&input.headers),
+        custom_headers.as_ref(),
+        disabled_headers.as_ref(),
+        default_user_agent.as_deref(),
+    );
+
+    let headers: HashMap<String, String> = merged
+        .iter()
+        .map(|(k, v)| {
+            (
+                k.as_str().to_string(),
+                String::from_utf8_lossy(v.as_bytes()).to_string(),
+            )
+        })
+        .collect();
+
+    let response = send_with_retry(
+        app_config,
+        url,
+        || {
+            get_client_request(
+                client,
+                input.method,
+                Some(&headers),
+                url,
+                None,
+                None,
+                default_user_agent.as_deref(),
+            )
+        },
+    )
+        .await?;
+
+    let response_url = response.url().to_string();
+
+    let reader = build_decoded_stream_reader(response).await?;
+    Ok((reader, response_url))
+}
+
+async fn get_remote_content(
+    app_config: &Arc<AppConfig>,
+    client: &reqwest::Client,
+    input: &InputSource,
+    headers: Option<&HeaderMap>,
+    url: &Url,
 ) -> Result<(String, String), Error> {
     let (mut stream, response_url) = get_remote_content_as_stream(
+        app_config,
         client,
         input,
         headers,
         url,
-        disabled_headers,
-        default_user_agent,
     )
-    .await
-    .map_err(|e| string_to_io_error(format!("Failed to read content: {e}")))?;
+        .await
+        .map_err(|e| string_to_io_error(format!("Failed to read content: {e}")))?;
     let mut content = String::new();
     stream
         .read_to_string(&mut content)
@@ -645,11 +755,12 @@ async fn get_remote_content(
 }
 
 async fn download_epg_content_as_file(
+    app_config: &Arc<AppConfig>,
     client: &reqwest::Client,
     input: &ConfigInput,
+    headers: Option<&HeaderMap>,
     url_str: &str,
     persist_filepath: &Path,
-    default_user_agent: Option<&str>,
 ) -> Result<PathBuf, Error> {
     if let Ok(url) = url_str.parse::<url::Url>() {
         if url.scheme() == "file" {
@@ -672,7 +783,7 @@ async fn download_epg_content_as_file(
                 },
             )
         } else {
-            get_remote_content_as_file(client, input, &url, persist_filepath, default_user_agent)
+            get_remote_content_as_file(app_config, client, input, headers, &url, persist_filepath)
                 .await
         }
     } else {
@@ -684,13 +795,12 @@ async fn download_epg_content_as_file(
 }
 
 pub async fn download_text_content(
+    app_config: &Arc<AppConfig>,
     client: &reqwest::Client,
-    disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
     input: &InputSource,
     headers: Option<&HeaderMap>,
     persist_filepath: Option<PathBuf>,
     trace_log: bool,
-    default_user_agent: Option<&str>,
 ) -> Result<(String, String), Error> {
     let start_time = Instant::now();
     let result = if let Ok(url) = input.url.parse::<url::Url>() {
@@ -706,14 +816,13 @@ pub async fn download_text_content(
             }
         } else {
             get_remote_content(
+                app_config,
                 client,
                 input,
                 headers,
                 &url,
-                disabled_headers,
-                default_user_agent,
             )
-            .await
+                .await
         };
         match result {
             Ok((content, response_url)) => {
@@ -751,12 +860,10 @@ pub async fn download_text_content(
 }
 
 pub async fn download_text_content_as_stream(
+    app_config: &Arc<AppConfig>,
     client: &reqwest::Client,
-    disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
     input: &InputSource,
-    headers: Option<&HeaderMap>,
     persist_filepath: Option<PathBuf>,
-    default_user_agent: Option<&str>,
 ) -> Result<(DynReader, String), Error> {
     if let Ok(url) = input.url.parse::<url::Url>() {
         let result = if url.scheme() == "file" {
@@ -771,14 +878,13 @@ pub async fn download_text_content_as_stream(
             }
         } else {
             get_remote_content_as_stream(
+                app_config,
                 client,
                 input,
-                headers,
+                None,
                 &url,
-                disabled_headers,
-                default_user_agent,
             )
-            .await
+                .await
         };
         match result {
             Ok((content, response_url)) => {
@@ -790,7 +896,7 @@ pub async fn download_text_content_as_stream(
                             debug!("Persisted {size} bytes");
                         })),
                     )
-                    .await;
+                        .await;
                     Ok((tee_reader, response_url))
                 } else {
                     Ok((content, response_url))
@@ -807,27 +913,25 @@ pub async fn download_text_content_as_stream(
 }
 
 async fn download_json_content(
+    app_config: &Arc<AppConfig>,
     client: &reqwest::Client,
-    disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
     input: &InputSource,
     persist_filepath: Option<PathBuf>,
     trace_log: bool,
-    default_user_agent: Option<&str>,
 ) -> Result<serde_json::Value, Error> {
     debug_if_enabled!(
         "Downloading json content from {}",
         sanitize_sensitive_info(&input.url)
     );
     match download_text_content(
+        app_config,
         client,
-        disabled_headers,
         input,
         None,
         persist_filepath,
         trace_log,
-        default_user_agent,
     )
-    .await
+        .await
     {
         Ok((content, _response_url)) => match serde_json::from_str::<serde_json::Value>(&content) {
             Ok(value) => Ok(value),
@@ -838,22 +942,20 @@ async fn download_json_content(
 }
 
 pub async fn get_input_json_content(
+    app_config: &Arc<AppConfig>,
     client: &reqwest::Client,
-    disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
     input: &InputSource,
     persist_filepath: Option<PathBuf>,
     trace_log: bool,
-    default_user_agent: Option<&str>,
 ) -> Result<serde_json::Value, TuliproxError> {
     match download_json_content(
+        app_config,
         client,
-        disabled_headers,
         input,
         persist_filepath,
         trace_log,
-        default_user_agent,
     )
-    .await
+        .await
     {
         Ok(content) => Ok(content),
         Err(e) => notify_err_res!(
@@ -865,25 +967,22 @@ pub async fn get_input_json_content(
 }
 
 async fn download_json_content_as_stream(
+    app_config: &Arc<AppConfig>,
     client: &reqwest::Client,
-    disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
     input: &InputSource,
     persist_filepath: Option<PathBuf>,
-    default_user_agent: Option<&str>,
 ) -> Result<DynReader, Error> {
     debug_if_enabled!(
         "Downloading json content as stream from {}",
         sanitize_sensitive_info(&input.url)
     );
     match download_text_content_as_stream(
+        app_config,
         client,
-        disabled_headers,
         input,
-        None,
         persist_filepath,
-        default_user_agent,
     )
-    .await
+        .await
     {
         Ok((reader, _response_url)) => Ok(reader),
         Err(err) => Err(err),
@@ -891,20 +990,18 @@ async fn download_json_content_as_stream(
 }
 
 pub async fn get_input_json_content_as_stream(
+    app_config: &Arc<AppConfig>,
     client: &reqwest::Client,
-    disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
     input: &InputSource,
     persist_filepath: Option<PathBuf>,
-    default_user_agent: Option<&str>,
 ) -> Result<DynReader, TuliproxError> {
     match download_json_content_as_stream(
+        app_config,
         client,
-        disabled_headers,
         input,
         persist_filepath,
-        default_user_agent,
     )
-    .await
+        .await
     {
         Ok(stream) => Ok(stream),
         Err(e) => notify_err_res!(

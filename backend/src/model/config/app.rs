@@ -1,5 +1,6 @@
 use crate::api::model::TransportStreamBuffer;
-use crate::model::{ApiProxyConfig, ApiProxyServerInfo, Config, ConfigInput, ConfigInputOptions, ConfigTarget, CustomStreamResponse, HdHomeRunConfig, Mappings, ProxyUserCredentials, SourcesConfig, TargetOutput};
+use crate::model::{ApiProxyConfig, ApiProxyServerInfo, Config, ConfigInput, ConfigInputOptions,
+                   ConfigTarget, CustomStreamResponse, HdHomeRunConfig, Mappings, ProxyUserCredentials, ReverseProxyDisabledHeaderConfig, SourcesConfig, TargetOutput};
 use crate::utils;
 use arc_swap::access::Access;
 use arc_swap::{ArcSwap, ArcSwapOption};
@@ -413,6 +414,11 @@ impl AppConfig {
     pub fn get_user_server_info(&self, user: &ProxyUserCredentials) -> ApiProxyServerInfo {
         let server_info_name = user.server.as_ref().map_or("default", |server_name| server_name.as_str());
         self.get_server_info(server_info_name)
+    }
+
+    pub fn get_disabled_headers(&self) -> Option<ReverseProxyDisabledHeaderConfig> {
+        let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&self.config);
+        config.get_disabled_headers()
     }
 }
 

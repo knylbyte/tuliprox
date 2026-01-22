@@ -65,7 +65,7 @@ pub(in crate::api::endpoints) async fn get_playlist_for_custom_provider(client: 
         Some(input) => {
             let (result, errors) =
                 match input.input_type {
-                    InputType::M3u | InputType::M3uBatch => m3u::download_m3u_playlist(client, &cfg, input).await,
+                    InputType::M3u | InputType::M3uBatch => m3u::download_m3u_playlist(app_config, client, &cfg, input).await,
                     InputType::Xtream | InputType::XtreamBatch => {
                         let (pl, err, _) = xtream::download_xtream_playlist(app_config, client, input, Some(&[cluster])).await;
                         (pl, err)

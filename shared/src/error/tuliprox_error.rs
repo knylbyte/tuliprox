@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result};
+use crate::utils::sanitize_sensitive_info;
 
 #[macro_export]
 macro_rules! get_errors_notify_message {
@@ -94,9 +95,7 @@ macro_rules! handle_tuliprox_error_result {
         }
     }
 }
-
 pub use handle_tuliprox_error_result;
-
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TuliproxErrorKind {
@@ -128,12 +127,12 @@ impl Error for TuliproxError {}
 pub fn to_io_error<E>(err: E) -> std::io::Error
 where
     E: std::error::Error,
-{ std::io::Error::other(err.to_string()) }
+{ std::io::Error::other(sanitize_sensitive_info(&err.to_string())) }
 
 pub fn str_to_io_error(err: &str) -> std::io::Error {
-    std::io::Error::other(err.to_string())
+    std::io::Error::other(sanitize_sensitive_info(err))
 }
 
 pub fn string_to_io_error(err: String) -> std::io::Error {
-    std::io::Error::other(err)
+    std::io::Error::other(sanitize_sensitive_info(&err))
 }

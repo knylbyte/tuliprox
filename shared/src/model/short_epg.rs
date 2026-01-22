@@ -18,13 +18,8 @@ pub struct ShortEpgDto {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
-pub struct ShortEpgListingsDto {
-    pub epg_listings : Vec<ShortEpgDto>,
-}
-
-#[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
 pub struct ShortEpgResultDto {
-    pub data: ShortEpgListingsDto,
+    pub epg_listings : Vec<ShortEpgDto>,
     #[serde(default, serialize_with = "serialize_option_string_as_null_if_empty")]
     pub error: Option<String>,
 }
@@ -32,9 +27,7 @@ pub struct ShortEpgResultDto {
 impl ShortEpgResultDto {
     pub fn new(epg_listings: Vec<ShortEpgDto>) -> Self {
         Self {
-            data: ShortEpgListingsDto {
-                epg_listings,
-            },
+            epg_listings,
             error: None,
         }
     }

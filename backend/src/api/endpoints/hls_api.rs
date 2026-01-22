@@ -133,13 +133,12 @@ pub(in crate::api) async fn handle_hls_stream_request(
     );
     let input_source = InputSource::from(input).with_url(request_url);
     match request::download_text_content(
+        &app_state.app_config,
         &app_state.http_client.load(),
-        disabled_headers.as_ref(),
         &input_source,
         Some(&headers),
         None,
         false,
-        default_user_agent.as_deref(),
     )
         .await
     {

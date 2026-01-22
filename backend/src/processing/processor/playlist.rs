@@ -1,4 +1,4 @@
-use crate::model::{AppConfig, Config, ConfigFavourites, ConfigInput, ConfigRename, TVGuide};
+use crate::model::{AppConfig, Config, ConfigFavourites, ConfigInput, ConfigRename, ReverseProxyDisabledHeaderConfig, TVGuide};
 use crate::utils::m3u;
 use crate::utils::xtream;
 use crate::utils::{epg, StepMeasureCallback};
@@ -318,7 +318,7 @@ async fn playlist_download_from_input(client: &reqwest::Client, app_config: &Arc
 
     let (playlist, errors, persisted) = match input.input_type {
         InputType::M3u => {
-            let (p, e) = m3u::download_m3u_playlist(client, config, input).await;
+            let (p, e) = m3u::download_m3u_playlist(app_config, client, config, input).await;
             (p, e, false)
         }
         InputType::Xtream => xtream::download_xtream_playlist(app_config, client, input, clusters_to_download.as_deref()).await,
@@ -458,7 +458,7 @@ async fn download_input_epg(ctx: &PlaylistProcessingContext, input: &Arc<ConfigI
     // Download epg for input
     let (tvguide, mut tvguide_errors) = if error_list.is_empty() {
         let working_dir = &ctx.config.config.load().working_dir;
-        epg::get_xmltv(ctx, input, working_dir).await
+        epg::get_xmltv(ctx, input, None, working_dir).await
     } else {
         (None, vec![])
     };
@@ -541,6 +541,7 @@ pub struct PlaylistProcessingContext {
     pub user_targets: Arc<ProcessTargets>,
     pub event_manager: Option<Arc<EventManager>>,
     pub playlist_state: Option<Arc<PlaylistStorageState>>,
+    pub disabled_headers: Option<ReverseProxyDisabledHeaderConfig>,
 
     // Coordination
     processed_inputs: Arc<Mutex<HashSet<Arc<str>>>>,
@@ -863,7 +864,8 @@ async fn process_watch(cfg: &Config, client: &reqwest::Client, target: &ConfigTa
 
 pub async fn exec_processing(client: &reqwest::Client, app_config: Arc<AppConfig>, targets: Arc<ProcessTargets>,
                              event_manager: Option<Arc<EventManager>>, playlist_state: Option<Arc<PlaylistStorageState>>,
-                             update_guard: Option<UpdateGuard>) {
+                             update_guard: Option<UpdateGuard>,
+                             disabled_headers: Option<ReverseProxyDisabledHeaderConfig>) {
         let _guard = if let Some(guard) = update_guard {
         if let Some(permit) = guard.try_playlist() {
             Some(permit)
@@ -887,6 +889,7 @@ pub async fn exec_processing(client: &reqwest::Client, app_config: Arc<AppConfig
         playlist_state: playlist_state.clone(),
         processed_inputs: Arc::new(Mutex::new(HashSet::new())),
         input_locks: Arc::new(Mutex::new(HashMap::new())),
+        disabled_headers,
     };
 
     let start_time = Instant::now();

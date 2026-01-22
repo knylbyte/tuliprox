@@ -12,10 +12,10 @@ use crate::auth::Fingerprint;
 use crate::model::{xtream_mapping_option_from_target_options, ConfigTarget};
 use crate::model::{Config, ConfigInput};
 use crate::model::{InputSource, ProxyUserCredentials};
-use crate::repository::{get_target_id_mapping, user_get_bouquet_filter, xtream_get_collection_path, xtream_get_item_for_stream_id, xtream_load_rewrite_playlist};
 use crate::repository::get_target_storage_path;
+use crate::repository::storage_const;
 use crate::repository::VirtualIdRecord;
-use crate::repository::{storage_const};
+use crate::repository::{get_target_id_mapping, user_get_bouquet_filter, xtream_get_collection_path, xtream_get_item_for_stream_id, xtream_load_rewrite_playlist};
 use crate::utils::xtream::create_vod_info_from_item;
 use crate::utils::{debug_if_enabled, trace_if_enabled};
 use crate::utils::{request, xtream};
@@ -903,13 +903,13 @@ async fn xtream_get_short_epg(
             None,
         ).await {
             let config = &app_state.app_config.config.load();
-                if let (Some(epg_path), Some(channel_id)) = (get_epg_path_for_target(config, target), &pli.epg_channel_id) {
-                    if let Ok(exists) = tokio::fs::try_exists(&epg_path).await {
-                        if exists {
-                            return serve_short_epg(app_state, epg_path.as_path(), user, target, Arc::clone(channel_id), stream_id).await;
-                        }
+            if let (Some(epg_path), Some(channel_id)) = (get_epg_path_for_target(config, target), &pli.epg_channel_id) {
+                if let Ok(exists) = tokio::fs::try_exists(&epg_path).await {
+                    if exists {
+                        return serve_short_epg(app_state, epg_path.as_path(), user, target, Arc::clone(channel_id), stream_id).await;
                     }
                 }
+            }
 
             if pli.provider_id > 0 {
                 let input_name = &pli.input_name;
@@ -934,15 +934,13 @@ async fn xtream_get_short_epg(
 
                         // TODO serve epg from own db
                         let input_source = InputSource::from(&*input).with_url(info_url);
-                        let default_user_agent = config.default_user_agent.clone();
                         return match request::download_text_content(
+                            &app_state.app_config,
                             &app_state.http_client.load(),
-                            None,
                             &input_source,
                             None,
                             None,
                             false,
-                            default_user_agent.as_deref(),
                         )
                             .await
                         {
@@ -1041,13 +1039,12 @@ async fn xtream_get_catchup_response(
         pli.provider_id
     )));
     let input_source = InputSource::from(&*input).with_url(info_url);
-    let default_user_agent = app_state.app_config.config.load().default_user_agent.clone();
     let content = try_result_bad_request!(
         xtream::get_xtream_stream_info_content(
+            &app_state.app_config,
             &app_state.http_client.load(),
             &input_source,
             false,
-            default_user_agent.as_deref(),
         )
         .await
     );

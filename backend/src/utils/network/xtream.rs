@@ -60,8 +60,8 @@ pub fn get_xtream_player_api_info_url(input: &ConfigInput, cluster: XtreamCluste
 }
 
 
-pub async fn get_xtream_stream_info_content(client: &reqwest::Client, input: &InputSource, trace_log: bool, default_user_agent: Option<&str>,) -> Result<String, Error> {
-    match request::download_text_content(client, None, input, None, None, trace_log, default_user_agent).await {
+pub async fn get_xtream_stream_info_content(app_config: &Arc<AppConfig>, client: &reqwest::Client, input: &InputSource, trace_log: bool) -> Result<String, Error> {
+    match request::download_text_content(app_config, client, input, None, None, trace_log).await {
         Ok((content, _response_url)) => Ok(content),
         Err(err) => Err(err)
     }
@@ -87,7 +87,7 @@ pub async fn get_xtream_stream_info(client: &reqwest::Client,
     }
 
     let input_source = InputSource::from(input).with_url(info_url.to_owned());
-    if let Ok(content) = get_xtream_stream_info_content(client, &input_source, false, app_config.config.load().default_user_agent.as_deref()).await {
+    if let Ok(content) = get_xtream_stream_info_content(app_config, client, &input_source, false).await {
         if content.is_empty() {
             return Err(info_err!("Provider returned no response for stream with id: {}/{}/{}",
                                                   target.name.replace(' ', "_").as_str(), &cluster, pli.get_virtual_id()));
@@ -266,13 +266,13 @@ const ACTIONS: [(XtreamCluster, &str, &str); 3] = [
     (XtreamCluster::Video, crate::model::XC_ACTION_GET_VOD_CATEGORIES, crate::model::XC_ACTION_GET_VOD_STREAMS),
     (XtreamCluster::Series, crate::model::XC_ACTION_GET_SERIES_CATEGORIES, crate::model::XC_ACTION_GET_SERIES)];
 
-async fn xtream_login(cfg: &Config, client: &reqwest::Client, input: &InputSource, username: &str) -> Result<Option<XtreamLoginInfo>, TuliproxError> {
-    let content = if let Ok(content) = request::get_input_json_content(client, None, input, None, false, cfg.default_user_agent.as_deref()).await {
+async fn xtream_login(app_config: &Arc<AppConfig>, client: &reqwest::Client, input: &InputSource, username: &str) -> Result<Option<XtreamLoginInfo>, TuliproxError> {
+    let content = if let Ok(content) = request::get_input_json_content(app_config, client, input, None, false).await {
         content
     } else {
         let input_source_account_info =
             input.with_url(format!("{}&action={}", &input.url, crate::model::XC_ACTION_GET_ACCOUNT_INFO));
-        match request::get_input_json_content(client, None, &input_source_account_info, None, false, cfg.default_user_agent.as_deref()).await {
+        match request::get_input_json_content(app_config, client, &input_source_account_info, None, false).await {
             Ok(content) => content,
             Err(err) => {
                 warn!("Failed to login xtream account {username} {err}");
@@ -285,6 +285,8 @@ async fn xtream_login(cfg: &Config, client: &reqwest::Client, input: &InputSourc
         status: None,
         exp_date: None,
     };
+
+    let cfg = app_config.config.load();
 
     if let Some(user_info) = content.get("user_info") {
         if let Some(status_value) = user_info.get("status") {
@@ -303,7 +305,7 @@ async fn xtream_login(cfg: &Config, client: &reqwest::Client, input: &InputSourc
         if let Some(exp_value) = user_info.get("exp_date") {
             if let Some(expiration_timestamp) = get_i64_from_serde_value(exp_value) {
                 login_info.exp_date = Some(expiration_timestamp);
-                notify_account_expire(login_info.exp_date, cfg, client, username, &input.name).await;
+                notify_account_expire(login_info.exp_date, &cfg, client, username, &input.name).await;
             }
         }
     }
@@ -356,7 +358,7 @@ pub async fn download_xtream_playlist(app_config: &Arc<AppConfig>, client: &reqw
 
     check_alias_user_state(&cfg, client, input).await;
 
-    if let Err(err) = xtream_login(&cfg, client, &input_source_login, username).await {
+    if let Err(err) = xtream_login(app_config, client, &input_source_login, username).await {
         error!("Could not log in with xtream user {username} for provider {}. {err}", input.name);
         return (Vec::with_capacity(0), vec![err], false);
     }
@@ -378,8 +380,8 @@ pub async fn download_xtream_playlist(app_config: &Arc<AppConfig>, client: &reqw
                                                                    working_dir, format!("{stream}_").as_str());
 
             match futures::join!(
-                request::get_input_json_content_as_stream(client, None, &input_source_category, category_file_path, cfg.default_user_agent.as_deref()),
-                request::get_input_json_content_as_stream(client, None, &input_source_stream, stream_file_path, cfg.default_user_agent.as_deref())
+                request::get_input_json_content_as_stream(app_config, client, &input_source_category, category_file_path),
+                request::get_input_json_content_as_stream(app_config, client, &input_source_stream, stream_file_path)
             ) {
                 (Ok(category_content), Ok(stream_content)) => {
                     if cfg.disk_based_processing {

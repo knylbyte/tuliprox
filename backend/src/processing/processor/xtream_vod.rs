@@ -41,7 +41,6 @@ pub async fn playlist_resolve_vod(app_config: &Arc<AppConfig>,
     let mut last_log_time = Instant::now();
     let mut processed_vod_info_count = 0;
     let mut batch = Vec::with_capacity(BATCH_SIZE);
-    let default_user_agent = app_config.config.load().default_user_agent.clone();
 
     provider_fpl.source.release_resources(XtreamCluster::Video);
 
@@ -56,13 +55,13 @@ pub async fn playlist_resolve_vod(app_config: &Arc<AppConfig>,
         processed_vod_info_count += 1;
         if provider_id != 0 {
             if let Some(content) = playlist_resolve_download_playlist_item(
+                app_config,
                 client,
                 pli,
                 input,
                 errors,
                 resolve_delay,
                 XtreamCluster::Video,
-                default_user_agent.as_deref(),
             )
                 .await
             {

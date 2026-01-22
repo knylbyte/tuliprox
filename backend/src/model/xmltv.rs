@@ -235,16 +235,12 @@ pub async fn parse_xmltv_for_web_ui_from_url(app_state: &Arc<AppState>, url: &st
             headers: HashMap::default(),
         };
 
-        let disabled_headers = app_state.get_disabled_headers();
-        let default_user_agent = app_state.app_config.config.load().default_user_agent.clone();
-
         match get_remote_content_as_stream(
+           &app_state.app_config,
            &client,
            &input_source,
            None,
            &request_url,
-           disabled_headers.as_ref(),
-           default_user_agent.as_deref(),
         ).await {
            Ok((stream, _url)) => {
                parse_xmltv_for_web_ui(stream).await
