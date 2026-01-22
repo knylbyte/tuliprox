@@ -321,9 +321,23 @@ fi
 echo "🧰 Ensuring rustup targets are installed"
 RUSTUP_TOOLCHAIN_FOR_TARGETS="${RUSTUP_TOOLCHAIN_FOR_TARGETS:-stable}"
 echo "🧰 Using rustup toolchain for target installs: ${RUSTUP_TOOLCHAIN_FOR_TARGETS}"
+
+# cross expects a Linux toolchain sysroot on non-Linux hosts (mounted into the container).
+# rustup refuses to install non-host toolchains unless explicitly forced.
+if [ "$(uname -s)" != "Linux" ]; then
+  CROSS_SYSROOT_TOOLCHAIN="${CROSS_SYSROOT_TOOLCHAIN:-${RUSTUP_TOOLCHAIN_FOR_TARGETS}-x86_64-unknown-linux-gnu}"
+  if rustup toolchain list | cut -d' ' -f1 | grep -Fxq "${CROSS_SYSROOT_TOOLCHAIN}"; then
+    echo "✅ cross sysroot toolchain already installed: ${CROSS_SYSROOT_TOOLCHAIN}"
+  else
+    echo "➕ Installing cross sysroot toolchain: ${CROSS_SYSROOT_TOOLCHAIN}"
+    rustup toolchain install "${CROSS_SYSROOT_TOOLCHAIN}" --profile minimal --force-non-host
+  fi
+fi
+
 RUSTUP_REQUIRED_TARGETS=(
   wasm32-unknown-unknown
 )
+
 for TARGET in "${ARCHITECTURES[@]}"; do
   RUSTUP_REQUIRED_TARGETS+=("${TARGET}")
 done
