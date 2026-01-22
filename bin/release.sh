@@ -155,6 +155,12 @@ if ! command -v gh &> /dev/null; then
   die "GitHub CLI could not be found. Please install gh toolset: https://cli.github.com"
 fi
 
+# Read current version from Cargo.toml
+VERSION=$(grep '^version' "${BACKEND_DIR}/Cargo.toml" | head -n1 | cut -d'"' -f2)
+if [ -z "${VERSION}" ]; then
+  die "Failed to read version from '${BACKEND_DIR}/Cargo.toml' before bump."
+fi
+
 case "$1" in
   major) ./bin/inc_version.sh m ;;
   minor) ./bin/inc_version.sh p ;;
@@ -179,7 +185,6 @@ BUMP_VERSION="$(grep '^version' "${BACKEND_DIR}/Cargo.toml" | head -n1 | cut -d'
 if [ -z "${BUMP_VERSION}" ]; then
   die "Failed to read version from '${BACKEND_DIR}/Cargo.toml' after bump."
 fi
-log_sha "BUMP_VERSION" "v${BUMP_VERSION}"
 
 gh auth status >/dev/null 2>&1 || die "Not logged into GitHub CLI. Run 'gh auth login' first."
 
@@ -189,13 +194,12 @@ if [ -z "${RUN_KEY}" ]; then
 fi
 
 RUN_KEY="${1}-${RUN_KEY}"
+
+log_sha "VERSION (current)" "${VERSION}"
+log_sha "VERSION (release)" "v${BUMP_VERSION}"
 log_sha "RUN_KEY (saved)" "${RUN_KEY}"
 
-# Read current version from Cargo.toml
-VERSION=$(grep '^version' "${BACKEND_DIR}/Cargo.toml" | head -n1 | cut -d'"' -f2)
-log_sha "VERSION (current)" "${VERSION}"
-
-read -rp "Releasing version: '${VERSION}', please confirm? [y/N] " answer
+read -rp "Releasing version: '${BUMP_VERSION}', please confirm? [y/N] " answer
 
 # Default 'N', cancel, if not 'y' or 'Y'
 if [[ ! "$answer" =~ ^[Yy]$ ]]; then
@@ -247,7 +251,7 @@ echo "🧩 docker-build run id: ${DOCKER_BUILD_RUN_ID}"
 
 cd "$FRONTEND_DIR" || die "Can't find frontend directory"
 
-echo "🛠️ Building version $VERSION"
+echo "🛠️ Building version $BUMP_VERSION"
 
 declare -A ARCHITECTURES=(
     [LINUX]=x86_64-unknown-linux-musl
@@ -258,11 +262,11 @@ declare -A ARCHITECTURES=(
 )
 
 declare -A DIRS=(
-    [LINUX]=tuliprox_${VERSION}_linux_x86_64
-    [WINDOWS]=tuliprox_${VERSION}_windows_x86_64
-    [ARM7]=tuliprox_${VERSION}_armv7
-    [AARCH64]=tuliprox_${VERSION}_aarch64_x86_64
-    [DARWIN]=tuliprox_${VERSION}_apple-darwin_x86_64
+    [LINUX]=tuliprox_${BUMP_VERSION}_linux_x86_64
+    [WINDOWS]=tuliprox_${BUMP_VERSION}_windows_x86_64
+    [ARM7]=tuliprox_${BUMP_VERSION}_armv7
+    [AARCH64]=tuliprox_${BUMP_VERSION}_aarch64_x86_64
+    [DARWIN]=tuliprox_${BUMP_VERSION}_apple-darwin_x86_64
 )
 
 # Special case mapping for binary extensions (e.g., Windows needs .exe)
@@ -345,7 +349,7 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
     shasum -a 256 "$ARC" >> "$CHECKSUM_FILE"
 
     # Move the archive and checksum to the release folder
-    RELEASE_PKG="$RELEASE_DIR/release_${VERSION}"
+    RELEASE_PKG="$RELEASE_DIR/release_${BUMP_VERSION}"
     mkdir -p "$RELEASE_PKG"
     mv "$CHECKSUM_FILE" "$ARC" "$RELEASE_PKG"
 done
@@ -378,11 +382,11 @@ echo "🗑 Cleaning up build artifacts"
 cd "$WORKING_DIR"
 cargo clean
 
-echo "📦 git commit version: ${VERSION}"
+echo "📦 git commit version: ${BUMP_VERSION}"
 # Commit and tag release
 git add .
-git commit -m "release ${VERSION}"
-git tag -a "$VERSION" -m "$VERSION"
+git commit -m "release ${BUMP_VERSION}"
+git tag -a "$BUMP_VERSION" -m "$BUMP_VERSION"
 git push
 git push --tags
 if git remote get-url github >/dev/null 2>&1; then
