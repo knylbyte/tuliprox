@@ -171,7 +171,7 @@ git commit -m "ci: bump version v${BUMP_VERSION}"
 git push origin HEAD:master
 ORIGIN_MASTER_AFTER_BUMP_SHA="$(git rev-parse HEAD)"
 if git remote get-url github >/dev/null 2>&1; then
-  # git push github HEAD:master
+  git push github HEAD:master
   GITHUB_MASTER_AFTER_BUMP_SHA="${ORIGIN_MASTER_AFTER_BUMP_SHA}"
 fi
 
@@ -300,7 +300,7 @@ fi
 git push origin HEAD:develop
 ORIGIN_DEVELOP_AFTER_FF_SHA="$(git rev-parse HEAD)"
 if git remote get-url github >/dev/null 2>&1; then
-  # git push github HEAD:develop
+  git push github HEAD:develop
   GITHUB_DEVELOP_AFTER_FF_SHA="${ORIGIN_DEVELOP_AFTER_FF_SHA}"
 fi
 
@@ -317,8 +317,8 @@ git tag -a "$VERSION" -m "$VERSION"
 git push
 git push --tags
 if git remote get-url github >/dev/null 2>&1; then
-  # git push github
-  # git push github --tags
+  git push github
+  git push github --tags
 fi
 
 echo "🎉 Done!"
