@@ -155,10 +155,14 @@ if ! command -v gh &> /dev/null; then
   die "GitHub CLI could not be found. Please install gh toolset: https://cli.github.com"
 fi
 
-# Read current version from Cargo.toml
-VERSION=$(grep '^version' "${BACKEND_DIR}/Cargo.toml" | head -n1 | cut -d'"' -f2)
+# Read current tag on HEAD
+VERSION="$(git describe --tags --exact-match 2>/dev/null || true)"
 if [ -z "${VERSION}" ]; then
-  die "Failed to read version from '${BACKEND_DIR}/Cargo.toml' before bump."
+  VERSION="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+fi
+
+if [ -z "${VERSION}" ]; then
+  die "Failed to read current tag."
 fi
 
 case "$1" in
