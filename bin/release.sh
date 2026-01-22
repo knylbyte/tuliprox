@@ -24,6 +24,16 @@ die() {
   exit 1
 }
 
+log_sha() {
+  local label="$1"
+  local value="${2:-}"
+  if [ -n "${value}" ]; then
+    echo "🔎 ${label}: ${value}"
+  else
+    echo "🔎 ${label}: <empty>"
+  fi
+}
+
 cleanup_on_failure() {
   exit_code=$?
   if [ "${exit_code}" -eq 0 ]; then
@@ -31,6 +41,16 @@ cleanup_on_failure() {
   fi
 
   echo "🧹 Cleanup after failure (exit ${exit_code})" >&2
+  log_sha "START_BRANCH" "${START_BRANCH}" >&2
+  log_sha "START_HEAD" "${START_HEAD}" >&2
+  log_sha "ORIGIN_MASTER_AFTER_BUMP_SHA" "${ORIGIN_MASTER_AFTER_BUMP_SHA}" >&2
+  log_sha "ORIGIN_DEVELOP_BEFORE_SHA" "${ORIGIN_DEVELOP_BEFORE_SHA}" >&2
+  log_sha "ORIGIN_DEVELOP_AFTER_FF_SHA" "${ORIGIN_DEVELOP_AFTER_FF_SHA}" >&2
+  log_sha "GITHUB_MASTER_AFTER_BUMP_SHA" "${GITHUB_MASTER_AFTER_BUMP_SHA}" >&2
+  log_sha "GITHUB_DEVELOP_BEFORE_SHA" "${GITHUB_DEVELOP_BEFORE_SHA}" >&2
+  log_sha "GITHUB_DEVELOP_AFTER_FF_SHA" "${GITHUB_DEVELOP_AFTER_FF_SHA}" >&2
+  log_sha "RUN_KEY" "${RUN_KEY}" >&2
+  log_sha "DOCKER_BUILD_RUN_ID" "${DOCKER_BUILD_RUN_ID}" >&2
 
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     run_id="${DOCKER_BUILD_RUN_ID:-}"
@@ -98,9 +118,17 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   die "Working tree is not clean. Commit/stash your changes first."
 fi
 
+echo "🧭 Release starting on '${START_BRANCH}'"
+log_sha "START_HEAD" "${START_HEAD}"
+
 git fetch --quiet --tags origin master develop || die "Failed to fetch from 'origin'."
 
-if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/master)" ]; then
+ORIGIN_MASTER_SHA="$(git rev-parse origin/master)"
+ORIGIN_DEVELOP_SHA="$(git rev-parse origin/develop)"
+log_sha "origin/master" "${ORIGIN_MASTER_SHA}"
+log_sha "origin/develop" "${ORIGIN_DEVELOP_SHA}"
+
+if [ "$(git rev-parse HEAD)" != "${ORIGIN_MASTER_SHA}" ]; then
   die "Local 'master' is not at 'origin/master'. Please pull/push before releasing."
 fi
 
@@ -109,9 +137,11 @@ if ! git merge-base --is-ancestor origin/develop HEAD; then
 fi
 
 ORIGIN_DEVELOP_BEFORE_SHA="$(git rev-parse origin/develop)"
+log_sha "ORIGIN_DEVELOP_BEFORE_SHA (saved)" "${ORIGIN_DEVELOP_BEFORE_SHA}"
 if git remote get-url github >/dev/null 2>&1; then
   git fetch --quiet github develop || die "Failed to fetch from 'github'."
   GITHUB_DEVELOP_BEFORE_SHA="$(git rev-parse github/develop)"
+  log_sha "GITHUB_DEVELOP_BEFORE_SHA (saved)" "${GITHUB_DEVELOP_BEFORE_SHA}"
 fi
 
 LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
@@ -149,6 +179,7 @@ BUMP_VERSION="$(grep '^version' "${BACKEND_DIR}/Cargo.toml" | head -n1 | cut -d'
 if [ -z "${BUMP_VERSION}" ]; then
   die "Failed to read version from '${BACKEND_DIR}/Cargo.toml' after bump."
 fi
+log_sha "BUMP_VERSION" "v${BUMP_VERSION}"
 
 gh auth status >/dev/null 2>&1 || die "Not logged into GitHub CLI. Run 'gh auth login' first."
 
@@ -158,9 +189,11 @@ if [ -z "${RUN_KEY}" ]; then
 fi
 
 RUN_KEY="${1}-${RUN_KEY}"
+log_sha "RUN_KEY (saved)" "${RUN_KEY}"
 
 # Read current version from Cargo.toml
 VERSION=$(grep '^version' "${BACKEND_DIR}/Cargo.toml" | head -n1 | cut -d'"' -f2)
+log_sha "VERSION (current)" "${VERSION}"
 
 read -rp "Releasing version: '${VERSION}', please confirm? [y/N] " answer
 
@@ -172,9 +205,15 @@ fi
 git commit -m "ci: bump version v${BUMP_VERSION}"
 git push origin HEAD:master
 ORIGIN_MASTER_AFTER_BUMP_SHA="$(git rev-parse HEAD)"
+log_sha "ORIGIN_MASTER_AFTER_BUMP_SHA (saved)" "${ORIGIN_MASTER_AFTER_BUMP_SHA}"
+ORIGIN_MASTER_REMOTE_SHA="$(git ls-remote origin refs/heads/master | awk '{print $1}' | head -n 1)"
+log_sha "origin/master (remote)" "${ORIGIN_MASTER_REMOTE_SHA}"
 if git remote get-url github >/dev/null 2>&1; then
   git push github HEAD:master
   GITHUB_MASTER_AFTER_BUMP_SHA="${ORIGIN_MASTER_AFTER_BUMP_SHA}"
+  log_sha "GITHUB_MASTER_AFTER_BUMP_SHA (saved)" "${GITHUB_MASTER_AFTER_BUMP_SHA}"
+  GITHUB_MASTER_REMOTE_SHA="$(git ls-remote github refs/heads/master | awk '{print $1}' | head -n 1)"
+  log_sha "github/master (remote)" "${GITHUB_MASTER_REMOTE_SHA}"
 fi
 
 echo "🚀 Triggering docker-build workflow (master, key: ${RUN_KEY})"
@@ -231,6 +270,27 @@ declare -A BIN_EXTENSIONS=(
     [WINDOWS]=.exe
 )
 
+if ! command -v rustup >/dev/null 2>&1; then
+  die "'rustup' is required to install Rust targets."
+fi
+
+echo "🧰 Ensuring rustup targets are installed"
+RUSTUP_REQUIRED_TARGETS=(
+  wasm32-unknown-unknown
+)
+for TARGET in "${ARCHITECTURES[@]}"; do
+  RUSTUP_REQUIRED_TARGETS+=("${TARGET}")
+done
+
+for TARGET in "${RUSTUP_REQUIRED_TARGETS[@]}"; do
+  if rustup target list --installed | grep -Fxq "${TARGET}"; then
+    echo "✅ rust target already installed: ${TARGET}"
+  else
+    echo "➕ Installing rust target: ${TARGET}"
+    rustup target add "${TARGET}"
+  fi
+done
+
 cd "$WORKING_DIR"
 mkdir -p "$RELEASE_DIR"
 
@@ -258,6 +318,7 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
        BIN="${ARCHITECTURE}/release/tuliprox"
     fi
 
+    # Ensure target is installed (guarded above, keep here as a safety net)
     rustup target add "$ARCHITECTURE"
 
     # Build for each platform
@@ -301,9 +362,15 @@ fi
 
 git push origin HEAD:develop
 ORIGIN_DEVELOP_AFTER_FF_SHA="$(git rev-parse HEAD)"
+log_sha "ORIGIN_DEVELOP_AFTER_FF_SHA (saved)" "${ORIGIN_DEVELOP_AFTER_FF_SHA}"
+ORIGIN_DEVELOP_REMOTE_SHA="$(git ls-remote origin refs/heads/develop | awk '{print $1}' | head -n 1)"
+log_sha "origin/develop (remote)" "${ORIGIN_DEVELOP_REMOTE_SHA}"
 if git remote get-url github >/dev/null 2>&1; then
   git push github HEAD:develop
   GITHUB_DEVELOP_AFTER_FF_SHA="${ORIGIN_DEVELOP_AFTER_FF_SHA}"
+  log_sha "GITHUB_DEVELOP_AFTER_FF_SHA (saved)" "${GITHUB_DEVELOP_AFTER_FF_SHA}"
+  GITHUB_DEVELOP_REMOTE_SHA="$(git ls-remote github refs/heads/develop | awk '{print $1}' | head -n 1)"
+  log_sha "github/develop (remote)" "${GITHUB_DEVELOP_REMOTE_SHA}"
 fi
 
 echo "🗑 Cleaning up build artifacts"
