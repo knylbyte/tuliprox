@@ -278,6 +278,10 @@ declare -A BIN_EXTENSIONS=(
     [WINDOWS]=.exe
 )
 
+if ! command -v cross >/dev/null 2>&1; then
+  die "'cross' is required to install Rust targets."
+fi
+
 if ! command -v rustup >/dev/null 2>&1; then
   die "'rustup' is required to install Rust targets."
 fi
