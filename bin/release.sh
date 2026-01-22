@@ -329,11 +329,11 @@ for TARGET in "${ARCHITECTURES[@]}"; do
 done
 
 for TARGET in "${RUSTUP_REQUIRED_TARGETS[@]}"; do
-  if rustup --toolchain "${RUSTUP_TOOLCHAIN_FOR_TARGETS}" target list --installed | grep -Fxq "${TARGET}"; then
+  if rustup +"${RUSTUP_TOOLCHAIN_FOR_TARGETS}" target list --installed | grep -Fxq "${TARGET}"; then
     echo "✅ rust target already installed: ${TARGET}"
   else
     echo "➕ Installing rust target: ${TARGET}"
-    rustup --toolchain "${RUSTUP_TOOLCHAIN_FOR_TARGETS}" target add "${TARGET}"
+    rustup +"${RUSTUP_TOOLCHAIN_FOR_TARGETS}" target add "${TARGET}"
   fi
 done
 
@@ -365,7 +365,7 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
     fi
 
     # Ensure target is installed (guarded above, keep here as a safety net)
-    rustup --toolchain "${RUSTUP_TOOLCHAIN_FOR_TARGETS}" target add "$ARCHITECTURE"
+    rustup +"${RUSTUP_TOOLCHAIN_FOR_TARGETS}" target add "$ARCHITECTURE"
 
     # Build for each platform
     cd "$WORKING_DIR"
