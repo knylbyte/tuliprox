@@ -155,15 +155,16 @@ cd "$WORKING_DIR"
 
 # Build binaries for all architectures first
 echo "🏗️ Building binaries for all architectures..."
+
+# Avoid executing stale build artifacts when caches are missing or the runner image changes.
+if [ "${TULIPROX_FORCE_CLEAN:-0}" = "1" ] || [ "${CARGO_DEPS_CACHE_HIT:-false}" != "true" ]; then
+    cargo clean || true
+fi
+
 for PLATFORM in "${!ARCHITECTURES[@]}"; do
     ARCHITECTURE=${ARCHITECTURES[$PLATFORM]}
     
     echo "🔨 Building binary for architecture: $ARCHITECTURE"
-
-    # Don't clean if we have cached dependencies
-    if [ -z "${CARGO_DEPS_CACHE_HIT:-}" ]; then
-        cargo clean || true
-    fi
 
     # Use incremental compilation and enable cache-friendly flags
     env RUSTFLAGS="--remap-path-prefix $HOME=~ -C incremental=/tmp/rust-incremental-${ARCHITECTURE}" \

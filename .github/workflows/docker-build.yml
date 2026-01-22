@@ -73,6 +73,20 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl,wasm32-unknown-unknown
+
+      - name: Detect runner image/libc
+        id: runner_env
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "image_os=${ImageOS:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "image_version=${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+          if command -v ldd >/dev/null 2>&1; then
+            glibc="$(ldd --version 2>/dev/null | head -n1 | awk '{print $NF}')"
+          else
+            glibc="unknown"
+          fi
+          echo "glibc=${glibc:-unknown}" >> "$GITHUB_OUTPUT"
           
       - name: Cache cargo tools
         id: cache-tools
@@ -82,9 +96,9 @@ jobs:
             ~/.cargo/bin
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-tools-v1
+          key: ${{ runner.os }}-${{ steps.runner_env.outputs.image_os }}-${{ steps.runner_env.outputs.image_version }}-${{ steps.runner_env.outputs.glibc }}-cargo-tools-v2
           restore-keys: |
-            ${{ runner.os }}-cargo-tools-
+            ${{ runner.os }}-${{ steps.runner_env.outputs.image_os }}-${{ steps.runner_env.outputs.image_version }}-${{ steps.runner_env.outputs.glibc }}-cargo-tools-
 
       - name: Install cross
         run: |
@@ -118,13 +132,10 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-            target
-            backend/target
-            frontend/target
-            shared/target
-          key: ${{ runner.os }}-cargo-deps-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ steps.runner_env.outputs.image_os }}-${{ steps.runner_env.outputs.image_version }}-${{ steps.runner_env.outputs.glibc }}-cargo-deps-v2-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-deps-${{ hashFiles('**/Cargo.lock') }}-
+            ${{ runner.os }}-${{ steps.runner_env.outputs.image_os }}-${{ steps.runner_env.outputs.image_version }}-${{ steps.runner_env.outputs.glibc }}-cargo-deps-v2-${{ hashFiles('**/Cargo.lock') }}-
+            ${{ runner.os }}-${{ steps.runner_env.outputs.image_os }}-${{ steps.runner_env.outputs.image_version }}-${{ steps.runner_env.outputs.glibc }}-cargo-deps-v2-
             ${{ runner.os }}-cargo-deps-
       
       - name: Cache Docker buildx
