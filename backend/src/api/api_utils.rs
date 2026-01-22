@@ -28,7 +28,7 @@ use log::{debug, error, info, log_enabled, trace, warn};
 use serde::Serialize;
 use shared::concat_string;
 use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, ProxyType, StreamChannel, TargetType, UserConnectionPermission, VirtualId, XtreamCluster};
-use shared::utils::{bin_serialize, default_grace_period_millis, human_readable_kbps, trim_slash, Internable};
+use shared::utils::{bin_serialize, default_grace_period_millis, human_readable_kbps, trim_slash, Internable, CONTENT_TYPE_CBOR};
 use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
 };
@@ -42,8 +42,6 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::Mutex;
 use tokio_util::io::ReaderStream;
 use url::Url;
-
-const CONTENT_TYPE_BIN: &str = "application/cbor";
 
 #[macro_export]
 macro_rules! try_option_bad_request {
@@ -1505,7 +1503,7 @@ pub async fn is_seek_request(cluster: XtreamCluster, req_headers: &HeaderMap) ->
 pub fn bin_response<T: Serialize>(data: &T) -> impl IntoResponse + Send {
     match bin_serialize(data) {
         Ok(body) => (
-            [(header::CONTENT_TYPE, CONTENT_TYPE_BIN)],
+            [(header::CONTENT_TYPE, CONTENT_TYPE_CBOR)],
             body,
         ).into_response(),
         Err(_) => internal_server_error!(),
@@ -1517,7 +1515,7 @@ pub fn json_response<T: Serialize>(data: &T) -> impl IntoResponse + Send {
 }
 
 pub fn json_or_bin_response<T: Serialize>(accept: Option<&str>, data: &T) -> impl IntoResponse + Send {
-    if accept.is_some_and(|a| a.contains(CONTENT_TYPE_BIN)) {
+    if accept.is_some_and(|a| a.contains(CONTENT_TYPE_CBOR)) {
         return bin_response(data).into_response();
     }
     json_response(data).into_response()
@@ -1527,7 +1525,7 @@ pub fn stream_json_or_bin_response<P>(accept: Option<&str>, data: Box<dyn Iterat
 where
     P: serde::Serialize + Send + 'static,
 {
-    if accept.is_some_and(|a| a.contains(CONTENT_TYPE_BIN)) {
+    if accept.is_some_and(|a| a.contains(CONTENT_TYPE_CBOR)) {
         return stream_bin_array(data);
     }
     stream_json_array(data)
@@ -1607,7 +1605,7 @@ where
     );
 
     try_unwrap_body!(Response::builder()
-        .header(header::CONTENT_TYPE, CONTENT_TYPE_BIN)
+        .header(header::CONTENT_TYPE, CONTENT_TYPE_CBOR)
         .body(body))
 }
 

@@ -233,7 +233,6 @@ pub mod arc_str_option_serde {
     }
 }
 
-
 pub fn arc_str_default_on_null<'de, D>(deserializer: D) -> Result<Arc<str>, D::Error>
 where
     D: Deserializer<'de>,

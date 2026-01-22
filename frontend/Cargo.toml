@@ -37,7 +37,7 @@ indexmap = "2.12.1"
 
 [dependencies.web-sys]
 version = "0.3"
-features = ["Document", "Element", "Node", "Window", "HtmlCollection", "HtmlInputElement", "DomRect", "HtmlDialogElement", "CssStyleDeclaration"]
+features = ["Document", "Element", "Node", "Window", "HtmlCollection", "HtmlImageElement", "HtmlInputElement", "DomRect", "HtmlDialogElement", "CssStyleDeclaration"]
 
 [dev-dependencies]
 js-sys = "0.3"

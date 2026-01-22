@@ -1,4 +1,4 @@
-use crate::model::{PlaylistItemType, SearchRequest, StreamProperties, XtreamCluster};
+use crate::model::{PlaylistItemType, SearchRequest, StreamProperties, UiPlaylistItem, XtreamCluster};
 use crate::utils::{arc_str_serde, arc_str_option_serde};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -69,7 +69,7 @@ pub struct UiPlaylistGroup {
     pub id: u32,
     #[serde(with = "arc_str_serde")]
     pub title: Arc<str>,
-    pub channels: Vec<Rc<CommonPlaylistItem>>,
+    pub channels: Vec<Rc<UiPlaylistItem>>,
     pub xtream_cluster: XtreamCluster,
 }
 
@@ -99,7 +99,7 @@ fn filter_channels(
                     return Some(Rc::clone(group));
                 }
 
-                let filtered_channels: Vec<Rc<CommonPlaylistItem>> = group
+                let filtered_channels: Vec<Rc<UiPlaylistItem>> = group
                     .channels
                     .iter()
                     .filter(|c| {
@@ -132,7 +132,7 @@ fn filter_channels_re(groups: Option<&Vec<Rc<UiPlaylistGroup>>>, regex: &Regex) 
                     return Some(Rc::clone(group));
                 }
 
-                let filtered_channels: Vec<Rc<CommonPlaylistItem>> = group
+                let filtered_channels: Vec<Rc<UiPlaylistItem>> = group
                     .channels
                     .iter()
                     .filter(|c| regex.is_match(&c.title) || regex.is_match(&c.name))

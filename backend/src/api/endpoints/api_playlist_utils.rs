@@ -2,7 +2,7 @@ use crate::model::{AppConfig, ConfigInput, ConfigTarget};
 use crate::utils::{m3u, xtream};
 use axum::response::IntoResponse;
 use serde_json::{json};
-use shared::model::{CommonPlaylistItem, InputType, M3uPlaylistItem, PlaylistItemType, TargetType, XtreamCluster, XtreamPlaylistItem};
+use shared::model::{InputType, M3uPlaylistItem, PlaylistItemType, TargetType, UiPlaylistItem, XtreamCluster, XtreamPlaylistItem};
 use std::sync::Arc;
 use crate::api::api_utils::{empty_json_list_response, json_or_bin_response, stream_json_or_bin_response};
 use shared::utils::interner_gc;
@@ -19,7 +19,7 @@ pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Optio
             } else {
                 |_pli: &XtreamPlaylistItem| true
             };
-            let converted_iterator: Box<dyn Iterator<Item=CommonPlaylistItem> + Send> = Box::new(channel_iterator.filter(item_filter).map(CommonPlaylistItem::from));
+            let converted_iterator: Box<dyn Iterator<Item=UiPlaylistItem> + Send> = Box::new(channel_iterator.filter(item_filter).map(UiPlaylistItem::from));
             return stream_json_or_bin_response(accept, converted_iterator).into_response();
         } else if target.has_output(TargetType::M3u) {
             let Some((_guard, channel_iterator)) = iter_raw_m3u_target_playlist(cfg, target, Some(cluster)).await else {
@@ -31,8 +31,7 @@ pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Optio
                 |_pli: &M3uPlaylistItem| true
             };
 
-            let converted_iterator: Box<dyn Iterator<Item=CommonPlaylistItem> + Send> = Box::new(channel_iterator
-                .filter(item_filter).map(CommonPlaylistItem::from));
+            let converted_iterator: Box<dyn Iterator<Item=UiPlaylistItem> + Send> = Box::new(channel_iterator.filter(item_filter).map(UiPlaylistItem::from));
             return stream_json_or_bin_response(accept, converted_iterator).into_response();
         }
     }
@@ -46,13 +45,13 @@ pub(in crate::api::endpoints) async fn get_playlist_for_input(cfg_input: Option<
             let Some((_guard, channel_iterator)) = iter_raw_xtream_input_playlist(cfg, input, cluster).await else {
                 return empty_json_list_response();
             };
-            let converted_iterator: Box<dyn Iterator<Item=CommonPlaylistItem> + Send> = Box::new(channel_iterator.map(CommonPlaylistItem::from));
+            let converted_iterator: Box<dyn Iterator<Item=UiPlaylistItem> + Send> = Box::new(channel_iterator.map(UiPlaylistItem::from));
             return stream_json_or_bin_response(accept, converted_iterator).into_response();
         } else if matches!(input.input_type, InputType::M3u | InputType::M3uBatch) {
             let Some((_guard, channels)) = iter_raw_m3u_input_playlist(cfg, input, Some(cluster)).await else {
               return empty_json_list_response();
             };
-            let converted_iterator: Box<dyn Iterator<Item=CommonPlaylistItem> + Send> = Box::new(channels.map(CommonPlaylistItem::from));
+            let converted_iterator: Box<dyn Iterator<Item=UiPlaylistItem> + Send> = Box::new(channels.map(UiPlaylistItem::from));
             return stream_json_or_bin_response(accept, converted_iterator).into_response();
         }
     }
@@ -78,7 +77,7 @@ pub(in crate::api::endpoints) async fn get_playlist_for_custom_provider(client: 
                 let error_strings: Vec<String> = errors.iter().map(ToString::to_string).collect();
                 (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": error_strings.join(", ")}))).into_response()
             } else {
-                let channels: Vec<CommonPlaylistItem> = result.iter().flat_map(|g| g.channels.iter()).map(CommonPlaylistItem::from).collect();
+                let channels: Vec<UiPlaylistItem> = result.iter().flat_map(|g| g.channels.iter()).map(UiPlaylistItem::from).collect();
                 interner_gc();
                 json_or_bin_response(accept, &channels).into_response()
             }

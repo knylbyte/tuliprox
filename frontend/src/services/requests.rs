@@ -4,12 +4,8 @@ use log::error;
 use reqwasm::http::Request;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
-use shared::utils::bin_deserialize;
+use shared::utils::{bin_deserialize, CONTENT_TYPE_CBOR, CONTENT_TYPE_JSON};
 use web_sys::window;
-
-const CONTENT_TYPE_BIN: &str = "application/cbor";
-const CONTENT_TYPE_JSON: &str = "application/json";
-pub const ACCEPT_PREFER_BIN: &str = "application/cbor, application/json;q=0.9";
 
 enum RequestMethod {
     Get,
@@ -68,8 +64,8 @@ where
         request = request.header("Authorization", format!("Bearer {token}").as_str());
     }
 
-    if r_type.contains(CONTENT_TYPE_BIN) {
-        request = request.header("Accept", CONTENT_TYPE_BIN);
+    if r_type.contains(CONTENT_TYPE_CBOR) {
+        request = request.header("Accept", CONTENT_TYPE_CBOR);
     }
     match request.send().await {
         Ok(response) => {
@@ -80,7 +76,7 @@ where
                         .get("content-type")
                         .unwrap_or(r_type.to_string());
                     let is_json = content_type.contains(CONTENT_TYPE_JSON);
-                    let is_bin = !is_json && content_type.contains(CONTENT_TYPE_BIN);
+                    let is_bin = !is_json && content_type.contains(CONTENT_TYPE_CBOR);
                     if (is_json || is_bin) && std::any::TypeId::of::<T>() == std::any::TypeId::of::<()>() {
                         // `T = ()` valid
                         let _ = response.binary().await;
@@ -126,7 +122,7 @@ where
                 400 => {
                     let ct = response.headers().get("content-type").unwrap_or_default();
                     let is_json = ct.contains(CONTENT_TYPE_JSON);
-                    let is_bin = !is_json && ct.contains(CONTENT_TYPE_BIN);
+                    let is_bin = !is_json && ct.contains(CONTENT_TYPE_CBOR);
                     let data: Result<ErrorInfo, _> = if is_bin {
                         match response.binary().await {
                             Ok(bytes) => bin_deserialize::<ErrorInfo>(&bytes).map_err(|_| Error::DeserializeError),
@@ -149,7 +145,7 @@ where
                 422 => {
                     let ct = response.headers().get("content-type").unwrap_or_default();
                     let is_json = ct.contains(CONTENT_TYPE_JSON);
-                    let is_bin = !is_json && ct.contains(CONTENT_TYPE_BIN);
+                    let is_bin = !is_json && ct.contains(CONTENT_TYPE_CBOR);
                     let data: Result<ErrorSetInfo, _> = if is_bin {
                         match response.binary().await {
                             Ok(bytes) => bin_deserialize::<ErrorSetInfo>(&bytes).map_err(|_| Error::DeserializeError),
