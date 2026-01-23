@@ -279,7 +279,7 @@ mod tests {
 
         // Reopen with memory cache and verify
         {
-            let mut mapping = TargetIdMapping::new(&path, false)?;
+            let mut mapping = TargetIdMapping::new(&path, true)?;
             let vid1_again = mapping.get_and_update_virtual_id(&uuid1, 100, PlaylistItemType::Video, 0);
             assert_eq!(vid1_again, 1);
         }

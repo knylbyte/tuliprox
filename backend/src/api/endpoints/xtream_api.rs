@@ -1188,7 +1188,7 @@ async fn xtream_player_api(
                     &user,
                     &target,
                     api_req.stream_id.trim(),
-                    api_req.limit,
+                    api_req.get_limit(),
                 )
                     .await
                     .into_response();

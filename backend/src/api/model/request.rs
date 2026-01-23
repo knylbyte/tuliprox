@@ -17,7 +17,7 @@ pub struct UserApiRequest {
     #[serde(default)]
     pub category_id: String,
     #[serde(default)]
-    pub limit: u32,
+    pub limit: String,
     #[serde(default)]
     pub start: String,
     #[serde(default)]
@@ -28,4 +28,14 @@ pub struct UserApiRequest {
     pub duration: String,
     #[serde(default, alias = "type")]
     pub content_type: String,
+}
+
+impl UserApiRequest {
+    pub fn get_limit(&self) -> u32 {
+        if self.limit.is_empty() {
+            0
+        } else {
+            self.limit.parse::<u32>().unwrap_or(0)
+        }
+    }
 }

@@ -240,7 +240,7 @@ async fn get_epg_channel(app_state: &Arc<AppState>, channel_id: &Arc<str>, epg_p
                 Ok(Some(item)) => return Some(item),
                 Ok(None) => {}
                 Err(err) => {
-                    error!("Failed to quer db file {}: {err}", epg_path.display());
+                    error!("Failed to query db file {}: {err}", epg_path.display());
                 }
             }
         }

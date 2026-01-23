@@ -1,9 +1,12 @@
-use std::cmp::{max, min};
-use std::sync::Arc;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::cmp::{max, min};
+use std::sync::Arc;
 
 fn get_epg_interval(channels: &Vec<EpgChannel>) -> (i64, i64) {
+    if channels.is_empty() {
+        return (0, 0);
+    }
     let mut epg_start = i64::MAX;
     let mut epg_stop = i64::MIN;
     for channel in channels {
@@ -11,6 +14,10 @@ fn get_epg_interval(channels: &Vec<EpgChannel>) -> (i64, i64) {
             epg_start = min(epg_start, programme.start);
             epg_stop = max(epg_stop, programme.stop);
         }
+    }
+    // Handle case where channels exist but have no programmes
+    if epg_start == i64::MAX {
+        return (0, 0);
     }
     (epg_start, epg_stop)
 }
@@ -35,7 +42,7 @@ impl EpgTv {
 
 impl PartialEq for EpgTv {
     fn eq(&self, other: &Self) -> bool {
-            self.start == other.start
+        self.start == other.start
             && self.stop == other.stop
         // Note: self.channels is skipped
     }
@@ -93,7 +100,7 @@ impl EpgProgramme {
             stop,
             channel,
             title: None,
-            desc: None
+            desc: None,
         }
     }
 }
