@@ -19,11 +19,7 @@ GITHUB_MASTER_AFTER_BUMP_SHA=""
 GITHUB_DEVELOP_BEFORE_SHA=""
 GITHUB_DEVELOP_AFTER_FF_SHA=""
 DEVELOP_BRANCH_FROZEN="false"
-DEVELOP_BRANCH_FREEZE_USER=""
 DEVELOP_BRANCH_PROTECTION_CREATED="false"
-DEVELOP_BRANCH_RESTRICTIONS_APPLIED="false"
-DEVELOP_BRANCH_RESTRICTIONS_WAS_ENABLED="false"
-DEVELOP_BRANCH_RESTRICTIONS_SNAPSHOT_FILE=""
 
 die() {
   echo "🧨 Error: $*" >&2
@@ -51,52 +47,27 @@ gh_freeze_develop_branch() {
   fi
   gh auth status >/dev/null 2>&1 || die "Not logged into GitHub CLI. Run 'gh auth login' first."
 
-  DEVELOP_BRANCH_FREEZE_USER="$(gh api user --jq .login 2>/dev/null || true)"
-  if [ -z "${DEVELOP_BRANCH_FREEZE_USER}" ]; then
-    die "Failed to resolve GitHub user via 'gh api user'."
-  fi
+  echo "🔒 Freezing pushes to 'develop' (branch lock)"
 
-  echo "🔒 Freezing pushes to 'develop' (allow: ${DEVELOP_BRANCH_FREEZE_USER})"
-
-  # If branch protection already exists, only adjust push restrictions.
   if gh api "repos/{owner}/{repo}/branches/develop/protection" >/dev/null 2>&1; then
-    if tmpfile="$(mktemp -t tuliprox-develop-restrictions.XXXXXX 2>/dev/null || mktemp "/tmp/tuliprox-develop-restrictions.XXXXXX")"; then
-      DEVELOP_BRANCH_RESTRICTIONS_SNAPSHOT_FILE="${tmpfile}"
-    fi
-
-    if [ -n "${DEVELOP_BRANCH_RESTRICTIONS_SNAPSHOT_FILE}" ] && gh api "repos/{owner}/{repo}/branches/develop/protection/restrictions" > "${DEVELOP_BRANCH_RESTRICTIONS_SNAPSHOT_FILE}" 2>/dev/null; then
-      DEVELOP_BRANCH_RESTRICTIONS_WAS_ENABLED="true"
-    fi
-
-    gh api -X PUT "repos/{owner}/{repo}/branches/develop/protection/restrictions" \
-      -F "users[]=${DEVELOP_BRANCH_FREEZE_USER}" \
-      -F "teams[]" \
-      -F "apps[]" \
-      >/dev/null 2>&1 || die "Failed to apply develop branch restrictions via GitHub API."
-
-    DEVELOP_BRANCH_RESTRICTIONS_APPLIED="true"
-    DEVELOP_BRANCH_FROZEN="true"
-    return 0
+    DEVELOP_BRANCH_PROTECTION_CREATED="false"
+  else
+    DEVELOP_BRANCH_PROTECTION_CREATED="true"
   fi
 
-  # Otherwise create a minimal protection rule with push restrictions.
-  if ! gh api -X PUT "repos/{owner}/{repo}/branches/develop/protection" --input - >/dev/null 2>&1 <<JSON
+  if ! gh api -X PUT "repos/{owner}/{repo}/branches/develop/protection" --input - >/dev/null 2>&1 <<'JSON'
 {
   "required_status_checks": null,
   "enforce_admins": true,
   "required_pull_request_reviews": null,
-  "restrictions": {
-    "users": ["${DEVELOP_BRANCH_FREEZE_USER}"],
-    "teams": [],
-    "apps": []
-  }
+  "restrictions": null,
+  "lock_branch": true
 }
 JSON
   then
-    die "Failed to enable branch protection for 'develop'. Do you have admin rights on the repo?"
+    die "Failed to enable/lock branch protection for 'develop'."
   fi
 
-  DEVELOP_BRANCH_PROTECTION_CREATED="true"
   DEVELOP_BRANCH_FROZEN="true"
 }
 
@@ -116,57 +87,19 @@ gh_unfreeze_develop_branch() {
 
   if [ "${DEVELOP_BRANCH_PROTECTION_CREATED}" = "true" ]; then
     gh api -X DELETE "repos/{owner}/{repo}/branches/develop/protection" >/dev/null 2>&1 || true
-  elif [ "${DEVELOP_BRANCH_RESTRICTIONS_APPLIED}" = "true" ]; then
-    if [ "${DEVELOP_BRANCH_RESTRICTIONS_WAS_ENABLED}" = "true" ] && [ -n "${DEVELOP_BRANCH_RESTRICTIONS_SNAPSHOT_FILE}" ] && [ -s "${DEVELOP_BRANCH_RESTRICTIONS_SNAPSHOT_FILE}" ] && command -v python3 >/dev/null 2>&1; then
-      USERS="$(python3 - "${DEVELOP_BRANCH_RESTRICTIONS_SNAPSHOT_FILE}" <<'PY' || true
-import json, sys
-data = json.load(open(sys.argv[1], "r", encoding="utf-8"))
-print("\n".join(u.get("login","") for u in data.get("users", []) if u.get("login")))
-PY
-)"
-      TEAMS="$(python3 - "${DEVELOP_BRANCH_RESTRICTIONS_SNAPSHOT_FILE}" <<'PY' || true
-import json, sys
-data = json.load(open(sys.argv[1], "r", encoding="utf-8"))
-print("\n".join(t.get("slug","") for t in data.get("teams", []) if t.get("slug")))
-PY
-)"
-      APPS="$(python3 - "${DEVELOP_BRANCH_RESTRICTIONS_SNAPSHOT_FILE}" <<'PY' || true
-import json, sys
-data = json.load(open(sys.argv[1], "r", encoding="utf-8"))
-apps = []
-for a in data.get("apps", []):
-    slug = a.get("slug") or a.get("name")
-    if slug:
-        apps.append(slug)
-print("\n".join(apps))
-PY
-)"
-
-      args=( -X PUT "repos/{owner}/{repo}/branches/develop/protection/restrictions" )
-      if [ -n "${USERS}" ]; then
-        while IFS= read -r u; do args+=( -F "users[]=${u}" ); done <<< "${USERS}"
-      else
-        args+=( -F "users[]" )
-      fi
-      if [ -n "${TEAMS}" ]; then
-        while IFS= read -r t; do args+=( -F "teams[]=${t}" ); done <<< "${TEAMS}"
-      else
-        args+=( -F "teams[]" )
-      fi
-      if [ -n "${APPS}" ]; then
-        while IFS= read -r a; do args+=( -F "apps[]=${a}" ); done <<< "${APPS}"
-      else
-        args+=( -F "apps[]" )
-      fi
-      gh api "${args[@]}" >/dev/null 2>&1 || true
-    else
-      gh api -X DELETE "repos/{owner}/{repo}/branches/develop/protection/restrictions" >/dev/null 2>&1 || true
-    fi
+  else
+    # Best-effort unlock (keep existing protection settings)
+    gh api -X PUT "repos/{owner}/{repo}/branches/develop/protection" --input - >/dev/null 2>&1 <<'JSON' || true
+{
+  "required_status_checks": null,
+  "enforce_admins": true,
+  "required_pull_request_reviews": null,
+  "restrictions": null,
+  "lock_branch": false
+}
+JSON
   fi
-
-  if [ -n "${DEVELOP_BRANCH_RESTRICTIONS_SNAPSHOT_FILE}" ]; then
-    rm -f "${DEVELOP_BRANCH_RESTRICTIONS_SNAPSHOT_FILE}" >/dev/null 2>&1 || true
-  fi
+  DEVELOP_BRANCH_FROZEN="false"
 }
 
 cleanup() {
@@ -551,6 +484,8 @@ done
 # Marker: wait for docker-build workflow completion
 echo "⏳ Waiting for docker-build workflow to finish (run id: ${DOCKER_BUILD_RUN_ID})"
 gh run watch "${DOCKER_BUILD_RUN_ID}" --exit-status
+
+gh_unfreeze_develop_branch
 
 echo "🔀 Back-merging master into develop (fast-forward)"
 git fetch --quiet origin develop || die "Failed to fetch 'origin/develop'."
