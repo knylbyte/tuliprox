@@ -13,7 +13,7 @@ use shared::model::{InputType, PlaylistEpgRequest, PlaylistRequest, ProxyType, T
 use shared::utils::{sanitize_sensitive_info, Internable};
 use std::sync::Arc;
 use url::Url;
-use crate::api::endpoints::xmltv_api::serve_epg;
+use crate::api::endpoints::xmltv_api::{serve_epg_web_ui};
 use crate::api::endpoints::xtream_api::xtream_get_stream_info_response;
 
 fn create_config_input_for_m3u(url: &str) -> ConfigInput {
@@ -205,15 +205,7 @@ async fn playlist_epg(
             if let Some(target) = app_state.app_config.get_target_by_id(target_id) {
                 let config = &app_state.app_config.config.load();
                 if let Some(epg_path) = crate::api::endpoints::xmltv_api::get_epg_path_for_target(config, &target) {
-                    let user = create_api_proxy_user(&app_state);
-                    // TODO we should serve EpgChannel instead of xml
-                    return serve_epg(
-                        &app_state,
-                        &epg_path,
-                        &user,
-                        &target,
-                        None,
-                    ).await
+                    return serve_epg_web_ui(accept.as_deref(), &epg_path, &target).await;
                 }
             }
         }

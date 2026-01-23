@@ -1,4 +1,4 @@
-use crate::api::api_utils::{get_user_target, get_user_target_by_credentials, internal_server_error, resource_response, try_unwrap_body};
+use crate::api::api_utils::{empty_json_response_as_array, get_user_target, get_user_target_by_credentials, internal_server_error, resource_response, stream_json_or_bin_response, try_unwrap_body};
 use crate::api::model::AppState;
 use crate::api::model::UserApiRequest;
 use crate::model::{Config, EPG_ATTRIB_ID, EPG_TAG_CHANNEL};
@@ -83,6 +83,25 @@ pub async fn serve_epg(
     }
 }
 
+pub async fn serve_epg_web_ui(
+    accept: Option<&str>,
+    epg_path: &Path,
+    target: &Arc<ConfigTarget>,
+) -> axum::response::Response {
+    if file_exists_async(epg_path).await {
+        match BPlusTreeQuery::<Arc<str>, EpgChannel>::try_new(epg_path) {
+            Ok(query) => {
+                let iterator: Box<dyn Iterator<Item=EpgChannel> + Send> = Box::new(query.disk_iter().map(|(_, v)| v));
+                return stream_json_or_bin_response(accept, iterator);
+            },
+            Err(err) => {
+                error!("Failed to open epg db for target {} {} - {err}", target.name, epg_path.display());
+            }
+        }
+    }
+    try_unwrap_body!(empty_json_response_as_array())
+}
+
 macro_rules! continue_on_err {
     ($expr:expr) => {
         if let Err(_err) = $expr {
@@ -103,10 +122,10 @@ async fn serve_epg_with_rewrites(
         return get_empty_epg_response();
     }
 
-    let mut query = match BPlusTreeQuery::<Arc<str>, EpgChannel>::try_new(&epg_path) {
+    let mut query = match BPlusTreeQuery::<Arc<str>, EpgChannel>::try_new(epg_path) {
         Ok(query) => query,
         Err(err) => {
-            error!("Failed to open BPlusTreeQuery {epg_path:?} - {err}");
+            error!("Failed to open BPlusTreeQuery {} - {err}", epg_path.display());
             return get_empty_epg_response();
         }
     };
@@ -122,18 +141,17 @@ async fn serve_epg_with_rewrites(
 
     let limit = limit.unwrap_or_default();
 
-    let (tx, rx) = tokio::io::duplex(8192);
+    let (mut tx, rx) = tokio::io::duplex(8192);
     tokio::spawn(async move {
-        let mut encoder = async_compression::tokio::write::GzipEncoder::new(tx);
         // Work-Around BytesText DocType escape, see below
-        if let Err(err) = encoder.write_all(XML_PREAMBLE.as_ref()).await {
+        if let Err(err) = tx.write_all(XML_PREAMBLE.as_ref()).await {
             error!("EPG: Failed to write xml header {err}");
-        };
-        if let Err(err) = encoder.write_all(r#"<tv generator-info-name="X" generator-info-url="tuliprox">"#.as_bytes()).await {
+        }
+        if let Err(err) = tx.write_all(r#"<tv generator-info-name="X" generator-info-url="tuliprox">"#.as_bytes()).await {
             error!("EPG: Failed to write xml tv header {err}");
-        };
+        }
 
-        let mut writer = quick_xml::writer::Writer::new(encoder);
+        let mut writer = quick_xml::writer::Writer::new(tx);
         for (_, channel) in query.iter() {
             let programmes = if limit > 0 {
                 channel.get_programme_with_limit(limit)
@@ -167,7 +185,7 @@ async fn serve_epg_with_rewrites(
 
                     let mut elem = BytesStart::new("icon");
                     elem.push_attribute(("src", icon.as_ref()));
-                    if let Err(_) = writer.write_event_async(Event::Empty(elem)).await {
+                    if (writer.write_event_async(Event::Empty(elem)).await).is_err() {
                         // ignore
                     }
                 }
@@ -200,13 +218,13 @@ async fn serve_epg_with_rewrites(
             }
         }
 
-        let mut encoder = writer.into_inner();
+        let mut out = writer.into_inner();
 
-        if let Err(err) = encoder.write_all(r#"</tv>"#.as_bytes()).await {
+        if let Err(err) = out.write_all("</tv>".as_bytes()).await {
             error!("EPG: Failed to write xml tv close {err}");
-        };
+        }
 
-        if let Err(e) = encoder.shutdown().await {
+        if let Err(e) = out.shutdown().await {
             error!("Failed to shutdown epg gzip encoder: {e}");
         }
     });
@@ -214,14 +232,12 @@ async fn serve_epg_with_rewrites(
     let body_stream = ReaderStream::new(rx);
     try_unwrap_body!(axum::response::Response::builder()
                     .header(axum::http::header::CONTENT_TYPE, mime::TEXT_XML.to_string())
-                    .header(axum::http::header::CONTENT_ENCODING, "gzip") // Set Content-Encoding header
                     .body(axum::body::Body::from_stream(body_stream)))
-    
 }
 
 async fn get_epg_channel(app_state: &Arc<AppState>, channel_id: &Arc<str>, epg_path: &Path) -> Option<EpgChannel> {
     let _file_lock = app_state.app_config.file_locks.read_lock(epg_path).await;
-    match BPlusTreeQuery::<Arc<str>, EpgChannel>::try_new(&epg_path) {
+    match BPlusTreeQuery::<Arc<str>, EpgChannel>::try_new(epg_path) {
         Ok(mut query) => {
             match query.query(channel_id) {
                 Ok(Some(item)) => return Some(item),
@@ -232,10 +248,9 @@ async fn get_epg_channel(app_state: &Arc<AppState>, channel_id: &Arc<str>, epg_p
             }
         }
         Err(err) => { error!("Failed to read db file {}: {err}", epg_path.display()); }
-    };
+    }
     None
 }
-
 
 fn format_xmltv_time(ts: i64) -> String {
     if let Some(dt) = DateTime::from_timestamp(ts, 0) {
@@ -252,11 +267,11 @@ fn from_programme(stream_id: &Arc<str>, programme: &EpgProgramme, epg_processing
     ShortEpgDto {
         id: Arc::clone(stream_id),
         epg_id: Arc::clone(&programme.channel),
-        title: programme.title.as_ref().map_or_else(String::new, |v| v.to_string()),
-        lang: "".to_string(),
+        title: programme.title.as_ref().map_or_else(String::new, ToString::to_string),
+        lang: String::new(),
         start: format_xmltv_time(programme.start),
         end: format_xmltv_time(programme.stop),
-        description: programme.desc.as_ref().map_or_else(String::new, |v| v.to_string()),
+        description: programme.desc.as_ref().map_or_else(String::new, ToString::to_string),
         channel_id: Arc::clone(&programme.channel),
         start_timestamp: user_start.to_string(),
         stop_timestamp: user_end.to_string(),
@@ -302,87 +317,6 @@ pub async fn serve_short_epg(
         Err(_) => internal_server_error!(),
     }
 }
-
-// struct DtoEpgConsumer {
-//     items: Vec<ShortEpgDto>,
-//     current_item: Option<ShortEpgDto>,
-//     current_tag: String,
-//     stream_id: String,
-// }
-//
-//
-// impl EpgConsumer for DtoEpgConsumer {
-//     async fn handle_event(&mut self, event: &Event<'_>, decoder: quick_xml::Decoder) -> Result<(), TuliproxError> {
-//         match event {
-//             Event::Start(e) => {
-//                 let tag = e.name();
-//                 match tag.as_ref() {
-//                     b"programme" => {
-//                         let mut item = ShortEpgDto::default();
-//                         item.stream_id.clone_from(&self.stream_id);
-//                         item.id.clone_from(&self.stream_id);
-//                         for attr in e.attributes().flatten() {
-//                             match attr.key.as_ref() {
-//                                 b"start" => {
-//                                     if let Ok(v) = attr.decode_and_unescape_value(decoder) {
-//                                         if let Some(ts) = parse_xmltv_time(&v) {
-//                                             item.start_timestamp = ts.to_string();
-//                                             item.start = format_xtream_time(ts);
-//                                         }
-//                                     }
-//                                 }
-//                                 b"stop" => {
-//                                     if let Ok(v) = attr.decode_and_unescape_value(decoder) {
-//                                         if let Some(ts) = parse_xmltv_time(&v) {
-//                                             item.stop_timestamp = ts.to_string();
-//                                             item.end = format_xtream_time(ts);
-//                                         }
-//                                     }
-//                                 }
-//                                 b"channel" => {
-//                                     if let Ok(v) = attr.decode_and_unescape_value(decoder) {
-//                                         item.epg_id = v.to_string();
-//                                         item.channel_id = v.to_string();
-//                                     }
-//                                 }
-//                                 _ => {}
-//                             }
-//                         }
-//                         self.current_item = Some(item);
-//                     }
-//                     _ => self.current_tag = String::from_utf8_lossy(tag.as_ref()).to_string(),
-//                 }
-//             }
-//             Event::Text(e) => {
-//                 if let Some(item) = &mut self.current_item {
-//                     if let Ok(text) = decoder.decode(e.as_ref()) {
-//                         let unescaped = match quick_xml::escape::unescape(&text) {
-//                             Ok(u) => u,
-//                             Err(_) => text,
-//                         };
-//                         match self.current_tag.as_str() {
-//                             "title" => item.title.push_str(&unescaped),
-//                             "desc" => item.description.push_str(&unescaped),
-//                             _ => {}
-//                         }
-//                     }
-//                 }
-//             }
-//             Event::End(e) => {
-//                 if e.name().as_ref() == b"programme" {
-//                     if let Some(item) = self.current_item.take() {
-//                         self.items.push(item);
-//                     }
-//                 }
-//                 if matches!(e.name().as_ref(), b"programme" | b"title" | b"desc") {
-//                     self.current_tag.clear();
-//                 }
-//             }
-//             _ => {}
-//         }
-//         Ok(())
-//     }
-// }
 
 /// Handles XMLTV EPG API requests, serving the appropriate EPG file with optional time-shifting based on user configuration.
 ///

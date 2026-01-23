@@ -1,12 +1,36 @@
+use std::cmp::{max, min};
 use std::sync::Arc;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+
+fn get_epg_interval(channels: &Vec<EpgChannel>) -> (i64, i64) {
+    let mut epg_start = i64::MAX;
+    let mut epg_stop = i64::MIN;
+    for channel in channels {
+        for programme in &channel.programmes {
+            epg_start = min(epg_start, programme.start);
+            epg_stop = max(epg_stop, programme.stop);
+        }
+    }
+    (epg_start, epg_stop)
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EpgTv {
     pub start: i64,
     pub stop: i64,
     pub channels: Vec<EpgChannel>,
+}
+
+impl EpgTv {
+    pub fn new(channels: Vec<EpgChannel>) -> Self {
+        let (start, stop) = get_epg_interval(&channels);
+        Self {
+            start,
+            stop,
+            channels,
+        }
+    }
 }
 
 impl PartialEq for EpgTv {

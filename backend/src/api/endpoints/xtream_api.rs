@@ -1,7 +1,7 @@
 // https://github.com/tellytv/go.xtream-codes/blob/master/structs.go
 // Xtream api -> https://9tzx6f0ozj.apidog.io/
 use crate::api::api_utils;
-use crate::api::api_utils::{create_api_proxy_user, create_session_fingerprint, empty_json_list_response, force_provider_stream_response, get_user_target, get_user_target_by_credentials, internal_server_error, is_seek_request, local_stream_response, redirect, redirect_response, resource_response, separate_number_and_remainder, stream_response, try_option_bad_request, try_result_bad_request, try_result_not_found, try_unwrap_body, RedirectParams};
+use crate::api::api_utils::{create_api_proxy_user, create_session_fingerprint, empty_json_list_response, empty_json_response_as_array, empty_json_response_as_object, force_provider_stream_response, get_user_target, get_user_target_by_credentials, internal_server_error, is_seek_request, local_stream_response, redirect, redirect_response, resource_response, separate_number_and_remainder, stream_response, try_option_bad_request, try_result_bad_request, try_result_not_found, try_unwrap_body, RedirectParams};
 use crate::api::endpoints::hls_api::handle_hls_stream_request;
 use crate::api::endpoints::xmltv_api::{get_empty_epg_response, get_epg_path_for_target, serve_short_epg};
 use crate::api::model::AppState;
@@ -781,27 +781,6 @@ async fn xtream_player_api_timeshift_query_stream(
         .await
         .into_response()
 }
-
-fn empty_json_response_as_object() -> axum::http::Result<axum::response::Response> {
-    axum::response::Response::builder()
-        .status(axum::http::StatusCode::OK)
-        .header(
-            axum::http::header::CONTENT_TYPE,
-            mime::APPLICATION_JSON.to_string(),
-        )
-        .body(axum::body::Body::from("{}".as_bytes()))
-}
-
-fn empty_json_response_as_array() -> axum::http::Result<axum::response::Response> {
-    axum::response::Response::builder()
-        .status(axum::http::StatusCode::OK)
-        .header(
-            axum::http::header::CONTENT_TYPE,
-            mime::APPLICATION_JSON.to_string(),
-        )
-        .body(axum::body::Body::from("[]".as_bytes()))
-}
-
 
 pub async fn xtream_get_stream_info_response(
     app_state: &Arc<AppState>,

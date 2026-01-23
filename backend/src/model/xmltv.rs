@@ -1,21 +1,20 @@
+use crate::api::model::AppState;
 use crate::model::xmltv::XmlTagIcon::Undefined;
+use crate::model::InputSource;
+use crate::utils::request::get_remote_content_as_stream;
+use crate::utils::{async_file_reader, parse_xmltv_time};
 use chrono::{Datelike, TimeZone, Utc};
+use futures::TryFutureExt;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+use shared::concat_string;
 use shared::error::{TuliproxError, TuliproxErrorKind};
-use shared::model::{EpgChannel, EpgProgramme, EpgTv, InputFetchMethod};
-use std::cmp::{max, min};
+use shared::model::{EpgChannel, EpgProgramme, InputFetchMethod};
+use shared::utils::{sanitize_sensitive_info, Internable};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use futures::TryFutureExt;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use url::Url;
-use shared::concat_string;
-use shared::utils::{sanitize_sensitive_info, Internable};
-use crate::api::model::AppState;
-use crate::model::{InputSource};
-use crate::utils::{async_file_reader, parse_xmltv_time};
-use crate::utils::request::{get_remote_content_as_stream};
 
 pub const EPG_TAG_TV: &str = "tv";
 pub const EPG_TAG_PROGRAMME: &str = "programme";
@@ -110,7 +109,7 @@ impl Epg {
                     .write_event_async(Event::End(BytesEnd::new(tag.name.as_ref())))
                     .await?;
             } else {
-            // Start-Event for the tag
+                // Start-Event for the tag
                 let mut elem = BytesStart::new(tag.name.as_ref());
                 if let Some(attrs) = &tag.attributes {
                     for (k, v) in attrs {
@@ -128,7 +127,7 @@ impl Epg {
                 let value_to_write = if tag.name.as_ref() == EPG_TAG_DISPLAY_NAME {
                     current_channel_id.as_ref()
                         .and_then(|cid| rename_map.and_then(|m| m.get(cid))
-                        .or(tag.value.as_ref()))
+                            .or(tag.value.as_ref()))
                 } else {
                     tag.value.as_ref()
                 };
@@ -208,24 +207,12 @@ fn filter_channels_and_programmes(
     channels.retain(|c| !c.programmes.is_empty());
 }
 
-fn get_epg_interval(channels: &Vec<EpgChannel>) -> (i64, i64) {
-    let mut epg_start = i64::MAX;
-    let mut epg_stop = i64::MIN;
-    for channel in channels {
-        for programme in &channel.programmes {
-            epg_start = min(epg_start, programme.start);
-            epg_stop = max(epg_stop, programme.stop);
-        }
-    }
-    (epg_start, epg_stop)
-}
-
-pub async fn parse_xmltv_for_web_ui_from_file(path: &Path) -> Result<EpgTv, TuliproxError> {
+pub async fn parse_xmltv_for_web_ui_from_file(path: &Path) -> Result<Vec<EpgChannel>, TuliproxError> {
     let file = tokio::fs::File::open(path).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err.to_string())).await?;
     parse_xmltv_for_web_ui(file).await
 }
 
-pub async fn parse_xmltv_for_web_ui_from_url(app_state: &Arc<AppState>, url: &str) -> Result<EpgTv, TuliproxError> {
+pub async fn parse_xmltv_for_web_ui_from_url(app_state: &Arc<AppState>, url: &str) -> Result<Vec<EpgChannel>, TuliproxError> {
     if let Ok(request_url) = Url::parse(url) {
         let client = app_state.http_client.load();
         let input_source: InputSource = InputSource {
@@ -238,18 +225,17 @@ pub async fn parse_xmltv_for_web_ui_from_url(app_state: &Arc<AppState>, url: &st
         };
 
         match get_remote_content_as_stream(
-           &app_state.app_config,
-           &client,
-           &input_source,
-           None,
-           &request_url,
+            &app_state.app_config,
+            &client,
+            &input_source,
+            None,
+            &request_url,
         ).await {
-           Ok((stream, _url)) => {
-               parse_xmltv_for_web_ui(stream).await
-           }
-           Err(err) => Err(TuliproxError::new(TuliproxErrorKind::Info, format!("Failed to download: {} {err}", sanitize_sensitive_info(url))))
-       }
-
+            Ok((stream, _url)) => {
+                parse_xmltv_for_web_ui(stream).await
+            }
+            Err(err) => Err(TuliproxError::new(TuliproxErrorKind::Info, format!("Failed to download: {} {err}", sanitize_sensitive_info(url))))
+        }
     } else {
         Err(TuliproxError::new(TuliproxErrorKind::Info, format!("Invalid url: {}", sanitize_sensitive_info(url))))
     }
@@ -273,8 +259,7 @@ pub fn get_attr_value(attr: &quick_xml::events::attributes::Attribute) -> Option
 
 // This function filters a timeslot starting from yesterday.
 #[allow(clippy::too_many_lines)]
-async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Result<EpgTv, TuliproxError> {
-
+async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Result<Vec<EpgChannel>, TuliproxError> {
     let mut reader = quick_xml::reader::Reader::from_reader(async_file_reader(reader));
     let mut buf = Vec::new();
 
@@ -343,11 +328,11 @@ async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Resul
                             if channel.icon.is_none() {
                                 for attr in e.attributes().flatten() {
                                     if attr.key.as_ref() == b"src" {
-                                      if let Some(icon) = get_attr_value(&attr) {
-                                          if !icon.is_empty() {
-                                              channel.icon = Some(icon);
-                                          }
-                                      }
+                                        if let Some(icon) = get_attr_value(&attr) {
+                                            if !icon.is_empty() {
+                                                channel.icon = Some(icon);
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -403,19 +388,5 @@ async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Resul
 
     filter_channels_and_programmes(&mut channels, &mut programmes);
 
-    if channels.is_empty() {
-        return Ok(EpgTv {
-            start: 0,
-            stop: 0,
-            channels,
-        })
-    }
-
-    let (epg_start, epg_stop) = get_epg_interval(&channels);
-
-    Ok(EpgTv {
-        start: epg_start,
-        stop: epg_stop,
-        channels,
-    })
+    Ok(channels)
 }

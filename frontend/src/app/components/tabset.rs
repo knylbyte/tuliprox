@@ -75,20 +75,18 @@ pub fn TabSet(props: &TabSetProps) -> Html {
                         } else {  tab.inactive_class.as_ref().map_or_else(String::new, |s| s.clone())  }
                     )}>
                         // Desktop: TextButton
-                        <div class="tp__tab-set__tab-desktop">
-                            <TextButton
-                                name={tab_id.clone()}
-                                title={tab.title.clone()}
-                                icon={tab.icon.clone()}
-                                class={if is_active { "active" } else { "" }}
-                                onclick={
-                                    let click_handler = click_handler.clone();
-                                    Callback::from(move |name: String| {
-                                        click_handler.emit(name);
-                                    })
-                                }
-                            />
-                        </div>
+                        <TextButton
+                            name={tab_id.clone()}
+                            title={tab.title.clone()}
+                            icon={tab.icon.clone()}
+                            class={if is_active { "tp__tab-set__tab-desktop active" } else { "tp__tab-set__tab-desktop" }}
+                            onclick={
+                                let click_handler = click_handler.clone();
+                                Callback::from(move |name: String| {
+                                    click_handler.emit(name);
+                                })
+                            }
+                        />
 
                         // Mobile: IconButton
                         <div class="tp__tab-set__tab-mobile">

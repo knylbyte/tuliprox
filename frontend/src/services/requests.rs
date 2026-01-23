@@ -67,6 +67,9 @@ where
     if r_type.contains(CONTENT_TYPE_CBOR) {
         request = request.header("Accept", CONTENT_TYPE_CBOR);
     }
+
+    request = request.header("Accept-Encoding", "gzip, deflate");
+
     match request.send().await {
         Ok(response) => {
             match response.status() {
