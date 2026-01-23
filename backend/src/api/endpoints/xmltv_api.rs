@@ -93,7 +93,7 @@ pub async fn serve_epg_web_ui(
             Ok(query) => {
                 let iterator: Box<dyn Iterator<Item=EpgChannel> + Send> = Box::new(query.disk_iter().map(|(_, v)| v));
                 return stream_json_or_bin_response(accept, iterator);
-            },
+            }
             Err(err) => {
                 error!("Failed to open epg db for target {} {} - {err}", target.name, epg_path.display());
             }
@@ -173,14 +173,10 @@ async fn serve_epg_with_rewrites(
                 continue_on_err!(writer.write_event_async(Event::End(elem)).await);
 
                 if let Some(icon_url) = &channel.icon {
-                    let icon = if epg_processing_options.rewrite_urls && base_url.is_some() {
-                        if let Ok(encrypted) = obscure_text(&epg_processing_options.encrypt_secret, icon_url) {
-                            concat_string!(base_url.as_ref().unwrap(), &encrypted)
-                        } else {
-                            icon_url.to_string()
-                        }
-                    } else {
-                        icon_url.to_string()
+                    let icon = match (epg_processing_options.rewrite_urls, base_url.as_ref(),
+                                      obscure_text(&epg_processing_options.encrypt_secret, icon_url)) {
+                        (true, Some(base), Ok(enc)) => concat_string!(base, &enc),
+                        _ => icon_url.to_string(),
                     };
 
                     let mut elem = BytesStart::new("icon");
@@ -213,7 +209,8 @@ async fn serve_epg_with_rewrites(
                         continue_on_err!(writer.write_event_async(Event::Text(BytesText::new(desc))).await);
                         continue_on_err!(writer.write_event_async(Event::End(BytesEnd::new("desc"))).await);
                     }
-                    continue_on_err!(writer.write_event_async(Event::End(BytesEnd::new("programme"))).await);
+
+                    let _ = writer.write_event_async(Event::End(BytesEnd::new("programme"))).await;
                 }
             }
         }
