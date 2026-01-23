@@ -36,6 +36,99 @@ log_sha() {
   fi
 }
 
+csv_contains() {
+  local csv="${1:-}"
+  local needle="${2:-}"
+  [[ ",${csv}," == *",${needle},"* ]]
+}
+
+csv_contains_any() {
+  local csv="${1:-}"
+  shift || true
+  local needle
+  for needle in "$@"; do
+    if csv_contains "${csv}" "${needle}"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+gh_token_scopes_csv() {
+  local scopes
+
+  scopes="$(
+    gh auth status 2>/dev/null \
+      | awk -F'Token scopes: ' '/Token scopes:/{print $2; exit}' \
+      || true
+  )"
+  scopes="$(echo "${scopes}" | tr -d "'" | tr -d '"' | tr -d ' ' || true)"
+  if [ -n "${scopes}" ]; then
+    echo "${scopes}"
+    return 0
+  fi
+
+  scopes="$(
+    gh api -i user 2>/dev/null \
+      | awk -F': ' 'tolower($1)=="x-oauth-scopes"{print $2; exit}' \
+      || true
+  )"
+  scopes="$(echo "${scopes}" | tr -d ' ' || true)"
+  echo "${scopes}"
+}
+
+gh_guard_permissions() {
+  local scopes_csv
+  local -a missing_required missing_optional
+  scopes_csv="$(gh_token_scopes_csv || true)"
+
+  if [ -z "${scopes_csv}" ]; then
+    echo "⚠️ Could not determine GitHub token scopes; skipping scope validation." >&2
+    return 0
+  fi
+
+  missing_required=()
+
+  # Required for workflow dispatch + repo administration.
+  if ! csv_contains_any "${scopes_csv}" repo public_repo; then
+    missing_required+=("repo (or public_repo for public repos)")
+  fi
+  if ! csv_contains "${scopes_csv}" workflow; then
+    missing_required+=("workflow")
+  fi
+
+  if [ "${#missing_required[@]}" -gt 0 ]; then
+    echo "🧨 Missing required GitHub token scopes: ${missing_required[*]}" >&2
+    echo "   Fix: gh auth refresh -h github.com -s repo -s workflow" >&2
+    echo "   (or re-auth with a PAT that has these scopes via 'gh auth login --with-token')" >&2
+    die "Insufficient GitHub token scopes."
+  fi
+
+  if [ "${FREEZE_DEVELOP_BRANCH:-1}" != "0" ]; then
+    local is_admin
+    is_admin="$(gh api "repos/{owner}/{repo}" --jq '.permissions.admin' 2>/dev/null || true)"
+    if [ "${is_admin}" != "true" ]; then
+      die "GitHub account lacks admin permission for {owner}/{repo} (required to lock/unlock 'develop'). Set FREEZE_DEVELOP_BRANCH=0 to skip."
+    fi
+  fi
+
+  if [ "${CLEANUP_DOCKER_IMAGES_ON_FAILURE:-1}" != "0" ]; then
+    missing_optional=()
+    if ! csv_contains "${scopes_csv}" read:packages; then
+      missing_optional+=("read:packages")
+    fi
+    if ! csv_contains "${scopes_csv}" delete:packages; then
+      missing_optional+=("delete:packages")
+    fi
+    if [ "${#missing_optional[@]}" -gt 0 ]; then
+      echo "🧨 Missing GHCR cleanup scopes: ${missing_optional[*]}" >&2
+      echo "   Fix: gh auth refresh -h github.com -s read:packages -s delete:packages" >&2
+      echo "   Or skip cleanup: CLEANUP_DOCKER_IMAGES_ON_FAILURE=0" >&2
+      die "Insufficient GitHub token scopes for GHCR cleanup."
+    fi
+  fi
+}
+
 gh_cleanup_docker_images_on_failure() {
   local run_id="${1:-}"
 
@@ -110,11 +203,17 @@ gh_cleanup_docker_images_on_failure() {
     fi
 
     local version_ids
-    version_ids="$(
+    if ! version_ids="$(
       gh api "${list_endpoint}" \
         --jq ".[] | select((.metadata.container.tags // []) | index(\"${bump_version}\")) | .id" \
-        2>/dev/null || true
-    )"
+        2>/dev/null
+    )"; then
+      echo "⚠️ Failed to list GHCR package versions for ${image} (missing read:packages scope?). Skipping delete." >&2
+      continue
+    fi
+
+    # Defensive: avoid treating API error JSON as an ID.
+    version_ids="$(echo "${version_ids}" | awk '/^[0-9]+$/ { print }' || true)"
 
     if [ -z "${version_ids}" ]; then
       echo "ℹ️ No GHCR package versions found for ${image}:${bump_version}" >&2
@@ -321,6 +420,7 @@ if ! command -v gh &> /dev/null; then
 fi
 
 gh auth status >/dev/null 2>&1 || die "Not logged into GitHub CLI. Run 'gh auth login' first."
+gh_guard_permissions
 gh_freeze_develop_branch
 
 # Read current tag on HEAD
@@ -606,16 +706,19 @@ echo "🗑 Cleaning up build artifacts"
 cd "$WORKING_DIR"
 cargo clean
 
-echo "📦 git commit version: ${BUMP_VERSION}"
-# Commit and tag release
-git add .
-git commit -m "release ${BUMP_VERSION}"
-git tag -a "$BUMP_VERSION" -m "$BUMP_VERSION"
-git push
-git push --tags
+RELEASE_TAG="v${BUMP_VERSION#v}"
+echo "🏷️ Tagging release: ${RELEASE_TAG}"
+
+if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
+  die "Tag '${RELEASE_TAG}' already exists."
+fi
+
+git tag -a "${RELEASE_TAG}" -m "${RELEASE_TAG}"
+
+echo "📦 Pushing release tag: ${RELEASE_TAG}"
+git push origin "${RELEASE_TAG}"
 if git remote get-url github >/dev/null 2>&1; then
-  git push github
-  git push github --tags
+  git push github "${RELEASE_TAG}"
 fi
 
 echo "🎉 Done!"
