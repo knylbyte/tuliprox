@@ -1343,7 +1343,7 @@ async fn fetch_resource_with_retry(
 
     let disabled_headers = app_state.get_disabled_headers();
 
-    let response = match send_with_retry(
+    let Ok(response) = send_with_retry(
         &app_state.app_config,
         url,
         || {
@@ -1357,12 +1357,7 @@ async fn fetch_resource_with_retry(
                 default_user_agent.as_deref(),
             )
         },
-    )
-        .await
-    {
-        Ok(response) => response,
-        Err(_) => return None,
-    };
+    ).await else { return None };
 
     let status = response.status();
 

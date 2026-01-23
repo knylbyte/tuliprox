@@ -35,7 +35,7 @@ impl InfoDocUtils {
             "0".to_string()
         } else {
             let s = format!("{:.2}", n);
-            s.strip_suffix(".00").unwrap_or(&s).to_string()
+            s.trim_end_matches('0').trim_end_matches('.').to_string()
         }
     }
 

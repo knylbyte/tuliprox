@@ -3,7 +3,7 @@ use crate::model::Epg;
 use crate::model::{AppConfig, ConfigInput, ConfigTarget, TargetOutput};
 use crate::processing::processor::playlist::{apply_filter_to_playlist, PlaylistProcessingContext};
 use crate::repository::{BPlusTree, BPlusTreeQuery};
-use crate::repository::epg_write;
+use crate::repository::epg_write_for_target;
 use crate::repository::{load_input_m3u_playlist, m3u_get_file_path_for_db, m3u_write_playlist, persist_input_m3u_playlist};
 use crate::repository::{ensure_target_storage_path, get_input_storage_path, get_target_id_mapping_file, get_target_storage_path};
 use crate::repository::FILE_SUFFIX_DB;
@@ -110,7 +110,7 @@ pub async fn persist_playlist(app_config: &Arc<AppConfig>, playlist: &mut [Playl
             Ok(()) => {
                 if !pl.is_empty() {
                     let epg_pl: &[PlaylistGroup] = pl;
-                    if let Err(err) = epg_write(config, target, &target_path, epg, output, Some(epg_pl)).await {
+                    if let Err(err) = epg_write_for_target(config, target, &target_path, epg, output, Some(epg_pl)).await {
                         errors.push(err);
                     }
                 }

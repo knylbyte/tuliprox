@@ -248,7 +248,7 @@ mod tests {
         // Create mapping in disk-only mode
         let uuid1 = UUIDType::default();
         {
-            let mut mapping = TargetIdMapping::new(&path)?;
+            let mut mapping = TargetIdMapping::new(&path, false)?;
             let vid1 = mapping.get_and_update_virtual_id(&uuid1, 100, PlaylistItemType::Live, 0);
             assert_eq!(vid1, 1);
             mapping.persist().map_err(|_| info_err!("Failed to persist mapping"))?;
@@ -256,7 +256,7 @@ mod tests {
 
         // Reopen and verify persistence
         {
-            let mut mapping = TargetIdMapping::new(&path)?;
+            let mut mapping = TargetIdMapping::new(&path, false)?;
             let vid1_again = mapping.get_and_update_virtual_id(&uuid1, 100, PlaylistItemType::Live, 0);
             assert_eq!(vid1_again, 1); // Should get same virtual_id
         }
@@ -271,7 +271,7 @@ mod tests {
 
         let uuid1 = UUIDType::default();
         {
-            let mut mapping = TargetIdMapping::new(&path)?;
+            let mut mapping = TargetIdMapping::new(&path, false)?;
             let vid1 = mapping.get_and_update_virtual_id(&uuid1, 100, PlaylistItemType::Video, 0);
             assert_eq!(vid1, 1);
             mapping.persist().map_err(|err| info_err!("{err}"))?;
@@ -279,7 +279,7 @@ mod tests {
 
         // Reopen with memory cache and verify
         {
-            let mut mapping = TargetIdMapping::new(&path)?;
+            let mut mapping = TargetIdMapping::new(&path, false)?;
             let vid1_again = mapping.get_and_update_virtual_id(&uuid1, 100, PlaylistItemType::Video, 0);
             assert_eq!(vid1_again, 1);
         }

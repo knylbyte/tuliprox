@@ -3,16 +3,17 @@ use crate::api::endpoints::api_playlist_utils::{get_playlist_for_custom_provider
 use crate::api::endpoints::extract_accept_header::ExtractAcceptHeader;
 use crate::api::model::AppState;
 use crate::auth::create_access_token;
-use crate::model::{parse_xmltv_for_web_ui_from_file, parse_xmltv_for_web_ui_from_url, ConfigInput, ConfigInputOptions};
+use crate::model::{parse_xmltv_for_web_ui_from_url, ConfigInput, ConfigInputOptions};
 use crate::processing::processor::playlist;
 use axum::response::IntoResponse;
 use axum::{Router};
-use log::{error, info};
+use log::{debug, error};
 use serde_json::json;
 use shared::model::{InputType, PlaylistEpgRequest, PlaylistRequest, ProxyType, TargetType, WebplayerUrlRequest, XtreamCluster};
 use shared::utils::{sanitize_sensitive_info, Internable};
 use std::sync::Arc;
 use url::Url;
+use crate::api::endpoints::xmltv_api::serve_epg;
 use crate::api::endpoints::xtream_api::xtream_get_stream_info_response;
 
 fn create_config_input_for_m3u(url: &str) -> ConfigInput {
@@ -169,13 +170,13 @@ async fn playlist_series_info(
             if let Some(input) = app_state.app_config.get_input_by_id(input_id) {
                 if matches!(input.input_type, InputType::Xtream | InputType::XtreamBatch) {
                     // TODO: Implement series info retrieval for input-based requests
-                    info!("TODO: Implement series info retrieval for input-based requests");
+                    debug!("TODO: Implement series info retrieval for input-based requests");
                 }
             }
         }
         PlaylistRequest::CustomXtream(_xtream) => {
             // TODO: Implement series info retrieval for custom Xtream requests
-            info!("TODO: Implement series info retrieval for custom Xtream requests");
+            debug!("TODO: Implement series info retrieval for custom Xtream requests");
         },
         PlaylistRequest::CustomM3u(_) => {}
     }
@@ -204,9 +205,15 @@ async fn playlist_epg(
             if let Some(target) = app_state.app_config.get_target_by_id(target_id) {
                 let config = &app_state.app_config.config.load();
                 if let Some(epg_path) = crate::api::endpoints::xmltv_api::get_epg_path_for_target(config, &target) {
-                    if let Ok(epg) = parse_xmltv_for_web_ui_from_file(&epg_path).await {
-                        return json_or_bin_response(accept.as_deref(), &epg).into_response();
-                    }
+                    let user = create_api_proxy_user(&app_state);
+                    // TODO we should serve EpgChannel instead of xml
+                    return serve_epg(
+                        &app_state,
+                        &epg_path,
+                        &user,
+                        &target,
+                        None,
+                    ).await
                 }
             }
         }

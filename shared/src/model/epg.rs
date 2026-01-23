@@ -1,16 +1,6 @@
-use chrono::{DateTime, Utc};
+use std::sync::Arc;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
-
-pub fn parse_xmltv_time(t: &str) -> Option<i64> {
-    let fmt = "%Y%m%d%H%M%S %z";
-    if let Ok(result) = DateTime::parse_from_str(t, fmt) {
-            Some(result
-            .with_timezone(&Utc)
-            .timestamp())
-    } else {
-        None
-    }
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EpgTv {
@@ -29,20 +19,36 @@ impl PartialEq for EpgTv {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EpgChannel {
-    pub id: String,
-    pub title: String,
-    pub icon: Option<String>,
+    pub id: Arc<str>,
+    pub title: Option<Arc<str>>,
+    pub icon: Option<Arc<str>>,
     pub programmes: Vec<EpgProgramme>,
 }
 
 impl EpgChannel {
-    pub fn new(id: String) -> Self {
+    pub fn new(id: Arc<str>) -> Self {
         Self {
             id,
-            title: String::new(),
+            title: None,
             icon: None,
             programmes: Vec::new(),
         }
+    }
+
+    pub fn get_programme_with_limit(&self, limit: u32) -> Vec<&EpgProgramme> {
+        let now = Utc::now().timestamp();
+
+        // find index for first relevant entry
+        let start_idx = self.programmes.iter()
+            .position(|p| (p.start <= now && now <= p.stop) || (p.start >= now))
+            .unwrap_or(self.programmes.len()); // nothing found, empty response
+
+        // slice from start_idx, max. limit
+        self.programmes
+            .iter()
+            .skip(start_idx)
+            .take(limit as usize)
+            .collect()
     }
 }
 
@@ -50,17 +56,20 @@ impl EpgChannel {
 pub struct EpgProgramme {
     pub start: i64,
     pub stop: i64,
-    pub channel: String,
-    pub title: String,
+    pub title: Option<Arc<str>>,
+    pub desc: Option<Arc<str>>,
+    #[serde(skip)]
+    pub channel: Arc<str>,
 }
 
 impl EpgProgramme {
-    pub fn new(start: i64, stop: i64, channel: String) -> Self {
+    pub fn new(start: i64, stop: i64, channel: Arc<str>) -> Self {
         Self {
             start,
             stop,
             channel,
-            title: String::new(),
+            title: None,
+            desc: None
         }
     }
 }

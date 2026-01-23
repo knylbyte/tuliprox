@@ -17,7 +17,7 @@ use crate::repository::storage_const;
 use crate::repository::VirtualIdRecord;
 use crate::repository::{get_target_id_mapping, user_get_bouquet_filter, xtream_get_collection_path, xtream_get_item_for_stream_id, xtream_load_rewrite_playlist};
 use crate::utils::xtream::create_vod_info_from_item;
-use crate::utils::{debug_if_enabled, trace_if_enabled};
+use crate::utils::{debug_if_enabled, file_exists_async, trace_if_enabled};
 use crate::utils::{request, xtream};
 use axum::http::HeaderMap;
 use axum::response::IntoResponse;
@@ -31,8 +31,7 @@ use shared::concat_string;
 use shared::error::{info_err, info_err_res, TuliproxError};
 use shared::model::{create_stream_channel_with_type, PlaylistEntry, PlaylistItemType, ProxyType,
                     TargetType, UserConnectionPermission, XtreamCluster, XtreamPlaylistItem};
-use shared::utils::{deserialize_as_string, extract_extension_from_url, generate_playlist_uuid,
-                    sanitize_sensitive_info, trim_slash, HLS_EXT};
+use shared::utils::{deserialize_as_string, extract_extension_from_url, generate_playlist_uuid, sanitize_sensitive_info, trim_slash, Internable, HLS_EXT};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -887,7 +886,7 @@ async fn xtream_get_short_epg(
     user: &ProxyUserCredentials,
     target: &Arc<ConfigTarget>,
     stream_id: &str,
-    limit: &str,
+    limit: u32,
 ) -> impl IntoResponse + Send {
     let target_name = &target.name;
     if target.has_output(TargetType::Xtream) {
@@ -904,10 +903,8 @@ async fn xtream_get_short_epg(
         ).await {
             let config = &app_state.app_config.config.load();
             if let (Some(epg_path), Some(channel_id)) = (get_epg_path_for_target(config, target), &pli.epg_channel_id) {
-                if let Ok(exists) = tokio::fs::try_exists(&epg_path).await {
-                    if exists {
-                        return serve_short_epg(app_state, epg_path.as_path(), user, target, Arc::clone(channel_id), stream_id).await;
-                    }
+                if file_exists_async(&epg_path).await {
+                    return serve_short_epg(app_state, epg_path.as_path(), user, target, channel_id, stream_id.intern(), limit).await;
                 }
             }
 
@@ -923,7 +920,7 @@ async fn xtream_get_short_epg(
                             crate::model::XC_TAG_STREAM_ID,
                             pli.provider_id
                         );
-                        if !(limit.is_empty() || limit.eq("0")) {
+                        if limit > 0 {
                             info_url = format!("{info_url}&limit={limit}");
                         }
                         if user.proxy.is_redirect(pli.item_type)
@@ -932,7 +929,6 @@ async fn xtream_get_short_epg(
                             return redirect(&info_url).into_response();
                         }
 
-                        // TODO serve epg from own db
                         let input_source = InputSource::from(&*input).with_url(info_url);
                         return match request::download_text_content(
                             &app_state.app_config,
@@ -1213,7 +1209,7 @@ async fn xtream_player_api(
                     &user,
                     &target,
                     api_req.stream_id.trim(),
-                    api_req.limit.trim(),
+                    api_req.limit,
                 )
                     .await
                     .into_response();

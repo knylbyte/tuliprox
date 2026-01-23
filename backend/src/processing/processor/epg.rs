@@ -4,23 +4,23 @@ use crate::model::FetchedPlaylist;
 use crate::processing::parser::xmltv::normalize_channel_name;
 use log::{debug, trace, warn};
 use rphonetic::{DoubleMetaphone, Encoder};
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use shared::model::{EpgSmartMatchConfigDto, PlaylistItem, XtreamCluster};
 use std::sync::Arc;
+use shared::utils::Internable;
 
-pub struct EpgIdCache<'a> {
-    pub channel_epg_id: HashSet<Cow<'a, str>>,
-    pub normalized: HashMap<String, Option<String>>,
-    pub phonetics: HashMap<String, HashSet<String>>,
-    pub processed: HashSet<String>,
+pub struct EpgIdCache {
+    pub channel_epg_id: HashSet<Arc<str>>,
+    pub normalized: HashMap<Arc<str>, Option<Arc<str>>>,
+    pub phonetics: HashMap<Arc<str>, HashSet<Arc<str>>>,
+    pub processed: HashSet<Arc<str>>,
     pub smart_match_config: EpgSmartMatchConfig,
     pub metaphone: DoubleMetaphone,
     pub smart_match_enabled: bool, // smart match is enabled, normalizing names
     pub fuzzy_match_enabled: bool, // fuzzy matching enabled
 }
 
-impl EpgIdCache<'_> {
+impl EpgIdCache {
     /// Creates a new `EpgIdCache` with configuration for smart and fuzzy matching.
     ///
     /// Initializes all internal caches and sets matching options based on the provided EPG configuration. If no configuration is given, defaults are used.
@@ -65,7 +65,7 @@ impl EpgIdCache<'_> {
     /// cache.normalize_and_store("Discovery Channel", Some(&"discovery.epg".to_string()));
     /// assert!(cache.normalized.contains_key(&cache.normalize("Discovery Channel")));
     /// ```
-    fn normalize_and_store(&mut self, name: &str, epg_id: Option<&str>) {
+    fn normalize_and_store(&mut self, name: &str, epg_id: Option<&Arc<str>>) {
         self.insert_normalized(name);
 
         if let Some(chan_epg_id) = epg_id {
@@ -73,7 +73,7 @@ impl EpgIdCache<'_> {
         }
     }
     fn insert_normalized(&mut self, key: &str) {
-        let normalized = self.normalize(key);
+        let normalized = self.normalize(key).intern();
         let phonetic = self.phonetic(&normalized);
 
         self.normalized.insert(normalized.clone(), None);
@@ -96,12 +96,12 @@ impl EpgIdCache<'_> {
         normalize_channel_name(name, &self.smart_match_config)
     }
 
-    pub(crate) fn phonetic(&self, name: &str) -> String {
+    pub(crate) fn phonetic(&self, name: &Arc<str>) -> Arc<str> {
         let result = self.metaphone.encode(name);
         if result.is_empty() {
-            name.to_owned()
+            name.clone()
         } else {
-            result
+            result.intern()
         }
     }
 
@@ -111,13 +111,13 @@ impl EpgIdCache<'_> {
 
         // Helper closure to process a single item
         // We use a closure here to capture `self` and avoid code duplication
-        let mut process_item = |name: &str, epg_channel_id: Option<&str>| {
+        let mut process_item = |name: &str, epg_channel_id: Option<&Arc<str>>| {
             let mut missing_epg_id = true;
             // insert epg_id to known channel epg_ids
             if let Some(id) = epg_channel_id {
                 if !id.is_empty() {
                     missing_epg_id = false;
-                    self.channel_epg_id.insert(Cow::Owned(id.to_string()));
+                    self.channel_epg_id.insert(Arc::clone(id));
                 }
             }
 
@@ -132,16 +132,16 @@ impl EpgIdCache<'_> {
 
         for channel in fp.items() {
             if channel.header.xtream_cluster == XtreamCluster::Live && channel.header.item_type.is_live() {
-                process_item(&channel.header.name, channel.header.epg_channel_id.as_deref());
+                process_item(&channel.header.name, channel.header.epg_channel_id.as_ref());
             }
         }
     }
 
-    pub fn match_with_normalized(&mut self, epg_id: &str, normalized_epg_ids: &[String]) -> bool {
+    pub fn match_with_normalized(&mut self, epg_id: &Arc<str>, normalized_epg_ids: &[Arc<str>]) -> bool {
         for key in normalized_epg_ids {
             if let Some(entry) = self.normalized.get_mut(key) {
-                entry.replace(epg_id.to_string());
-                self.channel_epg_id.insert(epg_id.to_string().into());
+                entry.replace(Arc::clone(epg_id));
+                self.channel_epg_id.insert(Arc::clone(epg_id));
                 return true;
             }
         }
@@ -161,17 +161,18 @@ impl EpgIdCache<'_> {
 /// let mut id_cache = EpgIdCache::new(None);
 /// assign_channel_epg(&mut new_epg, &mut playlist, &mut id_cache);
 /// ```
-async fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist<'_>, id_cache: &mut EpgIdCache<'_>) {
+async fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist<'_>, id_cache: &mut EpgIdCache) {
     //id_cache.normalized.retain(|_, v| v.is_some());
     if let Some(tv_guide) = &fp.epg {
         let mut processed_epgs = vec![];
         if let Some(epg_sources) = tv_guide.filter(id_cache).await {
             let mut icon_assigned = HashSet::new();
+            let epg_attrib_id = EPG_ATTRIB_ID.intern();
             for epg_source in epg_sources {
                 // icon tags
-                let icon_tags: HashMap<&str, &Arc<XmlTag>> = epg_source.children.iter()
+                let icon_tags: HashMap<&Arc<str>, &Arc<XmlTag>> = epg_source.children.iter()
                     .filter(|tag| tag.icon != XmlTagIcon::Undefined)
-                    .filter_map(|tag| tag.get_attribute_value(EPG_ATTRIB_ID).map(|id| (id.as_str(), tag)))
+                    .filter_map(|tag| tag.get_attribute_value(&epg_attrib_id).map(|id| (id, tag)))
                     .collect();
 
                 let assign_values = |chan: &mut PlaylistItem| {
@@ -184,7 +185,7 @@ async fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist<'_>
                         };
                         if not_found_in_epg {
                             let try_match = |key: &str| {
-                                let normalized = id_cache.normalize(key);
+                                let normalized = id_cache.normalize(key).intern();
                                 id_cache.normalized.get(&normalized).and_then(|epg_id| {
                                     epg_id.as_ref().map(|id| {
                                         trace!("Matched channel {} to epg {id:?}", chan.header.name);
@@ -195,22 +196,22 @@ async fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist<'_>
                             if let Some(new_id) = try_match(&chan.header.name)
                                 .or_else(|| chan.header.epg_channel_id.as_deref().and_then(try_match))
                             {
-                                chan.header.epg_channel_id = Some(new_id.into());
+                                chan.header.epg_channel_id = Some(new_id);
                             }
                         }
                     }
                     if let Some(epg_channel_id) = chan.header.epg_channel_id.as_ref() {
                         if !icon_assigned.contains(epg_channel_id) &&
                             (epg_source.logo_override || chan.header.logo.is_empty() || chan.header.logo_small.is_empty()) {
-                            if let Some(icon_tag) = icon_tags.get(&**epg_channel_id) {
+                            if let Some(icon_tag) = icon_tags.get(epg_channel_id) {
                                 if let XmlTagIcon::Src(icon) = &icon_tag.icon {
                                     icon_assigned.insert(epg_channel_id.clone());
                                     if epg_source.logo_override || chan.header.logo.is_empty() {
                                         trace!("Matched channel {} to epg icon {icon}", chan.header.name);
-                                        chan.header.logo = icon.clone().into();
+                                        chan.header.logo = icon.clone();
                                     }
                                     if epg_source.logo_override || chan.header.logo_small.is_empty() {
-                                        chan.header.logo_small = icon.clone().into();
+                                        chan.header.logo_small = icon.clone();
                                     }
                                 }
                             }

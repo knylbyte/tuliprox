@@ -223,8 +223,8 @@ $series-backdrop-height: 300px;
     align-items: center;
 
     &__rating {
-      color: var(--card-color) !important;
-      background-color: rgb(from var(--card-background-color) r g b / 1) !important;
+      color: var(--playlist-rating-color) !important;
+      background-color: var(--playlist-rating-background-color) !important;
       font-weight: bold;
     }
 

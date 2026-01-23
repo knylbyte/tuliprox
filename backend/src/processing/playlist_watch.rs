@@ -6,7 +6,7 @@ use shared::model::{MsgKind, PlaylistGroup};
 use crate::messaging::{send_message};
 use crate::model::Config;
 use crate::utils;
-use crate::utils::{binary_deserialize, binary_serialize};
+use crate::utils::{binary_deserialize, binary_serialize, file_exists_async};
 
 pub async fn process_group_watch(client: &reqwest::Client, cfg: &Config, target_name: &str, pl: &PlaylistGroup) {
     let mut new_tree = BTreeSet::new();
@@ -21,7 +21,7 @@ pub async fn process_group_watch(client: &reqwest::Client, cfg: &Config, target_
         Some(path) => {
             let save_path = path.as_path();
             let mut changed = false;
-            if let Ok(true) = tokio::fs::try_exists(&path).await {
+            if file_exists_async(&path).await {
                 if let Some(loaded_tree) = load_watch_tree(&path).await {
                     // Find elements in set2 but not in set1
                     let added_difference: BTreeSet<Arc<str>> = new_tree.difference(&loaded_tree).cloned().collect();

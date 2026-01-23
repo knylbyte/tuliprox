@@ -39,51 +39,30 @@ fn pick_logo(logo: &Arc<str>, logo_small: &Arc<str>, props: Option<&StreamProper
         return Arc::clone(logo_small);
     }
 
-    if let Some(props) = props {
-        match props {
-            StreamProperties::Video(v) => {
-                if !v.stream_icon.is_empty() {
-                    return Arc::clone(&v.stream_icon);
-                }
-                if let Some(details) = v.details.as_ref() {
-                    if let Some(movie_image) = details.movie_image.as_ref() {
-                        if !movie_image.is_empty() {
-                            return Arc::clone(movie_image);
-                        }
-                    }
-                    if let Some(cover_big) = details.cover_big.as_ref() {
-                        if !cover_big.is_empty() {
-                            return Arc::clone(cover_big);
-                        }
-                    }
-                    if let Some(backdrop) = details.backdrop_path.as_ref() {
-                        if let Some(first) = backdrop.first() {
-                            if !first.is_empty() {
-                                return Arc::clone(first);
-                            }
-                        }
-                    }
-                }
-            }
-            StreamProperties::Series(s) => {
-                if !s.cover.is_empty() {
-                    return Arc::clone(&s.cover);
-                }
-                if let Some(backdrop) = s.backdrop_path.as_ref() {
-                    if let Some(first) = backdrop.first() {
-                        if !first.is_empty() {
-                            return Arc::clone(first);
-                        }
-                    }
-                }
-            }
-            StreamProperties::Live(_) => {}
-            StreamProperties::Episode(_) => {}
+    props.and_then(|p| match p {
+        StreamProperties::Video(v) => {
+            non_empty(&v.stream_icon)
+                .or_else(|| v.details.as_ref().and_then(|d| {
+                    non_empty_opt(d.movie_image.as_ref())
+                        .or_else(|| non_empty_opt(d.cover_big.as_ref()))
+                        .or_else(|| d.backdrop_path.as_ref().and_then(|b| non_empty(b.first()?)))
+                }))
         }
-    }
-    "".intern()
+        StreamProperties::Series(s) => {
+            non_empty(&s.cover)
+                .or_else(|| s.backdrop_path.as_ref().and_then(|b| non_empty(b.first()?)))
+        }
+        _ => None,
+    }).unwrap_or_else(|| "".intern())
 }
 
+fn non_empty(s: &Arc<str>) -> Option<Arc<str>> {
+    (!s.is_empty()).then(|| Arc::clone(s))
+}
+
+fn non_empty_opt(s: Option<&Arc<str>>) -> Option<Arc<str>> {
+    s.and_then(non_empty)
+}
 
 /// Helper to get rating
 #[inline]

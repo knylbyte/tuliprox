@@ -17,7 +17,7 @@ pub struct UserApiRequest {
     #[serde(default)]
     pub category_id: String,
     #[serde(default)]
-    pub limit: String,
+    pub limit: u32,
     #[serde(default)]
     pub start: String,
     #[serde(default)]

@@ -404,7 +404,7 @@ pub fn PlaylistExplorer() -> Html {
                 <button class="tp__icon-button" onclick={Callback::from(move |event: MouseEvent| popup_onclick.emit((chan_clone.clone(), event)))}>
                     <AppIcon name="Popup"></AppIcon>
                 </button>
-                {render_channel_logo(&*chan.logo)}
+                {render_channel_logo(&chan.logo)}
                 <span class="tp__playlist-explorer__channel-title">{chan.title.clone()}</span>
                 </span>
             }
@@ -415,7 +415,7 @@ pub fn PlaylistExplorer() -> Html {
         let chan_clone = Rc::clone(chan);
         html! {
             <span class="tp__playlist-explorer__channel tp__playlist-explorer__channel-video">
-                {render_channel_logo(&*chan.logo)}
+                {render_channel_logo(&chan.logo)}
                 {
                     html_if!(chan.rating > 0.001, {
                         <Chip class="tp__playlist-explorer__channel-video-rating" label={format_float_localized(chan.rating, 1, false)} />
@@ -441,7 +441,7 @@ pub fn PlaylistExplorer() -> Html {
         };
         html! {
             <span onclick={chan_click} class="tp__playlist-explorer__channel tp__playlist-explorer__channel-series">
-                {render_channel_logo(&*chan.logo)}
+                {render_channel_logo(&chan.logo)}
                 {
                     html_if!(chan.rating > 0.001, {
                         <Chip class="tp__playlist-explorer__channel-series-rating" label={format_float_localized(chan.rating, 1, false)} />
@@ -467,7 +467,7 @@ pub fn PlaylistExplorer() -> Html {
         let rating = chan.rating.unwrap_or_default();
         html! {
             <span class="tp__playlist-explorer__channel tp__playlist-explorer__channel-episode">
-                {render_channel_logo(&*chan.movie_image)}
+                {render_channel_logo(&chan.movie_image)}
                 {
                     html_if!(rating > 0.001, {
                         <Chip class="tp__playlist-explorer__channel-episode-rating" label={format_float_localized(rating, 1, false)} />

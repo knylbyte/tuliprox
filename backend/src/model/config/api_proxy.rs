@@ -8,6 +8,7 @@ use arc_swap::access::Access;
 use arc_swap::ArcSwap;
 use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigPaths, TargetUserDto};
 use crate::{utils};
+use crate::utils::file_exists_async;
 
 const API_USER: &str = "api";
 const TEST_USER: &str = "test";
@@ -128,7 +129,7 @@ impl ApiProxyConfig {
             }
         } else {
             let user_db_path = get_api_user_db_path(cfg);
-            if let Ok(true) = tokio::fs::try_exists(&user_db_path).await {
+            if file_exists_async(&user_db_path).await {
                 // we can't have user defined in db file.
                 // we need to load them and save them into the config file
                 if let Ok(stored_users) = load_api_user(cfg).await {

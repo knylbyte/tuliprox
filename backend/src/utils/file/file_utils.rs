@@ -140,6 +140,9 @@ pub fn resolve_directory_path(input: &str) -> String {
         )
 }
 
+pub async fn file_exists_async(path: &Path) -> bool {
+    tokio::fs::try_exists(path).await.unwrap_or(false)
+}
 
 #[inline]
 pub fn open_file(file_name: &Path) -> Result<File, std::io::Error> {

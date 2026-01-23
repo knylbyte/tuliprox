@@ -7,6 +7,7 @@ use std::sync::Arc;
 use indexmap::IndexMap;
 use shared::model::UUIDType;
 use crate::repository::xtream_repository::CategoryKey;
+use crate::utils::file_exists_async;
 
 pub async fn persist_input_library_playlist(app_config: &Arc<AppConfig>, library_path: &Path, playlist: &[PlaylistGroup]) -> Result<(), TuliproxError> {
     if playlist.is_empty() {
@@ -30,7 +31,7 @@ pub async fn persist_input_library_playlist(app_config: &Arc<AppConfig>, library
 pub async fn load_input_local_library_playlist(app_config: &Arc<AppConfig>, lib_path: &Path) -> Result<Vec<PlaylistGroup>, TuliproxError> {
     let mut groups: IndexMap<CategoryKey, PlaylistGroup> = IndexMap::new();
 
-    if tokio::fs::try_exists(lib_path).await.unwrap_or(false) {
+    if file_exists_async(lib_path).await {
         // Load Items
         let _file_lock = app_config.file_locks.read_lock(lib_path).await;
         if let Ok(mut query) = BPlusTreeQuery::<UUIDType, XtreamPlaylistItem>::try_new(lib_path) {

@@ -10,7 +10,7 @@ use crate::repository::{ensure_input_storage_path, get_input_storage_path, get_t
 use crate::repository::VirtualIdRecord;
 use crate::repository::{get_live_cat_collection_path, get_series_cat_collection_path, get_vod_cat_collection_path, xtream_get_file_path, CategoryEntry};
 use crate::repository::{persist_input_vod_info, persists_input_series_info, write_playlist_batch_item_upsert, write_playlist_item_update};
-use crate::utils::request;
+use crate::utils::{file_exists_async, request};
 use chrono::{DateTime, Utc};
 use log::{error, info, warn};
 use shared::error::{TuliproxError};
@@ -619,10 +619,10 @@ async fn process_xtream_cluster_to_disk(
 
     // Cleanup - temporary files are usually replaced/moved by swap, but defensive removal of leftovers
     // We strictly check for existence first to avoid errors if rename_or_copy acted as a move.
-    if tokio::fs::try_exists(&tmp_xtream_path).await.unwrap_or(false) {
+    if file_exists_async(&tmp_xtream_path).await {
         let _ = tokio::fs::remove_file(tmp_xtream_path).await;
     }
-    if tokio::fs::try_exists(&tmp_col_path).await.unwrap_or(false) {
+    if file_exists_async(&tmp_col_path).await {
         let _ = tokio::fs::remove_file(tmp_col_path).await;
     }
 
