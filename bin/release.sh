@@ -36,6 +36,99 @@ log_sha() {
   fi
 }
 
+gh_cleanup_docker_images_on_failure() {
+  local run_id="${1:-}"
+
+  if [ "${CLEANUP_DOCKER_IMAGES_ON_FAILURE:-1}" = "0" ]; then
+    echo "🧹 Skipping GHCR cleanup (CLEANUP_DOCKER_IMAGES_ON_FAILURE=0)" >&2
+    return 0
+  fi
+
+  local bump_version="${BUMP_VERSION:-}"
+  bump_version="${bump_version#v}"
+  if [ -z "${bump_version}" ]; then
+    return 0
+  fi
+
+  if ! command -v gh >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! gh auth status >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [ -n "${run_id}" ]; then
+    local status conclusion
+    status="$(gh run view "${run_id}" --json status --jq .status 2>/dev/null || true)"
+    conclusion="$(gh run view "${run_id}" --json conclusion --jq .conclusion 2>/dev/null || true)"
+    echo "🔎 docker-build run ${run_id}: status=${status:-unknown} conclusion=${conclusion:-unknown}" >&2
+  fi
+
+  local owner
+  owner="$(gh repo view --json owner -q .owner.login 2>/dev/null || true)"
+  if [ -z "${owner}" ]; then
+    echo "⚠️ Could not resolve repo owner for GHCR cleanup; skipping." >&2
+    return 0
+  fi
+
+  local owner_type
+  owner_type="$(gh api "users/${owner}" --jq .type 2>/dev/null || true)"
+  if [ -z "${owner_type}" ]; then
+    owner_type="User"
+  fi
+
+  local previous_version="${VERSION:-}"
+  previous_version="${previous_version#v}"
+
+  declare -a images=("tuliprox" "tuliprox-alpine")
+  for image in "${images[@]}"; do
+    # Best-effort: restore ':latest' to the previously released version before deleting the failed release tag.
+    if [ -n "${previous_version}" ] && [ "${previous_version}" != "${bump_version}" ]; then
+      if command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1; then
+        local gh_user
+        gh_user="$(gh api user --jq .login 2>/dev/null || true)"
+        if [ -n "${gh_user}" ]; then
+          echo "⏪ Restoring ghcr.io/${owner}/${image}:latest -> ${previous_version}" >&2
+          gh auth token 2>/dev/null | docker login ghcr.io --username "${gh_user}" --password-stdin >/dev/null 2>&1 || true
+          docker buildx imagetools create \
+            -t "ghcr.io/${owner}/${image}:latest" \
+            "ghcr.io/${owner}/${image}:${previous_version}" \
+            >/dev/null 2>&1 || true
+        fi
+      fi
+    fi
+
+    echo "🗑 Deleting GHCR images for failed release tag '${bump_version}' (${image})" >&2
+
+    local list_endpoint delete_prefix
+    if [ "${owner_type}" = "Organization" ]; then
+      list_endpoint="orgs/${owner}/packages/container/${image}/versions?per_page=100"
+      delete_prefix="orgs/${owner}/packages/container/${image}/versions"
+    else
+      list_endpoint="users/${owner}/packages/container/${image}/versions?per_page=100"
+      delete_prefix="users/${owner}/packages/container/${image}/versions"
+    fi
+
+    local version_ids
+    version_ids="$(
+      gh api "${list_endpoint}" \
+        --jq ".[] | select((.metadata.container.tags // []) | index(\"${bump_version}\")) | .id" \
+        2>/dev/null || true
+    )"
+
+    if [ -z "${version_ids}" ]; then
+      echo "ℹ️ No GHCR package versions found for ${image}:${bump_version}" >&2
+      continue
+    fi
+
+    while IFS= read -r vid; do
+      [ -z "${vid}" ] && continue
+      echo "🗑 Deleting package version id ${vid} (${image}:${bump_version})" >&2
+      gh api -X DELETE "${delete_prefix}/${vid}" >/dev/null 2>&1 || true
+    done <<< "${version_ids}"
+  done
+}
+
 gh_freeze_develop_branch() {
   if [ "${FREEZE_DEVELOP_BRANCH:-1}" = "0" ]; then
     echo "🧊 Skipping develop branch freeze (FREEZE_DEVELOP_BRANCH=0)"
@@ -143,6 +236,8 @@ cleanup() {
         echo "🛑 Cancelling docker-build workflow run ${run_id}" >&2
         gh run cancel "${run_id}" >/dev/null 2>&1 || true
       fi
+
+      gh_cleanup_docker_images_on_failure "${run_id}"
     fi
   fi
 
