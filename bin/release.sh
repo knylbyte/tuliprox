@@ -485,13 +485,13 @@ done
 echo "⏳ Waiting for docker-build workflow to finish (run id: ${DOCKER_BUILD_RUN_ID})"
 gh run watch "${DOCKER_BUILD_RUN_ID}" --exit-status
 
-gh_unfreeze_develop_branch
-
 echo "🔀 Back-merging master into develop (fast-forward)"
 git fetch --quiet origin develop || die "Failed to fetch 'origin/develop'."
 if ! git merge-base --is-ancestor origin/develop HEAD; then
   die "Refusing to update develop: 'origin/develop' is not an ancestor of current master."
 fi
+
+gh_unfreeze_develop_branch
 
 git push origin HEAD:develop
 ORIGIN_DEVELOP_AFTER_FF_SHA="$(git rev-parse HEAD)"
