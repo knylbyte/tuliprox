@@ -8,7 +8,7 @@ use crate::repository::storage::{get_input_storage_path, get_target_id_mapping_f
 use crate::repository::storage_const;
 use crate::repository::target_id_mapping::VirtualIdRecord;
 use crate::repository::xtream_playlist_iterator::XtreamPlaylistJsonIterator;
-use crate::utils::file_reader;
+use crate::utils::{file_exists_async, file_reader};
 use crate::utils::json_write_documents_to_file;
 use crate::utils::FileReadGuard;
 use bytes::Bytes;
@@ -26,7 +26,7 @@ use std::fs::File;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use shared::notify_err_res;
+use shared::{concat_string, notify_err_res};
 
 macro_rules! cant_write_result {
     ($path:expr, $err:expr) => {
@@ -218,12 +218,12 @@ pub fn xtream_get_storage_path(cfg: &Config, target_name: &str) -> Option<PathBu
     get_target_storage_path(cfg, target_name).map(|target_path| target_path.join(PathBuf::from(storage_const::PATH_XTREAM)))
 }
 
-pub fn xtream_get_epg_file_path(path: &Path) -> PathBuf {
-    path.join(storage_const::FILE_EPG)
+pub fn xtream_get_epg_file_path_for_target(path: &Path) -> PathBuf {
+    path.join(concat_string!("epg.", storage_const::FILE_SUFFIX_DB))
 }
 
 fn xtream_get_file_path_for_name(storage_path: &Path, name: &str) -> PathBuf {
-    storage_path.join(format!("{name}.{}", storage_const::FILE_SUFFIX_DB))
+    storage_path.join(concat_string!(name, ".", storage_const::FILE_SUFFIX_DB))
 }
 
 pub fn xtream_get_file_path(storage_path: &Path, cluster: XtreamCluster) -> PathBuf {
@@ -599,7 +599,7 @@ where
     SortKey: for<'de> Deserialize<'de> + Send + 'static,
 {
     let file_lock = app_config.file_locks.read_lock(xtream_path).await;
-    if !tokio::fs::try_exists(xtream_path).await.unwrap_or(false) {
+    if !file_exists_async(xtream_path).await {
         return None;
     }
 
@@ -674,7 +674,7 @@ pub async fn persist_input_xtream_playlist(app_config: &Arc<AppConfig>, storage_
     // load
     for cluster in XTREAM_CLUSTER {
         let xtream_path = xtream_get_file_path(storage_path, cluster);
-        if tokio::fs::try_exists(&xtream_path).await.unwrap_or(false) {
+        if file_exists_async(&xtream_path).await {
             let file_lock = app_config.file_locks.read_lock(&xtream_path).await;
             let stored_entries = stored_scratch.get_mut(cluster);
             if let Ok(mut query) = BPlusTreeQuery::<u32, XtreamPlaylistItem>::try_new(&xtream_path) {
@@ -745,7 +745,7 @@ pub async fn persist_input_xtream_playlist(app_config: &Arc<AppConfig>, storage_
         };
         let data = fetched_categories.get_mut(cluster);
         // if there is no data save only if no file exists! Prevent data loss from failed download attempt
-        if !data.is_empty() || !tokio::fs::try_exists(&col_path).await.unwrap_or(false) {
+        if !data.is_empty() || !file_exists_async(&col_path).await {
             let lock = app_cfg.file_locks.write_lock(&col_path).await;
             if let Err(err) = json_write_documents_to_file(&col_path, data).await {
                 errors.push(format!("Persisting collection failed: {}: {err}", col_path.display()));

@@ -31,7 +31,7 @@ async fn map_to_xtream_streams(xtream_cluster: XtreamCluster, streams: DynReader
         let reader = tokio_util::io::SyncIoBridge::new(streams);
 
         let parsed: Result<Vec<StreamProperties>, serde_json::Error> = match xtream_cluster {
-            XtreamCluster::Live => serde_json::from_reader::<_, Vec<LiveStreamProperties>>(reader).map(|list| list.into_iter().map(StreamProperties::Live).collect()),
+            XtreamCluster::Live => serde_json::from_reader::<_, Vec<LiveStreamProperties>>(reader).map(|list| list.into_iter().map(Box::new).map(StreamProperties::Live).collect()),
             XtreamCluster::Video => serde_json::from_reader::<_, Vec<VideoStreamProperties>>(reader).map(|list| list.into_iter().map(Box::new).map(StreamProperties::Video).collect()),
             XtreamCluster::Series => serde_json::from_reader::<_, Vec<SeriesStreamProperties>>(reader).map(|list| list.into_iter().map(Box::new).map(StreamProperties::Series).collect()),
         };
@@ -244,7 +244,7 @@ where
             XtreamCluster::Live => {
                 let mut on_stream = |stream: LiveStreamProperties| {
                     source_ordinal += 1;
-                    let stream_prop = StreamProperties::Live(stream);
+                    let stream_prop = StreamProperties::Live(Box::new(stream));
                     process_stream_item(&input_name, &url, &username, &password,
                                         xtream_cluster, &group_map, &unknown_group_name,
                                         stream_prop, &mut on_item, live_stream_use_prefix, live_stream_without_extension, source_ordinal)

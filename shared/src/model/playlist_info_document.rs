@@ -215,9 +215,9 @@ pub struct XtreamSeriesEpisodeInfoData {
     pub tmdb_id: u32,
     #[serde(with = "arc_str_serde")]
     pub movie_image: Arc<str>,
+    pub duration_secs: u32,
     #[serde(with = "arc_str_serde")]
     pub duration: Arc<str>,
-    pub duration_secs: u32,
     pub video: Value,
     pub audio: Value,
     pub bitrate: u32,

@@ -85,10 +85,7 @@ async fn run_download_queue(cfg: &AppConfig, download_cfg: &VideoDownloadConfig,
     if next_download.is_some() {
         { *download_queue.as_ref().active.write().await = next_download; }
         let config = cfg.config.load();
-        let disabled_headers = config
-            .reverse_proxy
-            .as_ref()
-            .and_then(|r| r.disabled_header.clone());
+        let disabled_headers = cfg.get_disabled_headers();
         let headers = request::get_request_headers(
             Some(&download_cfg.headers),
             None,

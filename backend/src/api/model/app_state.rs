@@ -443,13 +443,7 @@ impl AppState {
     }
 
     pub fn get_disabled_headers(&self) -> Option<ReverseProxyDisabledHeaderConfig> {
-        self
-            .app_config
-            .config
-            .load()
-            .reverse_proxy
-            .as_ref()
-            .and_then(|r| r.disabled_header.clone())
+        self.app_config.get_disabled_headers()
     }
 }
 

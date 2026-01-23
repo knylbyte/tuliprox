@@ -1,13 +1,14 @@
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
-use crate::app::components::{AppIcon, IconButton, NoContent, Panel, Search};
+use crate::app::components::{AppIcon, Chip, IconButton, NoContent, Panel, Search};
 use crate::app::context::PlaylistExplorerContext;
 use crate::hooks::use_service_context;
 use crate::html_if;
 use crate::model::{BusyStatus, EventMessage};
 use crate::services::DialogService;
 use shared::error::{info_err_res, TuliproxError};
-use shared::model::{CommonPlaylistItem, PlaylistRequest, SearchRequest, SeriesStreamDetailEpisodeProperties, SeriesStreamProperties, StreamProperties, UiPlaylistGroup, VirtualId, XtreamCluster};
+use shared::model::{PlaylistRequest, SearchRequest, SeriesStreamDetailEpisodeProperties, SeriesStreamProperties, UiPlaylistGroup, UiPlaylistItem, VirtualId, XtreamCluster};
+use shared::utils::format_float_localized;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::rc::Rc;
@@ -67,7 +68,7 @@ impl FromStr for ExplorerAction {
 enum ExplorerLevel {
     Categories,
     Group(Rc<UiPlaylistGroup>),
-    SeriesInfo(Rc<UiPlaylistGroup>, Rc<CommonPlaylistItem>, Option<Box<SeriesStreamProperties>>),
+    SeriesInfo(Rc<UiPlaylistGroup>, Rc<UiPlaylistItem>, Option<Box<SeriesStreamProperties>>),
 }
 
 #[function_component]
@@ -104,13 +105,13 @@ pub fn PlaylistExplorer() -> Html {
         let set_selected_channel = selected_channel.clone();
         let set_anchor_ref = popup_anchor_ref.clone();
         let set_is_open = popup_is_open.clone();
-        Callback::from(move |(dto, event): (Rc<CommonPlaylistItem>, MouseEvent)| {
+        Callback::from(move |(dto, event): (Rc<UiPlaylistItem>, MouseEvent)| {
             event.prevent_default();
             event.stop_propagation();
             if let Some(target) = event.target_dyn_into::<web_sys::Element>() {
                 set_selected_channel.set(Some(ChannelSelection {
                     virtual_id: dto.virtual_id,
-                    cluster: dto.xtream_cluster.unwrap_or_default(),
+                    cluster: dto.xtream_cluster,
                     url: dto.url.to_string(),
                 }));
                 set_anchor_ref.set(Some(target));
@@ -139,38 +140,31 @@ pub fn PlaylistExplorer() -> Html {
         let services = service_ctx.clone();
         let ctx = context.clone();
 
-        move |group: Rc<UiPlaylistGroup>, dto: Rc<CommonPlaylistItem>| {
-            if let Some(StreamProperties::Series(series_props)) = dto.additional_properties.as_ref() {
-                if series_props.details.as_ref().is_none_or(|d| d.episodes.as_ref().is_none_or(|e| e.is_empty())) {
-                    let set_current_item = set_current_item.clone();
-                    let services = services.clone();
-                    let ctx = ctx.clone();
-                    services.event.broadcast(EventMessage::Busy(BusyStatus::Show));
-                    spawn_local(async move {
-                        let mut handled = false;
-                        if let Some(playlist_request) = ctx.playlist_request.as_ref() {
-                            if let Some(props) = services.playlist.get_series_info(&dto, playlist_request).await {
-                                handled = true;
-                                set_current_item.set(ExplorerLevel::SeriesInfo(group.clone(), dto.clone(), Some(Box::new(props))));
-                            }
-                        }
-                        if !handled {
-                            set_current_item.set(ExplorerLevel::SeriesInfo(group, dto, None));
-                        }
-                        services.event.broadcast(EventMessage::Busy(BusyStatus::Hide));
-                    });
-                } else {
+        move |group: Rc<UiPlaylistGroup>, dto: Rc<UiPlaylistItem>| {
+            // UiPlaylistItem has no additional_properties - always load from server
+            let set_current_item = set_current_item.clone();
+            let services = services.clone();
+            let ctx = ctx.clone();
+            services.event.broadcast(EventMessage::Busy(BusyStatus::Show));
+            spawn_local(async move {
+                let mut handled = false;
+                if let Some(playlist_request) = ctx.playlist_request.as_ref() {
+                    if let Some(props) = services.playlist.get_series_info(&dto, playlist_request).await {
+                        handled = true;
+                        set_current_item.set(ExplorerLevel::SeriesInfo(group.clone(), dto.clone(), Some(Box::new(props))));
+                    }
+                }
+                if !handled {
                     set_current_item.set(ExplorerLevel::SeriesInfo(group, dto, None));
-                };
-            } else {
-                set_current_item.set(ExplorerLevel::SeriesInfo(group, dto, None));
-            }
+                }
+                services.event.broadcast(EventMessage::Busy(BusyStatus::Hide));
+            });
         }
     };
 
     let handle_series_onclick = {
         let set_current_item = current_item.clone();
-        Callback::from(move |(dto, event): (Rc<CommonPlaylistItem>, MouseEvent)| {
+        Callback::from(move |(dto, event): (Rc<UiPlaylistItem>, MouseEvent)| {
             event.prevent_default();
             event.stop_propagation();
             if let ExplorerLevel::Group(ref group) = *set_current_item {
@@ -382,20 +376,118 @@ pub fn PlaylistExplorer() -> Html {
         }
     };
 
-    let render_channel_logo = |chan: &Rc<CommonPlaylistItem>| {
-        let logo = if chan.logo.is_empty() { &chan.logo_small } else { &chan.logo };
-        if logo.is_empty() {
-            html! {}
+    let render_channel_logo = |logo: &str| {
+        let logo = if logo.is_empty() {
+            "assets/missing-logo.svg".to_string()
         } else {
-            html! { <img class="tp__playlist-explorer__channel-logo" alt={"n/a"} src={logo.to_string()} loading="lazy"
-                    onerror={Callback::from(move |e: web_sys::Event| {
-                    if let Some(target)  = e.target() {
-                        if let Ok(img) = target.dyn_into::<web_sys::HtmlMediaElement>() {
-                            img.set_src("assets/missing-logo.svg");
-                        }
+            logo.to_string()
+        };
+        html! {
+            <span  class="tp__playlist-explorer__channel-logo">
+                <img  alt={"n/a"} src={logo} loading="lazy"
+                onerror={Callback::from(move |e: web_sys::Event| {
+                if let Some(target)  = e.target() {
+                    if let Ok(img) = target.dyn_into::<web_sys::HtmlImageElement>() {
+                        img.set_src("assets/missing-logo.svg");
                     }
-                    })}
-                />}
+                }
+                })}/>
+            </span>
+        }
+    };
+
+    let render_live = |chan: &Rc<UiPlaylistItem>| {
+        let popup_onclick = handle_popup_onclick.clone();
+        let chan_clone = Rc::clone(chan);
+        html! {
+            <span class="tp__playlist-explorer__channel tp__playlist-explorer__channel-live">
+                <button class="tp__icon-button" onclick={Callback::from(move |event: MouseEvent| popup_onclick.emit((chan_clone.clone(), event)))}>
+                    <AppIcon name="Popup"></AppIcon>
+                </button>
+                {render_channel_logo(&chan.logo)}
+                <span class="tp__playlist-explorer__channel-title">{chan.title.clone()}</span>
+                </span>
+            }
+    };
+
+    let render_movie = |chan: &Rc<UiPlaylistItem>| {
+        let popup_onclick = handle_popup_onclick.clone();
+        let chan_clone = Rc::clone(chan);
+        html! {
+            <span class="tp__playlist-explorer__channel tp__playlist-explorer__channel-video">
+                {render_channel_logo(&chan.logo)}
+                {
+                    html_if!(chan.rating > 0.001, {
+                        <Chip class="tp__playlist-explorer__channel-video-rating" label={format_float_localized(chan.rating, 1, false)} />
+                    })
+                }
+                <span class="tp__playlist-explorer__channel-video-info">
+                    <button class="tp__icon-button" onclick={Callback::from(move |event: MouseEvent| popup_onclick.emit((chan_clone.clone(), event)))}>
+                        <AppIcon name="Popup"></AppIcon>
+                    </button>
+                    <span class="tp__playlist-explorer__channel-video-title">{chan.title.clone()}</span>
+                </span>
+            </span>
+        }
+    };
+
+    let render_series = |chan: &Rc<UiPlaylistItem>| {
+        let popup_onclick = handle_popup_onclick.clone();
+        let chan_clone = Rc::clone(chan);
+        let chan_click = {
+            let chan_clone = chan.clone();
+            let series_click = handle_series_onclick.clone();
+            Callback::from(move |event: MouseEvent| series_click.emit((chan_clone.clone(), event)))
+        };
+        html! {
+            <span onclick={chan_click} class="tp__playlist-explorer__channel tp__playlist-explorer__channel-series">
+                {render_channel_logo(&chan.logo)}
+                {
+                    html_if!(chan.rating > 0.001, {
+                        <Chip class="tp__playlist-explorer__channel-series-rating" label={format_float_localized(chan.rating, 1, false)} />
+                    })
+                }
+                <span class="tp__playlist-explorer__channel-series-info">
+                    <button class="tp__icon-button" onclick={Callback::from(move |event: MouseEvent| popup_onclick.emit((chan_clone.clone(), event)))}>
+                        <AppIcon name="Popup"></AppIcon>
+                    </button>
+                    <span class="tp__playlist-explorer__channel-series-title">{chan.title.clone()}</span>
+                </span>
+            </span>
+        }
+    };
+
+    let render_episode = |chan: &&SeriesStreamDetailEpisodeProperties| {
+        let channel_select = ChannelSelection {
+            virtual_id: chan.id,
+            cluster: XtreamCluster::Series,
+            url: String::new(), // TODO provider url
+        };
+        let popup_onclick = handle_episode_popup_onclick.clone();
+        let rating = chan.rating.unwrap_or_default();
+        html! {
+            <span class="tp__playlist-explorer__channel tp__playlist-explorer__channel-episode">
+                {render_channel_logo(&chan.movie_image)}
+                {
+                    html_if!(rating > 0.001, {
+                        <Chip class="tp__playlist-explorer__channel-episode-rating" label={format_float_localized(rating, 1, false)} />
+                    })
+                }
+                <span class="tp__playlist-explorer__channel-episode-info">
+                    <button class="tp__icon-button" onclick={Callback::from(move |event: MouseEvent| popup_onclick.emit((channel_select.clone(), event)))}>
+                        <AppIcon name="Popup"></AppIcon>
+                    </button>
+                    <span class="tp__playlist-explorer__channel-episode-title">{chan.title.clone()}</span>
+                </span>
+            </span>
+        }
+    };
+
+    let render_channel = |chan: &Rc<UiPlaylistItem>| {
+        match chan.xtream_cluster {
+            XtreamCluster::Live => render_live(chan),
+            XtreamCluster::Video => render_movie(chan),
+            XtreamCluster::Series => render_series(chan),
         }
     };
 
@@ -404,38 +496,16 @@ pub fn PlaylistExplorer() -> Html {
                 <div class="tp__playlist-explorer__group">
                   <div class={format!("tp__playlist-explorer__group-list tp__playlist-explorer__group-list-{}", group.xtream_cluster.to_string().to_lowercase())}>
                   {
-                      group.channels.iter().map(|chan| {
-                        let chan_clone = chan.clone();
-                        let popup_onclick = handle_popup_onclick.clone();
-                        let chan_click = if group.xtream_cluster == XtreamCluster::Series {
-                          let chan_clone = chan.clone();
-                          let series_click = handle_series_onclick.clone();
-                          Some(Callback::from(move |event: MouseEvent| series_click.emit((chan_clone.clone(), event))))
-                        } else {
-                          None
-                        };
-                        html! {
-                            <span onclick={chan_click} class={format!("tp__playlist-explorer__channel tp__playlist-explorer__channel-{}", group.xtream_cluster.to_string().to_lowercase())}>
-                                <button class="tp__icon-button"
-                                    onclick={Callback::from(move |event: MouseEvent| popup_onclick.emit((chan_clone.clone(), event)))}>
-                                    <AppIcon name="Popup"></AppIcon>
-                                </button>
-                                {render_channel_logo(chan)}
-                                <span class="tp__playlist-explorer__channel-title">{chan.title.clone()}</span>
-                            </span>
-                          }
-                       }).collect::<Html>()
+                      group.channels.iter().map(render_channel).collect::<Html>()
                   }
                   </div>
                 </div>
             }
     };
 
-    let render_series_info = |series_info: &Rc<CommonPlaylistItem>, props: Option<&Box<SeriesStreamProperties>>| {
-        let series_info_props = props.or(match series_info.additional_properties.as_ref() {
-            Some(StreamProperties::Series(props)) => Some(props),
-            _ => None
-        });
+    let render_series_info = |series_info: &Rc<UiPlaylistItem>, props: Option<&Box<SeriesStreamProperties>>| {
+        // UiPlaylistItem has no additional_properties - props are passed in or None
+        let series_info_props = props;
         let (mut backdrop, plot, cast, genre, release_date, rating, details) = match series_info_props {
             Some(series_props) => {
                 let backdrop = series_props.backdrop_path.as_ref().and_then(|l| l.first()).map_or_else(|| if series_props.cover.is_empty() { series_info.logo.to_string() } else { series_props.cover.to_string() }, ToString::to_string);
@@ -467,8 +537,17 @@ pub fn PlaylistExplorer() -> Html {
                 <div class="tp__playlist-explorer__series-info__body-top-content">
                     <span class="tp__playlist-explorer__series-info__title">{series_info.title.clone()}</span>
                     <span class="tp__playlist-explorer__series-info__infos">
-                        <span class="tp__playlist-explorer__series-info__nowrap">{"(⭐️ "} {rating} {")"} </span>
+                        {
+                            html_if!(rating > 0.001, {
+                            <>
+                             <span class="tp__playlist-explorer__series-info__nowrap">
+                                 <Chip class="tp__playlist-explorer__series-info__rating" label={format_float_localized(rating, 1, false)} />
+                            </span>
+                            {"⬤"}
+                            </>
+                        })}
                         <span class="tp__playlist-explorer__series-info__nowrap">{release_date}</span>
+                        {"⬤"}
                         <span>{genre}</span>
                     </span>
                     <span class="tp__playlist-explorer__series-info__plot">{plot}</span>
@@ -487,8 +566,6 @@ pub fn PlaylistExplorer() -> Html {
             let mut grouped_list: Vec<(u32, Vec<&SeriesStreamDetailEpisodeProperties>)> = grouped.into_iter().collect();
             grouped_list.sort_by_key(|(season, _)| *season);
 
-            let popup_onclick = handle_episode_popup_onclick.clone();
-
             html! {
                 for grouped_list.iter().map(|(season, season_episodes)|
                     html! {
@@ -498,41 +575,7 @@ pub fn PlaylistExplorer() -> Html {
                     </div>
                     <div class={"tp__playlist-explorer__group-list tp__playlist-explorer__group-list-episodes"}>
                     {
-                    for season_episodes.iter().map(|e| {
-                            let channel_select = ChannelSelection {
-                                virtual_id: e.id,
-                                cluster: XtreamCluster::Series,
-                                url: String::new(), // TODO provider url
-                            };
-                            let popup_onclick = popup_onclick.clone();
-                            let logo = if e.movie_image.is_empty() { series_info.logo.to_string() } else { e.movie_image.to_string() };
-                            html! {
-                            <span class={"tp__playlist-explorer__channel tp__playlist-explorer__channel-episode"}>
-
-                                {
-                                    if logo.is_empty() {
-                                        html! {}
-                                    } else {
-                                        html! { <img class="tp__playlist-explorer__channel-logo" alt={"n/a"} src={logo.to_string()} loading="lazy"
-                                            onerror={Callback::from(move |e: web_sys::Event| {
-                                            if let Some(target)  = e.target() {
-                                                if let Ok(img) = target.dyn_into::<web_sys::HtmlMediaElement>() {
-                                                    img.set_src("assets/missing-logo.svg");
-                                                }
-                                            }
-                                            })}
-                                        />}
-                                    }
-                                }
-                                <button class="tp__icon-button"
-                                    onclick={Callback::from(move |event: MouseEvent| popup_onclick.emit((channel_select.clone(), event)))}>
-                                    <AppIcon name="Popup"></AppIcon>
-                                </button>
-                                <span class="tp__playlist-explorer__channel-title">
-                                    {e.title.clone()}
-                                </span>
-                            </span>
-                        }})
+                        for season_episodes.iter().map(render_episode)
                     }
                     </div>
                     </>

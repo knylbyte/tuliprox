@@ -1,11 +1,11 @@
 [package]
 name = "frontend"
-version = "3.2.48"
+version = "3.2.49"
 edition = "2021"
 rust-version = "1.89.0"
 
 [dependencies]
-shared = { version = "3.2.48", path = "../shared" }
+shared = { version = "3.2.49", path = "../shared" }
 chrono = "0"
 yew = "0.21"
 yew-router = "0.18"
@@ -37,7 +37,7 @@ indexmap = "2.12.1"
 
 [dependencies.web-sys]
 version = "0.3"
-features = ["Document", "Element", "Node", "Window", "HtmlCollection", "HtmlInputElement", "DomRect", "HtmlDialogElement", "CssStyleDeclaration"]
+features = ["Document", "Element", "Node", "Window", "HtmlCollection", "HtmlImageElement", "HtmlInputElement", "DomRect", "HtmlDialogElement", "CssStyleDeclaration"]
 
 [dev-dependencies]
 js-sys = "0.3"

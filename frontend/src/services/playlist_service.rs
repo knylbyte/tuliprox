@@ -1,12 +1,11 @@
-use crate::services::{get_base_href, request_post, ACCEPT_PREFER_BIN};
+use crate::services::{get_base_href, request_post};
 use log::error;
-use shared::model::{CommonPlaylistItem, EpgTv, PlaylistEpgRequest, PlaylistRequest,
-                    SeriesStreamProperties, UiPlaylistCategories, UiPlaylistGroup,
-                    WebplayerUrlRequest, XtreamCluster, XtreamSeriesInfoDoc};
-use std::rc::Rc;
+use shared::model::{EpgChannel, EpgTv, PlaylistEpgRequest, PlaylistRequest, SeriesStreamProperties, UiPlaylistCategories, UiPlaylistGroup, UiPlaylistItem, WebplayerUrlRequest, XtreamCluster, XtreamSeriesInfoDoc};
+
 use futures::join;
 use indexmap::IndexMap;
-use shared::utils::{concat_path_leading_slash};
+use shared::utils::{concat_path_leading_slash, ACCEPT_PREFER_CBOR};
+use std::rc::Rc;
 
 pub struct PlaylistService {
     target_update_api_path: String,
@@ -44,14 +43,23 @@ impl PlaylistService {
 
     pub async fn get_playlist_categories(&self, playlist_request: &PlaylistRequest) -> Option<Rc<UiPlaylistCategories>> {
         let (live_res, vod_res, series_res) = join!(
-            request_post::<&PlaylistRequest, Vec<CommonPlaylistItem>>(&self.playlist_api_live_path, playlist_request, None, Some(ACCEPT_PREFER_BIN.to_string())),
-            request_post::<&PlaylistRequest, Vec<CommonPlaylistItem>>(&self.playlist_api_vod_path, playlist_request, None, Some(ACCEPT_PREFER_BIN.to_string())),
-            request_post::<&PlaylistRequest, Vec<CommonPlaylistItem>>(&self.playlist_api_series_path, playlist_request, None, Some(ACCEPT_PREFER_BIN.to_string())),
+            request_post::<&PlaylistRequest, Vec<UiPlaylistItem>>(&self.playlist_api_live_path, playlist_request, None, Some(ACCEPT_PREFER_CBOR.to_string())),
+            request_post::<&PlaylistRequest, Vec<UiPlaylistItem>>(&self.playlist_api_vod_path, playlist_request, None, Some(ACCEPT_PREFER_CBOR.to_string())),
+            request_post::<&PlaylistRequest, Vec<UiPlaylistItem>>(&self.playlist_api_series_path, playlist_request, None, Some(ACCEPT_PREFER_CBOR.to_string())),
         );
 
-        let live = live_res.map_or_else(|err| { error!("Failed to fetch live playlist: {err}"); None }, |r| r.map(|resp| to_ui_playlist_groups(resp, XtreamCluster::Live)));
-        let vod = vod_res.map_or_else(|err| { error!("Failed to fetch vod playlist: {err}"); None }, |r| r.map(|resp| to_ui_playlist_groups(resp, XtreamCluster::Video)));
-        let series = series_res.map_or_else(|err| { error!("Failed to fetch series playlist: {err}"); None }, |r| r.map(|resp| to_ui_playlist_groups(resp, XtreamCluster::Series)));
+        let live = live_res.map_or_else(|err| {
+            error!("Failed to fetch live playlist: {err}");
+            None
+        }, |r| r.map(|resp| to_ui_playlist_groups(resp, XtreamCluster::Live)));
+        let vod = vod_res.map_or_else(|err| {
+            error!("Failed to fetch vod playlist: {err}");
+            None
+        }, |r| r.map(|resp| to_ui_playlist_groups(resp, XtreamCluster::Video)));
+        let series = series_res.map_or_else(|err| {
+            error!("Failed to fetch series playlist: {err}");
+            None
+        }, |r| r.map(|resp| to_ui_playlist_groups(resp, XtreamCluster::Series)));
 
         if live.is_some() || vod.is_some() || series.is_some() {
             return Some(Rc::new(UiPlaylistCategories {
@@ -76,15 +84,18 @@ impl PlaylistService {
     }
 
     pub async fn get_playlist_epg(&self, request: PlaylistEpgRequest) -> Option<EpgTv> {
-        request_post::<&PlaylistEpgRequest, EpgTv>(&self.playlist_api_epg_path, &request, None, Some(ACCEPT_PREFER_BIN.to_string())).await.unwrap_or_else(|err| {
-            error!("{err}");
-            None
-        })
+        match request_post::<&PlaylistEpgRequest, Vec<EpgChannel>>(&self.playlist_api_epg_path, &request, None, Some(ACCEPT_PREFER_CBOR.to_string())).await {
+            Ok(channels) => channels.map(EpgTv::new),
+            Err(err) => {
+                error!("{err}");
+                None
+            }
+        }
     }
 
-    pub async fn get_series_info(&self, pli: &Rc<CommonPlaylistItem>, playlist_request: &PlaylistRequest) -> Option<SeriesStreamProperties> {
+    pub async fn get_series_info(&self, pli: &Rc<UiPlaylistItem>, playlist_request: &PlaylistRequest) -> Option<SeriesStreamProperties> {
         let path = format!("{}/{}/{}", self.playlist_api_series_info_path, pli.virtual_id, pli.provider_id);
-        request_post::<&PlaylistRequest, XtreamSeriesInfoDoc>(&path, playlist_request, None, Some(ACCEPT_PREFER_BIN.to_string())).await.map_or_else(|err| {
+        request_post::<&PlaylistRequest, XtreamSeriesInfoDoc>(&path, playlist_request, None, Some(ACCEPT_PREFER_CBOR.to_string())).await.map_or_else(|err| {
             error!("{err}");
             None
         }, |response| {
@@ -93,12 +104,12 @@ impl PlaylistService {
     }
 }
 
-fn to_ui_playlist_groups(list: Vec<CommonPlaylistItem>, xtream_cluster: XtreamCluster) -> Vec<Rc<UiPlaylistGroup>> {
+fn to_ui_playlist_groups(list: Vec<UiPlaylistItem>, xtream_cluster: XtreamCluster) -> Vec<Rc<UiPlaylistGroup>> {
     let mut groups = IndexMap::new();
     list.into_iter().for_each(|item| {
         let group_id = item.group.clone();
         let group = groups.entry(group_id).or_insert_with(|| UiPlaylistGroup {
-            id: item.category_id.unwrap_or(0),
+            id: item.category_id,
             title: item.group.clone(),
             channels: vec![],
             xtream_cluster,

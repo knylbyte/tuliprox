@@ -1,6 +1,6 @@
 [package]
 name = "shared"
-version = "3.2.48"
+version = "3.2.49"
 edition = "2021"
 rust-version = "1.89.0"
 
@@ -28,6 +28,7 @@ lz4_flex = "0.12.0"
 deunicode = "1.6.2"
 serde-saphyr = "0.0.14"
 dashmap = "6.1.0"
+serde_tuple = "0.5"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.83"

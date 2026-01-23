@@ -541,7 +541,7 @@ pub async fn csv_patch_batch_sort_by_exp_date(
 #[cfg(test)]
 mod tests {
     use crate::repository::csv_read_inputs_from_reader;
-    use crate::utils::{file_reader, resolve_env_var};
+    use crate::utils::{file_reader};
     use shared::model::InputType;
     use std::io::Cursor;
 

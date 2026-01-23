@@ -4,6 +4,10 @@ use url::Url;
 use crate::utils::{CONSTANTS, DASH_EXT, DASH_EXT_FRAGMENT, DASH_EXT_QUERY, HLS_EXT, HLS_EXT_FRAGMENT, HLS_EXT_QUERY};
 
 
+pub const CONTENT_TYPE_JSON: &str = "application/json";
+pub const CONTENT_TYPE_CBOR: &str = "application/cbor";
+pub const ACCEPT_PREFER_CBOR: &str = "application/cbor, application/json;q=0.9";
+
 pub fn set_sanitize_sensitive_info(value: bool) {
     CONSTANTS.sanitize.store(value, Ordering::Relaxed);
 }

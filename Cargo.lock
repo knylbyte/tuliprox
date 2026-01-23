@@ -1156,7 +1156,7 @@ dependencies = [
 
 [[package]]
 name = "frontend"
-version = "3.2.48"
+version = "3.2.49"
 dependencies = [
  "anyhow",
  "base64",
@@ -3950,6 +3950,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_tuple"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4f025b91216f15a2a32aa39669329a475733590a015835d1783549a56d09427"
+dependencies = [
+ "serde",
+ "serde_tuple_macros",
+]
+
+[[package]]
+name = "serde_tuple_macros"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4076151d1a2b688e25aaf236997933c66e18b870d0369f8b248b8ab2be630d7e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "serde_urlencoded"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3994,7 +4015,7 @@ dependencies = [
 
 [[package]]
 name = "shared"
-version = "3.2.48"
+version = "3.2.49"
 dependencies = [
  "base64",
  "bitflags 2.10.0",
@@ -4019,6 +4040,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "serde_tuple",
  "url",
  "zeroize",
 ]
@@ -4141,6 +4163,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b64191b275b66ffe2469e8af2c1cfe3bafa67b529ead792a6d0160888b4237"
 dependencies = [
  "proc-macro2",
+ "quote",
  "unicode-ident",
 ]
 
@@ -4569,7 +4592,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tuliprox"
-version = "3.2.48"
+version = "3.2.49"
 dependencies = [
  "arc-swap",
  "async-compression",

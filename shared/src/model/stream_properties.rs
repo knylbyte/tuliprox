@@ -287,7 +287,7 @@ pub struct EpisodeStreamProperties {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum StreamProperties {
-    Live(LiveStreamProperties),
+    Live(Box<LiveStreamProperties>),
     Video(Box<VideoStreamProperties>),
     Series(Box<SeriesStreamProperties>),
     Episode(EpisodeStreamProperties),

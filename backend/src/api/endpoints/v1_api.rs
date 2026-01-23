@@ -90,16 +90,13 @@ async fn geoip_update(axum::extract::State(app_state): axum::extract::State<Arc<
                 method: InputFetchMethod::GET,
                 headers: HashMap::default(),
             };
-            let disabled_headers = app_state.get_disabled_headers();
-            let default_user_agent = config.default_user_agent.clone();
             return match download_text_content(
+                &app_state.app_config,
                 &app_state.http_client.load(),
-                disabled_headers.as_ref(),
                 &input_source,
                 None,
                 None,
                 false,
-                default_user_agent.as_deref(),
             )
                 .await
             {

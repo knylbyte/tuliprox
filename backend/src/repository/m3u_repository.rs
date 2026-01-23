@@ -8,7 +8,7 @@ use crate::repository::storage::{get_input_storage_path, get_target_storage_path
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::CategoryKey;
 use crate::utils;
-use crate::utils::{async_file_writer, FileReadGuard, IO_BUFFER_SIZE};
+use crate::utils::{async_file_writer, file_exists_async, FileReadGuard, IO_BUFFER_SIZE};
 use indexmap::IndexMap;
 use log::error;
 use shared::concat_string;
@@ -33,9 +33,9 @@ pub fn m3u_get_file_path_for_db(target_path: &Path) -> PathBuf {
     target_path.join(PathBuf::from(concat_string!(storage_const::FILE_M3U, ".", storage_const::FILE_SUFFIX_DB)))
 }
 
-pub fn m3u_get_epg_file_path(target_path: &Path) -> PathBuf {
+pub fn m3u_get_epg_file_path_for_target(target_path: &Path) -> PathBuf {
     let path = target_path.join(PathBuf::from(concat_string!(storage_const::FILE_M3U, ".", storage_const::FILE_SUFFIX_DB)));
-    utils::add_prefix_to_filename(&path, "epg_", Some("xml"))
+    utils::add_prefix_to_filename(&path, "epg_", Some(storage_const::FILE_SUFFIX_DB))
 }
 
 macro_rules! await_playlist_write {
@@ -181,7 +181,7 @@ where
     SortKey: for<'de> Deserialize<'de> + Send + 'static,
 {
     let file_lock = app_config.file_locks.read_lock(m3u_path).await;
-    if !tokio::fs::try_exists(m3u_path).await.unwrap_or(false) {
+    if !file_exists_async(m3u_path).await {
         return None;
     }
 
@@ -233,7 +233,7 @@ pub async fn persist_input_m3u_playlist(app_config: &Arc<AppConfig>, m3u_path: &
 pub async fn load_input_m3u_playlist(app_config: &Arc<AppConfig>, m3u_path: &Path) -> Result<Vec<PlaylistGroup>, TuliproxError> {
     let mut groups: IndexMap<CategoryKey, PlaylistGroup> = IndexMap::new();
 
-    if tokio::fs::try_exists(m3u_path).await.unwrap_or(false) {
+    if file_exists_async(m3u_path).await {
         // Load Items
         let _file_lock = app_config.file_locks.read_lock(m3u_path).await;
         if let Ok(mut query) = BPlusTreeQuery::<Arc<str>, M3uPlaylistItem>::try_new(m3u_path) {

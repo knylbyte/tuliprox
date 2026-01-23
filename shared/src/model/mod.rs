@@ -31,7 +31,7 @@ mod playlist_info_document;
 mod regex_cache;
 mod uuidtype;
 mod short_epg;
-
+mod ui_playlist_item;
 pub use self::cluster_flags::*;
 pub use self::playlist::*;
 pub use self::messaging::*;
@@ -62,3 +62,4 @@ pub use self::xtream::*;
 pub use self::playlist_info_document::*;
 pub use self::regex_cache::*;
 pub use self::uuidtype::*;
+pub use self::ui_playlist_item::*;

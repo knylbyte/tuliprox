@@ -1,13 +1,13 @@
-use std::borrow::Cow;
-use std::path::{Path, PathBuf};
+use crate::model::{macros, ConfigApi, LibraryConfig, ReverseProxyConfig, ReverseProxyDisabledHeaderConfig, ScheduleConfig};
+use crate::model::{HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyConfig, VideoConfig, WebUiConfig};
+use crate::utils;
 use log::{error, info};
 use path_clean::PathClean;
-use shared::error::{TuliproxError};
+use shared::error::TuliproxError;
 use shared::model::{ConfigDto, HdHomeRunDeviceOverview};
 use shared::utils::set_sanitize_sensitive_info;
-use crate::model::{macros, ConfigApi, LibraryConfig, ReverseProxyConfig, ScheduleConfig};
-use crate::model::{HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyConfig, VideoConfig, WebUiConfig};
-use crate::{utils};
+use std::borrow::Cow;
+use std::path::{Path, PathBuf};
 
 const DEFAULT_BACKUP_DIR: &str = "backup";
 
@@ -127,6 +127,12 @@ impl Config {
 
     pub fn is_geoip_enabled(&self) -> bool {
         self.reverse_proxy.as_ref().is_some_and(|r| r.geoip.as_ref().is_some_and(|g| g.enabled))
+    }
+
+    pub fn get_disabled_headers(&self) -> Option<ReverseProxyDisabledHeaderConfig> {
+        self.reverse_proxy
+            .as_ref()
+            .and_then(|r| r.disabled_header.clone())
     }
 }
 

@@ -7,10 +7,10 @@ use crate::api::model::{create_channel_unavailable_stream, create_custom_video_s
 use crate::api::model::{tee_stream, UserSession};
 use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
 use crate::auth::Fingerprint;
-use crate::model::{ConfigInput, ResourceRetryConfig};
+use crate::model::{ConfigInput};
 use crate::model::{ConfigTarget, ProxyUserCredentials};
 use crate::tools::lru_cache::LRUResourceCache;
-use crate::utils::request::{content_type_from_ext, parse_range};
+use crate::utils::request::{content_type_from_ext, parse_range, send_with_retry};
 use crate::utils::{async_file_reader, async_file_writer, create_new_file_for_write, get_file_extension};
 use crate::utils::{debug_if_enabled, trace_if_enabled};
 use crate::utils::request;
@@ -25,11 +25,10 @@ use chrono::{DateTime, Utc};
 use futures::{stream, StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use log::{debug, error, info, log_enabled, trace, warn};
-use reqwest::header::RETRY_AFTER;
 use serde::Serialize;
 use shared::concat_string;
 use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, ProxyType, StreamChannel, TargetType, UserConnectionPermission, VirtualId, XtreamCluster};
-use shared::utils::{bin_serialize, default_grace_period_millis, human_readable_kbps, trim_slash, Internable};
+use shared::utils::{bin_serialize, default_grace_period_millis, human_readable_kbps, trim_slash, Internable, CONTENT_TYPE_CBOR};
 use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
 };
@@ -39,13 +38,10 @@ use std::convert::Infallible;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::Mutex;
 use tokio_util::io::ReaderStream;
 use url::Url;
-
-const CONTENT_TYPE_BIN: &str = "application/cbor";
 
 #[macro_export]
 macro_rules! try_option_bad_request {
@@ -1343,102 +1339,54 @@ async fn fetch_resource_with_retry(
 ) -> Option<axum::response::Response> {
     let config = app_state.app_config.config.load();
     let default_user_agent = config.default_user_agent.clone();
-    let (max_attempts, backoff_ms, backoff_multiplier) = config
-        .reverse_proxy
-        .as_ref()
-        .map_or_else(ResourceRetryConfig::get_default_retry_values, |rp| rp.resource_retry.get_retry_values());
     drop(config);
+
     let disabled_headers = app_state.get_disabled_headers();
-    for attempt in 0..max_attempts {
-        let client = request::get_client_request(
-            &app_state.http_client.load(),
-            input.map_or(InputFetchMethod::GET, |i| i.method),
-            input.map(|i| &i.headers),
-            url,
-            Some(req_headers),
-            disabled_headers.as_ref(),
-            default_user_agent.as_deref(),
+
+    let Ok(response) = send_with_retry(
+        &app_state.app_config,
+        url,
+        || {
+            request::get_client_request(
+                &app_state.http_client.load(),
+                input.map_or(InputFetchMethod::GET, |i| i.method),
+                input.map(|i| &i.headers),
+                url,
+                Some(req_headers),
+                disabled_headers.as_ref(),
+                default_user_agent.as_deref(),
+            )
+        },
+    ).await else { return None };
+
+    let status = response.status();
+
+    if status.is_success() {
+        return Some(
+            build_resource_stream_response(app_state, resource_url, response).await,
         );
-        match client.send().await {
-            Ok(response) => {
-                let status = response.status();
-                if status.is_success() {
-                    return Some(
-                        build_resource_stream_response(app_state, resource_url, response).await,
-                    );
-                }
-                // Retry only for 408, 425, 429 and all 5xx statuses
-                let should_retry = status.is_server_error()
-                    || matches!(
-                        status,
-                        // reqwest::StatusCode::BAD_REQUEST // 400 is typically client error; retrying likely won't help and adds load.
-                            reqwest::StatusCode::REQUEST_TIMEOUT
-                            | reqwest::StatusCode::TOO_EARLY
-                            | reqwest::StatusCode::TOO_MANY_REQUESTS
-                    );
-
-                if attempt < max_attempts - 1 && should_retry {
-                    let wait_dur = response
-                        .headers()
-                        .get(RETRY_AFTER)
-                        .and_then(|h| h.to_str().ok())
-                        .and_then(|s| s.parse::<u64>().ok())
-                        .map_or_else(
-                            || {
-                                let delay = calculate_retry_backoff(backoff_ms, backoff_multiplier, attempt);
-                                Duration::from_millis(delay)
-                            },
-                            Duration::from_secs,
-                        );
-                    tokio::time::sleep(wait_dur).await;
-                    continue;
-                }
-
-                // For non-retriable statuses or when attempts are exhausted, return upstream response including body
-                debug_if_enabled!(
-                    "Failed to open resource got status {status} for {}",
-                    sanitize_sensitive_info(resource_url)
-                );
-                let mut response_builder = axum::response::Response::builder().status(status);
-                for (key, value) in response.headers() {
-                    response_builder = response_builder.header(key, value);
-                }
-                let stream = response
-                    .bytes_stream()
-                    .map_err(|err| StreamError::reqwest(&err));
-                return Some(try_unwrap_body!(
-                    response_builder.body(axum::body::Body::from_stream(stream))
-                ));
-            }
-            Err(err) => {
-                if attempt < max_attempts - 1 {
-                    let delay = calculate_retry_backoff(backoff_ms, backoff_multiplier, attempt);
-                    tokio::time::sleep(Duration::from_millis(delay)).await;
-                    continue;
-                }
-                error!("Received failure from server {}:  {err}", sanitize_sensitive_info(resource_url));
-            }
-        }
-        break;
     }
-    None
+
+    // Non-retriable Status → Upstream Response incl. Body
+    debug_if_enabled!(
+        "Failed to open resource got status {status} for {}",
+        sanitize_sensitive_info(resource_url)
+    );
+
+    let mut response_builder = axum::response::Response::builder().status(status);
+    for (key, value) in response.headers() {
+        response_builder = response_builder.header(key, value);
+    }
+
+    let stream = response
+        .bytes_stream()
+        .map_err(|err| StreamError::reqwest(&err));
+
+    Some(try_unwrap_body!(
+        response_builder.body(axum::body::Body::from_stream(stream))
+    ))
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
-fn calculate_retry_backoff(base_delay_ms: u64, multiplier: f64, attempt: u32) -> u64 {
-    let base = base_delay_ms.max(1);
-    if multiplier <= 1.0 {
-        return base;
-    }
-    let delay = (base as f64) * multiplier.powi(i32::try_from(attempt).unwrap_or(i32::MAX));
-    if !delay.is_finite() || delay < 1.0 {
-        base
-    } else if delay >= u64::MAX as f64 {
-        u64::MAX
-    } else {
-        delay as u64
-    }
-}
 
 /// # Panics
 pub async fn resource_response(
@@ -1550,7 +1498,7 @@ pub async fn is_seek_request(cluster: XtreamCluster, req_headers: &HeaderMap) ->
 pub fn bin_response<T: Serialize>(data: &T) -> impl IntoResponse + Send {
     match bin_serialize(data) {
         Ok(body) => (
-            [(header::CONTENT_TYPE, CONTENT_TYPE_BIN)],
+            [(header::CONTENT_TYPE, CONTENT_TYPE_CBOR)],
             body,
         ).into_response(),
         Err(_) => internal_server_error!(),
@@ -1562,7 +1510,7 @@ pub fn json_response<T: Serialize>(data: &T) -> impl IntoResponse + Send {
 }
 
 pub fn json_or_bin_response<T: Serialize>(accept: Option<&str>, data: &T) -> impl IntoResponse + Send {
-    if accept.is_some_and(|a| a.contains(CONTENT_TYPE_BIN)) {
+    if accept.is_some_and(|a| a.contains(CONTENT_TYPE_CBOR)) {
         return bin_response(data).into_response();
     }
     json_response(data).into_response()
@@ -1572,7 +1520,7 @@ pub fn stream_json_or_bin_response<P>(accept: Option<&str>, data: Box<dyn Iterat
 where
     P: serde::Serialize + Send + 'static,
 {
-    if accept.is_some_and(|a| a.contains(CONTENT_TYPE_BIN)) {
+    if accept.is_some_and(|a| a.contains(CONTENT_TYPE_CBOR)) {
         return stream_bin_array(data);
     }
     stream_json_array(data)
@@ -1652,7 +1600,7 @@ where
     );
 
     try_unwrap_body!(Response::builder()
-        .header(header::CONTENT_TYPE, CONTENT_TYPE_BIN)
+        .header(header::CONTENT_TYPE, CONTENT_TYPE_CBOR)
         .body(body))
 }
 
@@ -1679,6 +1627,26 @@ pub fn create_api_proxy_user(app_state: &Arc<AppState>) -> ProxyUserCredentials 
         ui_enabled: false,
         comment: None,
     }
+}
+
+pub fn empty_json_response_as_object() -> axum::http::Result<axum::response::Response> {
+    axum::response::Response::builder()
+        .status(axum::http::StatusCode::OK)
+        .header(
+            axum::http::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.to_string(),
+        )
+        .body(axum::body::Body::from("{}".as_bytes()))
+}
+
+pub fn empty_json_response_as_array() -> axum::http::Result<axum::response::Response> {
+    axum::response::Response::builder()
+        .status(axum::http::StatusCode::OK)
+        .header(
+            axum::http::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.to_string(),
+        )
+        .body(axum::body::Body::from("[]".as_bytes()))
 }
 
 #[cfg(test)]

@@ -1,9 +1,11 @@
-use crate::utils::{serialize_as_base64_padded, serialize_option_string_as_null_if_empty};
-
+use std::sync::Arc;
+use crate::utils::{serialize_as_base64_padded, serialize_option_string_as_null_if_empty, arc_str_serde};
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
 pub struct ShortEpgDto {
-    pub id: String,
-    pub epg_id: String,
+    #[serde(with = "arc_str_serde")]
+    pub id: Arc<str>,
+    #[serde(with = "arc_str_serde")]
+    pub epg_id: Arc<str>,
     #[serde(serialize_with = "serialize_as_base64_padded")]
     pub title: String,
     pub lang: String,
@@ -11,20 +13,17 @@ pub struct ShortEpgDto {
     pub end: String, // Format "2026-01-14 00:45:00"
     #[serde(serialize_with = "serialize_as_base64_padded")]
     pub description: String,
-    pub channel_id : String,
+    #[serde(with = "arc_str_serde")]
+    pub channel_id: Arc<str>,
     pub start_timestamp: String,  // Format "1768431000"
     pub stop_timestamp: String,  // Format "1768434300"
-    pub stream_id: String,
-}
-
-#[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
-pub struct ShortEpgListingsDto {
-    pub epg_listings : Vec<ShortEpgDto>,
+    #[serde(with = "arc_str_serde")]
+    pub stream_id: Arc<str>,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
 pub struct ShortEpgResultDto {
-    pub data: ShortEpgListingsDto,
+    pub epg_listings: Vec<ShortEpgDto>,
     #[serde(default, serialize_with = "serialize_option_string_as_null_if_empty")]
     pub error: Option<String>,
 }
@@ -32,9 +31,7 @@ pub struct ShortEpgResultDto {
 impl ShortEpgResultDto {
     pub fn new(epg_listings: Vec<ShortEpgDto>) -> Self {
         Self {
-            data: ShortEpgListingsDto {
-                epg_listings,
-            },
+            epg_listings,
             error: None,
         }
     }

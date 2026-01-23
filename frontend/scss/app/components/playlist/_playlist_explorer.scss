@@ -1,7 +1,7 @@
 $movie-card-height: 24rem;
 $movie-card-width: 16rem;
 $live-card-width: 17.5rem;
-$episode-card-height: 10rem;
+$episode-card-height: 13rem;
 $episode-card-width: 18rem;
 $series-backdrop-height: 300px;
 
@@ -12,27 +12,23 @@ $series-backdrop-height: 300px;
   min-height: $height;
   max-width: $width;
   min-width: $width;
+}
 
+@mixin channel-logo($height, $width, $border-radius) {
+  .tp__playlist-explorer__channel-logo {
+    box-sizing: border-box;
+    overflow: hidden;
+    height: $height;
+    width: $width;
 
-  .tp__playlist-explorer__channel {
-    &-logo {
+    img {
+      height: $height;
+      width: $width;
       box-sizing: border-box;
-      height: 100%;
       object-fit: cover;
       object-position: center;
-    }
-
-    &-title {
-      display: flex;
-      flex-flow: row;
-      align-items: center;
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 3rem;
-      background-color: var(--card-background-color);
-      padding-left: 2rem;
+      overflow: hidden;
+      border-radius: $border-radius;
     }
   }
 }
@@ -200,11 +196,7 @@ $series-backdrop-height: 300px;
       min-height: 3rem;
     }
 
-    &-video {
-      max-height: 3rem;
-      min-height: 3rem;
-    }
-
+    &-video,
     &-series {
       max-height: 3rem;
       min-height: 3rem;
@@ -222,64 +214,19 @@ $series-backdrop-height: 300px;
     }
   }
 
-  &__channel {
-    display: flex;
-    justify-content: flex-start;
-    align-items: center;
-    fill: var(--menu-icon-color);
-    background-color: var(--text-button-background-color);
-    color: var(--text-button-color);
-    border: 1px solid var(--text-button-border-color);
-    border-radius: var(--border-radius);
-    cursor: pointer;
-    box-sizing: border-box;
-    gap: var(--gap-default);
-    padding-left: var(--padding-micro);
-    overflow: hidden;
-    text-overflow: ellipsis;
-
-    &-live {
-      position: relative;
-      max-height: 4rem;
-      min-height: 4rem;
-
-      .tp__playlist-explorer__channel {
-
-        &-logo {
-          box-sizing: border-box;
-          height: 3rem;
-          width: 3rem;
-          border-radius: var(--border-radius);
-          overflow: hidden;
-          object-fit: cover;
-          object-position: center;
-        }
-      }
-    }
-
-    &-video,
-    &-series {
-      @include card-base($movie-card-height, $movie-card-width);
-      .tp__icon-button {
-        position: absolute;
-        z-index: 1;
-        bottom: 0.75rem;
-        left: 0;
-        background-color: transparent;
-      }
-    }
-
-    &-episode {
-      @include card-base($episode-card-height, $episode-card-width);
-    }
-  }
-
   &__series-info {
     display: flex;
     flex-flow: column;
     gap: var(--gap-default);
     box-sizing: border-box;
     overflow: hidden;
+    align-items: center;
+
+    &__rating {
+      color: var(--playlist-rating-color) !important;
+      background-color: var(--playlist-rating-background-color) !important;
+      font-weight: bold;
+    }
 
     &__nowrap {
       white-space: nowrap;
@@ -288,8 +235,10 @@ $series-backdrop-height: 300px;
     &__body {
       display: flex;
       flex-flow: column;
+      flex: 1 1 auto;
       gap: var(--gap-default);
       box-sizing: border-box;
+      width: 100%;
       overflow: auto;
 
       .tp__playlist-explorer__group-list {
@@ -301,15 +250,17 @@ $series-backdrop-height: 300px;
         flex-flow: column;
         gap: var(--gap-default);
         min-height: $series-backdrop-height;
-        background-size: cover;
-        background-position: right top;
-
+        background-repeat: no-repeat;
+        background-size: 100%;
+        //background-position: right top;
+        border-radius: var(--border-radius);
         font-size: 1.2rem;
         box-sizing: border-box;
 
         &-content {
           display: flex;
           flex-flow: column;
+          padding: var(--padding-default);
           gap: var(--gap-default);
           max-width: 60%;
           background-size: cover;
@@ -340,6 +291,79 @@ $series-backdrop-height: 300px;
       &-title {
         font-weight: bold;
         font-size: 2rem;
+      }
+    }
+  }
+
+  &__channel {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    fill: var(--menu-icon-color);
+    background-color: var(--text-button-background-color);
+    color: var(--text-button-color);
+    border: 1px solid var(--text-button-border-color);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    box-sizing: border-box;
+    gap: var(--gap-default);
+    padding-left: var(--padding-micro);
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+
+    &-live {
+      display: flex;
+      flex-flow: row;
+      box-sizing: border-box;
+      position: relative;
+      max-height: 4rem;
+      min-height: 4rem;
+      align-items: center;
+
+      @include channel-logo(3rem, 3rem, var(--border-radius));
+
+    }
+
+    &-episode {
+      @include card-base($episode-card-height, $episode-card-width);
+    }
+
+    &-series,
+    &-video {
+      @include card-base($movie-card-height, $movie-card-width);
+    }
+
+    &-episode,
+    &-series,
+    &-video {
+      display: flex;
+      flex-flow: column;
+      box-sizing: border-box;
+
+      @include channel-logo(100%, 100%, 0);
+
+      &-rating {
+        position: absolute;
+        top: 0.5rem;
+        left: 0.5rem;
+        color: var(--card-color) !important;
+        background-color: rgb(from var(--card-background-color) r g b / 1) !important;
+        font-weight: bold;
+      }
+
+      &-info {
+        display: flex;
+        flex-flow: row;
+        align-items: center;
+        height: 3rem;
+        width: 100%;
+      }
+
+      &-title {
+        display: flex;
+        flex-flow: row;
+        align-items: center;
       }
     }
   }

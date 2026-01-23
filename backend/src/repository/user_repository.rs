@@ -5,7 +5,7 @@ use crate::repository::BPlusTree;
 use crate::repository::storage_const;
 use crate::repository::xtream_get_playlist_categories;
 use crate::utils;
-use crate::utils::json_write_documents_to_file;
+use crate::utils::{file_exists_async, json_write_documents_to_file};
 use chrono::Local;
 use log::error;
 use shared::model::{PlaylistBouquetDto, PlaylistClusterBouquetDto, ProxyType, ProxyUserStatus, TargetType, XtreamCluster};
@@ -260,7 +260,7 @@ async fn save_xtream_user_bouquet_for_target(config: &Config, target_name: &str,
         if let Some(xtream_categories) = xtream_get_playlist_categories(config, target_name, cluster).await {
             let filtered: Vec<PlaylistXtreamCategory> = xtream_categories.iter().filter(|p| bouquet_categories.contains(&p.name)).cloned().collect();
             if filtered.is_empty() {
-                if tokio::fs::try_exists(&bouquet_path).await.is_ok_and(|r| r) {
+                if file_exists_async(&bouquet_path).await {
                     tokio::fs::remove_file(bouquet_path).await?;
                 }
             } else {

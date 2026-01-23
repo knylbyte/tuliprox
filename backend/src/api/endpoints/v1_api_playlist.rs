@@ -3,16 +3,17 @@ use crate::api::endpoints::api_playlist_utils::{get_playlist_for_custom_provider
 use crate::api::endpoints::extract_accept_header::ExtractAcceptHeader;
 use crate::api::model::AppState;
 use crate::auth::create_access_token;
-use crate::model::{parse_xmltv_for_web_ui_from_file, parse_xmltv_for_web_ui_from_url, ConfigInput, ConfigInputOptions};
+use crate::model::{parse_xmltv_for_web_ui_from_url, ConfigInput, ConfigInputOptions};
 use crate::processing::processor::playlist;
 use axum::response::IntoResponse;
 use axum::{Router};
-use log::{error, info};
+use log::{debug, error};
 use serde_json::json;
 use shared::model::{InputType, PlaylistEpgRequest, PlaylistRequest, ProxyType, TargetType, WebplayerUrlRequest, XtreamCluster};
 use shared::utils::{sanitize_sensitive_info, Internable};
 use std::sync::Arc;
 use url::Url;
+use crate::api::endpoints::xmltv_api::{serve_epg_web_ui};
 use crate::api::endpoints::xtream_api::xtream_get_stream_info_response;
 
 fn create_config_input_for_m3u(url: &str) -> ConfigInput {
@@ -66,10 +67,12 @@ async fn playlist_update(
             let event_manager = Arc::clone(&app_state.event_manager);
             let playlist_state = Arc::clone(&app_state.playlists);
             let valid_targets = Arc::new(valid_targets);
+            let disabled_headers = app_state.get_disabled_headers();
             tokio::spawn({
                 async move {
                     playlist::exec_processing(&http_client, app_config, valid_targets, Some(event_manager),
-                                              Some(playlist_state), Some(app_state.update_guard.clone())).await;
+                                              Some(playlist_state), Some(app_state.update_guard.clone()),
+                                              disabled_headers).await;
                 }
             });
             axum::http::StatusCode::ACCEPTED.into_response()
@@ -162,17 +165,18 @@ async fn playlist_series_info(
                 }
             }
         }
+
         PlaylistRequest::Input(input_id) => {
             if let Some(input) = app_state.app_config.get_input_by_id(input_id) {
                 if matches!(input.input_type, InputType::Xtream | InputType::XtreamBatch) {
                     // TODO: Implement series info retrieval for input-based requests
-                    info!("TODO: Implement series info retrieval for input-based requests");
+                    debug!("TODO: Implement series info retrieval for input-based requests");
                 }
             }
         }
         PlaylistRequest::CustomXtream(_xtream) => {
             // TODO: Implement series info retrieval for custom Xtream requests
-            info!("TODO: Implement series info retrieval for custom Xtream requests");
+            debug!("TODO: Implement series info retrieval for custom Xtream requests");
         },
         PlaylistRequest::CustomM3u(_) => {}
     }
@@ -201,9 +205,7 @@ async fn playlist_epg(
             if let Some(target) = app_state.app_config.get_target_by_id(target_id) {
                 let config = &app_state.app_config.config.load();
                 if let Some(epg_path) = crate::api::endpoints::xmltv_api::get_epg_path_for_target(config, &target) {
-                    if let Ok(epg) = parse_xmltv_for_web_ui_from_file(&epg_path).await {
-                        return json_or_bin_response(accept.as_deref(), &epg).into_response();
-                    }
+                    return serve_epg_web_ui(accept.as_deref(), &epg_path, &target).await;
                 }
             }
         }

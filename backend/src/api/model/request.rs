@@ -29,3 +29,13 @@ pub struct UserApiRequest {
     #[serde(default, alias = "type")]
     pub content_type: String,
 }
+
+impl UserApiRequest {
+    pub fn get_limit(&self) -> u32 {
+        if self.limit.is_empty() {
+            0
+        } else {
+            self.limit.parse::<u32>().unwrap_or(0)
+        }
+    }
+}

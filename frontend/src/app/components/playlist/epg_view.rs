@@ -186,11 +186,11 @@ pub fn EpgView() -> Html {
                             <div style={format!("height:{}px", start_index * channel_row_height)}></div>
                             { for tv.channels.iter().enumerate().skip(start_index).take(end_index - start_index).map(|(_i, ch)| {
                                 html! {
-                                    <div class="tp__epg__channel" title={concat_string!(&ch.title, " (",  &ch.id, ")")}
+                                    <div class="tp__epg__channel" title={concat_string!(&ch.title.as_ref().map(ToString::to_string).unwrap_or_default(), " (",  &ch.id, ")")}
                                          style={format!("max-height:{channel_row_height}px;min-height:{channel_row_height}px;height:{channel_row_height}px")}>
                                         <div class="tp__epg__channel-icon">
                                             { if let Some(icon) = &ch.icon {
-                                                html! { <img src={icon.clone()} alt={ch.title.clone()} /> }
+                                                html! { <img src={icon.to_string()} alt={ch.title.as_ref().map(ToString::to_string).unwrap_or_default()} /> }
                                               } else { html!{} }
                                             }
                                         </div>
@@ -243,7 +243,7 @@ pub fn EpgView() -> Html {
                                             let program_style = format!("left:{left}px; width:{width}px; min-width:{width}px; max-width:{width}px");
 
                                             html! {
-                                            <div class={classes!("tp__epg__program", if is_active { "tp__epg__program-active" } else {""})} style={program_style} title={ p.title.clone() }>
+                                            <div class={classes!("tp__epg__program", if is_active { "tp__epg__program-active" } else {""})} style={program_style} title={ p.title.as_ref().map(ToString::to_string).unwrap_or_default() }>
                                                 <div class="tp__epg__program-time">{ &pstart } {"-"} { &pend }</div>
                                                 <div class="tp__epg__program-title">{ &p.title }</div>
                                             </div>
