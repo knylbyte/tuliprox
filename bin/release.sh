@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-WORKING_DIR=$(pwd)
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+WORKING_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
+if ! cd "${WORKING_DIR}" >/dev/null 2>&1; then
+  echo "🧨 Error: Unable to change directory to repo root: ${WORKING_DIR}" >&2
+  exit 1
+fi
+
 RESOURCES_DIR="$WORKING_DIR/resources"
 RELEASE_DIR="$WORKING_DIR/release"
 FRONTEND_DIR="${WORKING_DIR}/frontend"
 FRONTEND_BUILD_DIR="${FRONTEND_DIR}/dist"
 BACKEND_DIR="${WORKING_DIR}/backend"
+TARGET_DIR="${WORKING_DIR}/target"
 BRANCH=$(git branch --show-current)
 START_BRANCH="${BRANCH}"
 START_HEAD="$(git rev-parse HEAD)"
@@ -336,6 +343,10 @@ JSON
 
 cleanup() {
   exit_code=$?
+
+  # Some tools (rustc/gh) fail when the current directory was removed (e.g., 'cargo clean'
+  # executed while being inside ./target). Re-anchor in the repo root for best-effort cleanup.
+  cd "${WORKING_DIR}" >/dev/null 2>&1 || true
 
   gh_unfreeze_develop_branch >/dev/null 2>&1 || true
   if [ "${exit_code}" -eq 0 ]; then
@@ -672,48 +683,60 @@ fi
 
 cd "$WORKING_DIR"
 
+# Prepare release package folder (assets to be uploaded to GitHub Release later)
+RELEASE_PKG="$RELEASE_DIR/release_${BUMP_VERSION}"
+rm -rf "${RELEASE_PKG}"
+mkdir -p "${RELEASE_PKG}"
+
 # Build binaries
 for PLATFORM in "${!ARCHITECTURES[@]}"; do
-    ARCHITECTURE=${ARCHITECTURES[$PLATFORM]}
-    DIR=${DIRS[$PLATFORM]}
-    ARC=${DIR}.tgz
-    # Handle platform-specific binary file names
-    if [[ -n "${BIN_EXTENSIONS[$PLATFORM]}" ]]; then
-       BIN="${ARCHITECTURE}/release/tuliprox${BIN_EXTENSIONS[$PLATFORM]}"
-    else
-       BIN="${ARCHITECTURE}/release/tuliprox"
-    fi
+    ARCHITECTURE="${ARCHITECTURES[$PLATFORM]}"
+    DIR="${DIRS[$PLATFORM]}"
+
+    BIN_NAME="tuliprox${BIN_EXTENSIONS[$PLATFORM]:-}"
+    BIN_REL="${ARCHITECTURE}/release/${BIN_NAME}"
+    BIN_PATH="${TARGET_DIR}/${BIN_REL}"
 
     # Ensure target is installed (guarded above, keep here as a safety net)
-    rustup +"${RUSTUP_TOOLCHAIN_FOR_TARGETS}" target add "$ARCHITECTURE"
+    rustup +"${RUSTUP_TOOLCHAIN_FOR_TARGETS}" target add "${ARCHITECTURE}"
 
     # Build for each platform
-    cd "$WORKING_DIR"
+    cd "${WORKING_DIR}"
     cargo clean || true # Clean before each build to avoid conflicts
-    env RUSTFLAGS="--remap-path-prefix $HOME=~" cross build -p tuliprox --release --target "$ARCHITECTURE"
-
-    # Create directories and copy binaries and config files
-    cd target
-    mkdir -p "$DIR"
-    cp "$BIN" "$DIR"
-    cp ../config/*.yml "$DIR"
-    cp -rf "${FRONTEND_BUILD_DIR}" "$DIR"/web
-    cp -rf "${RESOURCES_DIR}"/*.ts "$DIR"
-
-    # Create archive for the platform
-    if [[ $PLATFORM == "WINDOWS" ]]; then
-        zip -r "$ARC" "$DIR"
+    cd "${WORKING_DIR}" >/dev/null 2>&1 || true
+    if [ "${PLATFORM}" = "DARWIN" ]; then
+      env RUSTFLAGS="--remap-path-prefix $HOME=~" cargo build -p tuliprox --release --target "${ARCHITECTURE}"
     else
-        tar cvzf "$ARC" "$DIR"
+      env RUSTFLAGS="--remap-path-prefix $HOME=~" cross build -p tuliprox --release --target "${ARCHITECTURE}"
     fi
 
-    CHECKSUM_FILE="checksum_${ARC}.txt"
-    shasum -a 256 "$ARC" >> "$CHECKSUM_FILE"
+    if [ ! -f "${BIN_PATH}" ]; then
+      die "Expected binary not found: ${BIN_PATH}"
+    fi
 
-    # Move the archive and checksum to the release folder
-    RELEASE_PKG="$RELEASE_DIR/release_${BUMP_VERSION}"
-    mkdir -p "$RELEASE_PKG"
-    mv "$CHECKSUM_FILE" "$ARC" "$RELEASE_PKG"
+    # Create staging directory and copy binaries and config files
+    STAGING_DIR="${TARGET_DIR}/${DIR}"
+    rm -rf "${STAGING_DIR}"
+    mkdir -p "${STAGING_DIR}"
+    cp "${BIN_PATH}" "${STAGING_DIR}/"
+    cp "${WORKING_DIR}/config/"*.yml "${STAGING_DIR}/"
+    cp -rf "${FRONTEND_BUILD_DIR}" "${STAGING_DIR}/web"
+    cp -rf "${RESOURCES_DIR}"/*.ts "${STAGING_DIR}/"
+
+    # Create archive for the platform
+    if [[ "${PLATFORM}" == "WINDOWS" ]]; then
+        if ! command -v zip >/dev/null 2>&1; then
+          die "'zip' is required to package Windows artifacts."
+        fi
+        ARC="${RELEASE_PKG}/${DIR}.zip"
+        (cd "${TARGET_DIR}" && zip -r "${ARC}" "${DIR}") >/dev/null
+    else
+        ARC="${RELEASE_PKG}/${DIR}.tgz"
+        tar -C "${TARGET_DIR}" -czf "${ARC}" "${DIR}"
+    fi
+
+    CHECKSUM_FILE="${RELEASE_PKG}/checksum_$(basename "${ARC}").txt"
+    shasum -a 256 "${ARC}" > "${CHECKSUM_FILE}"
 done
 
 # Marker: wait for docker-build workflow completion
