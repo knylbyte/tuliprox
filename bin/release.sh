@@ -354,7 +354,7 @@ cleanup() {
   # executed while being inside ./target). Re-anchor in the repo root for best-effort cleanup.
   cd "${WORKING_DIR}" >/dev/null 2>&1 || true
 
-  gh_unfreeze_develop_branch >/dev/null 2>&1 || true
+  gh_unfreeze_develop_branch || true
   if [ "${exit_code}" -eq 0 ]; then
     return
   fi
