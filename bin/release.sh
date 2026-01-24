@@ -129,6 +129,46 @@ gh_guard_permissions() {
   fi
 }
 
+extract_release_notes_from_changelog() {
+  local version="${1#v}"
+  local changelog_file="${2:-${WORKING_DIR}/CHANGELOG.md}"
+
+  if [ -z "${version}" ]; then
+    return 1
+  fi
+  if [ ! -f "${changelog_file}" ]; then
+    return 1
+  fi
+
+  local notes
+  notes="$(
+    awk -v ver="${version}" '
+      function is_version_heading(line) {
+        return (line ~ "^#{1,6}[[:space:]]+v?[0-9]+\\.[0-9]+\\.[0-9]+")
+      }
+      BEGIN { in_section = 0 }
+      {
+        if ($0 ~ ("^#{1,6}[[:space:]]+v?" ver "([[:space:]]|$)")) {
+          in_section = 1
+          next
+        }
+        if (in_section && is_version_heading($0)) {
+          exit
+        }
+        if (in_section) {
+          print
+        }
+      }
+    ' "${changelog_file}"
+  )"
+
+  if [ -z "$(echo "${notes}" | tr -d '[:space:]')" ]; then
+    return 1
+  fi
+
+  printf "%s\n" "${notes}"
+}
+
 gh_cleanup_docker_images_on_failure() {
   local run_id="${1:-}"
 
@@ -713,6 +753,30 @@ if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
   die "Tag '${RELEASE_TAG}' already exists."
 fi
 
+RELEASE_PKG="$RELEASE_DIR/release_${BUMP_VERSION}"
+if [ ! -d "${RELEASE_PKG}" ]; then
+  die "Release package directory not found: ${RELEASE_PKG}"
+fi
+
+echo "📝 Extracting release notes from CHANGELOG.md (version: ${BUMP_VERSION})"
+RELEASE_NOTES_FILE="${RELEASE_PKG}/release-notes-${RELEASE_TAG}.md"
+if ! extract_release_notes_from_changelog "${BUMP_VERSION}" "${WORKING_DIR}/CHANGELOG.md" >"${RELEASE_NOTES_FILE}"; then
+  die "No release notes found in CHANGELOG.md for version '${BUMP_VERSION}'."
+fi
+
+shopt -s nullglob
+candidate_assets=("${RELEASE_PKG}"/*)
+shopt -u nullglob
+assets=()
+for f in "${candidate_assets[@]}"; do
+  if [ -f "${f}" ] && [ "${f}" != "${RELEASE_NOTES_FILE}" ]; then
+    assets+=("${f}")
+  fi
+done
+if [ "${#assets[@]}" -eq 0 ]; then
+  die "No release assets found in ${RELEASE_PKG}."
+fi
+
 git tag -a "${RELEASE_TAG}" -m "${RELEASE_TAG}"
 
 echo "📦 Pushing release tag: ${RELEASE_TAG}"
@@ -720,5 +784,11 @@ git push origin "${RELEASE_TAG}"
 if git remote get-url github >/dev/null 2>&1; then
   git push github "${RELEASE_TAG}"
 fi
+
+echo "🚢 Creating GitHub release '${RELEASE_TAG}' (uploading ${#assets[@]} assets)"
+if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+  die "GitHub release '${RELEASE_TAG}' already exists."
+fi
+gh release create "${RELEASE_TAG}" --verify-tag -t "${RELEASE_TAG}" -F "${RELEASE_NOTES_FILE}" "${assets[@]}"
 
 echo "🎉 Done!"
