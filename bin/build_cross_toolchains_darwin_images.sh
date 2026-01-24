@@ -93,8 +93,23 @@ find_osxcross_tools_dir() {
   local base="${1}"
   local candidates=(
     "${base}/osxcross/tools"
-    "${base}/cross-toolchains/osxcross/tools"
-    "${base}/cross-toolchains/tools"
+    "${base}/tools"
+  )
+  local dir
+  for dir in "${candidates[@]}"; do
+    if [ -d "${dir}" ]; then
+      echo "${dir}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+find_cross_toolchains_docker_dir() {
+  local base="${1}"
+  local candidates=(
+    "${base}/cross-toolchains/docker"
+    "${base}/docker/cross-toolchains/docker"
   )
   local dir
   for dir in "${candidates[@]}"; do
@@ -203,12 +218,17 @@ if [ -n "${CROSS_REPO_REF}" ]; then
 fi
 git submodule update --init --recursive
 
-if [ ! -d "cross-toolchains/docker" ]; then
-  die "cross-toolchains/docker not found in ${CROSS_REPO_DIR}"
+cross_toolchains_docker_dir="$(find_cross_toolchains_docker_dir "${CROSS_REPO_DIR}" || true)"
+if [ -z "${cross_toolchains_docker_dir}" ]; then
+  die "cross-toolchains docker dir not found in ${CROSS_REPO_DIR} (expected: cross-toolchains/docker or docker/cross-toolchains/docker)"
 fi
 
 if [ -z "${SDK_PATH_EFFECTIVE}" ]; then
-  tools_dir="$(find_osxcross_tools_dir "${CROSS_REPO_DIR}" || true)"
+  cross_toolchains_root="$(dirname "${cross_toolchains_docker_dir}")"
+  tools_dir="$(find_osxcross_tools_dir "${cross_toolchains_root}" || true)"
+  if [ -z "${tools_dir}" ]; then
+    tools_dir="$(find_osxcross_tools_dir "${CROSS_REPO_DIR}" || true)"
+  fi
   if [ -z "${tools_dir}" ]; then
     die "osxcross tools not found under ${CROSS_REPO_DIR}; set SDK_PATH/SDK_URL instead."
   fi
@@ -221,8 +241,8 @@ if [ -n "${SDK_URL}" ]; then
   BUILD_ARGS+=(--build-arg "MACOS_SDK_URL=${SDK_URL}")
 else
   SDK_DIR="sdk"
-  mkdir -p "cross-toolchains/docker/${SDK_DIR}"
-  cp -f "${SDK_PATH_EFFECTIVE}" "cross-toolchains/docker/${SDK_DIR}/${SDK_BASENAME}"
+  mkdir -p "${cross_toolchains_docker_dir}/${SDK_DIR}"
+  cp -f "${SDK_PATH_EFFECTIVE}" "${cross_toolchains_docker_dir}/${SDK_DIR}/${SDK_BASENAME}"
   BUILD_ARGS+=(--build-arg "MACOS_SDK_DIR=${SDK_DIR}")
   BUILD_ARGS+=(--build-arg "MACOS_SDK_FILE=${SDK_BASENAME}")
 fi
