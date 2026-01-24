@@ -585,15 +585,17 @@ declare -A ARCHITECTURES=(
     [WINDOWS]=x86_64-pc-windows-gnu
     [ARM7]=armv7-unknown-linux-musleabihf
     [AARCH64]=aarch64-unknown-linux-musl
-    # [DARWIN]=x86_64-apple-darwin
+    # [DARWIN86]=x86_64-apple-darwin
+    # [DARWIN64]=aarch64-apple-darwin
 )
 
 declare -A DIRS=(
     [LINUX]=tuliprox_${BUMP_VERSION}_linux_x86_64
     [WINDOWS]=tuliprox_${BUMP_VERSION}_windows_x86_64
     [ARM7]=tuliprox_${BUMP_VERSION}_armv7
-    [AARCH64]=tuliprox_${BUMP_VERSION}_aarch64_x86_64
-    [DARWIN]=tuliprox_${BUMP_VERSION}_apple-darwin_x86_64
+    [AARCH64]=tuliprox_${BUMP_VERSION}_aarch64
+    [DARWIN86]=tuliprox_${BUMP_VERSION}_apple-darwin_x86_64
+    [DARWIN64]=tuliprox_${BUMP_VERSION}_apple-darwin_aarch64
 )
 
 # Special case mapping for binary extensions (e.g., Windows needs .exe)
