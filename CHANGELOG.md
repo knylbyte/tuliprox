@@ -1,5 +1,8 @@
 # Changelog
 
+## 3.4.0 (2026-01-24)
+- ci: test
+
 ## 3.3.0 (2026-01-03)
 
 ## ⚠️ Breaking Changes
