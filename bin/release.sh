@@ -199,8 +199,14 @@ gh_cleanup_docker_images_on_failure() {
 
   if [ -n "${run_id}" ]; then
     local status conclusion
-    status="$(gh run view --job="${run_id}" --json status --jq .status 2>/dev/null || true)"
-    conclusion="$(gh run view --job="${run_id}" --json conclusion --jq .conclusion 2>/dev/null || true)"
+    for _ in {1..30}; do
+      status="$(gh run view "${run_id}" --json status --jq .status 2>/dev/null || true)"
+      conclusion="$(gh run view "${run_id}" --json conclusion --jq .conclusion 2>/dev/null || true)"
+      if [ "$status" = "completed" ] && [ "$conclusion" = "cancelled" ]; then
+        break
+      fi
+      sleep 2
+    done
     echo "🔎 docker-build run ${run_id}: status=${status:-unknown} conclusion=${conclusion:-unknown}" >&2
   fi
 
