@@ -18,6 +18,8 @@ IMAGE_TAG="${IMAGE_TAG:-local}"
 PLATFORM="${PLATFORM:-linux/amd64}"
 CROSS_REPO_DIR="${CROSS_REPO_DIR:-}"
 CROSS_REPO_REF="${CROSS_REPO_REF:-}"
+OSXCROSS_REPO_DIR="${OSXCROSS_REPO_DIR:-}"
+OSXCROSS_REPO_REF="${OSXCROSS_REPO_REF:-}"
 SDK_CACHE_DIR="${SDK_CACHE_DIR:-${WORKING_DIR}/dev/osxcross/tarballs}"
 SDK_PATH="${SDK_PATH:-}"
 SDK_URL="${SDK_URL:-}"
@@ -30,6 +32,8 @@ IMAGES=(
   "x86_64-apple-darwin-cross"
   "aarch64-apple-darwin-cross"
 )
+
+CROSS_IMAGE_REPOSITORY="${CROSS_IMAGE_REPOSITORY:-ghcr.io/cross-rs}"
 
 if [ -n "${SDK_PATH}" ] && [ -n "${SDK_URL}" ]; then
   die "Provide only one of SDK_PATH or SDK_URL."
@@ -55,6 +59,9 @@ missing_images=()
 for image in "${IMAGES[@]}"; do
   if docker image inspect "${image}:${IMAGE_TAG}" >/dev/null 2>&1; then
     info "Image already present: ${image}:${IMAGE_TAG}"
+  elif docker image inspect "${CROSS_IMAGE_REPOSITORY}/${image}:${IMAGE_TAG}" >/dev/null 2>&1; then
+    info "Found upstream-tagged image locally: ${CROSS_IMAGE_REPOSITORY}/${image}:${IMAGE_TAG} (retagging)"
+    docker tag "${CROSS_IMAGE_REPOSITORY}/${image}:${IMAGE_TAG}" "${image}:${IMAGE_TAG}"
   else
     missing_images+=("${image}")
   fi
@@ -119,6 +126,20 @@ find_cross_toolchains_docker_dir() {
     fi
   done
   return 1
+}
+
+ensure_osxcross_repo() {
+  if [ -n "${OSXCROSS_REPO_DIR}" ]; then
+    if [ ! -d "${OSXCROSS_REPO_DIR}" ]; then
+      die "OSXCROSS_REPO_DIR not found: ${OSXCROSS_REPO_DIR}"
+    fi
+    return 0
+  fi
+
+  osxcross_cleanup_dir="$(mktemp -d)"
+  info "Cloning osxcross into ${osxcross_cleanup_dir}"
+  git clone https://github.com/tpoechtrager/osxcross.git "${osxcross_cleanup_dir}/osxcross"
+  OSXCROSS_REPO_DIR="${osxcross_cleanup_dir}/osxcross"
 }
 
 run_sdk_packaging() {
@@ -200,6 +221,7 @@ if [ -n "${SDK_PATH_EFFECTIVE}" ]; then
 fi
 
 cleanup_dir=""
+osxcross_cleanup_dir=""
 if [ -n "${CROSS_REPO_DIR}" ]; then
   if [ ! -d "${CROSS_REPO_DIR}" ]; then
     die "CROSS_REPO_DIR not found: ${CROSS_REPO_DIR}"
@@ -224,13 +246,18 @@ if [ -z "${cross_toolchains_docker_dir}" ]; then
 fi
 
 if [ -z "${SDK_PATH_EFFECTIVE}" ]; then
-  cross_toolchains_root="$(dirname "${cross_toolchains_docker_dir}")"
-  tools_dir="$(find_osxcross_tools_dir "${cross_toolchains_root}" || true)"
-  if [ -z "${tools_dir}" ]; then
-    tools_dir="$(find_osxcross_tools_dir "${CROSS_REPO_DIR}" || true)"
+  info "No macOS SDK tarball found; attempting to package one via osxcross"
+  ensure_osxcross_repo
+  if [ -z "${OSXCROSS_REPO_DIR}" ]; then
+    die "Unable to obtain osxcross checkout; set OSXCROSS_REPO_DIR or provide SDK_PATH/SDK_URL."
   fi
+  if [ -n "${OSXCROSS_REPO_REF}" ]; then
+    (cd "${OSXCROSS_REPO_DIR}" && git fetch --all --tags && git checkout "${OSXCROSS_REPO_REF}")
+  fi
+
+  tools_dir="$(find_osxcross_tools_dir "${OSXCROSS_REPO_DIR}" || true)"
   if [ -z "${tools_dir}" ]; then
-    die "osxcross tools not found under ${CROSS_REPO_DIR}; set SDK_PATH/SDK_URL instead."
+    die "osxcross tools not found under ${OSXCROSS_REPO_DIR}; set OSXCROSS_REPO_DIR or provide SDK_PATH/SDK_URL instead."
   fi
   SDK_PATH_EFFECTIVE="$(run_sdk_packaging "${tools_dir}")"
   SDK_BASENAME="$(basename "${SDK_PATH_EFFECTIVE}")"
@@ -241,8 +268,8 @@ if [ -n "${SDK_URL}" ]; then
   BUILD_ARGS+=(--build-arg "MACOS_SDK_URL=${SDK_URL}")
 else
   SDK_DIR="sdk"
-  mkdir -p "${cross_toolchains_docker_dir}/${SDK_DIR}"
-  cp -f "${SDK_PATH_EFFECTIVE}" "${cross_toolchains_docker_dir}/${SDK_DIR}/${SDK_BASENAME}"
+  mkdir -p "${CROSS_REPO_DIR}/docker/${SDK_DIR}"
+  cp -f "${SDK_PATH_EFFECTIVE}" "${CROSS_REPO_DIR}/docker/${SDK_DIR}/${SDK_BASENAME}"
   BUILD_ARGS+=(--build-arg "MACOS_SDK_DIR=${SDK_DIR}")
   BUILD_ARGS+=(--build-arg "MACOS_SDK_FILE=${SDK_BASENAME}")
 fi
@@ -251,7 +278,11 @@ export DOCKER_DEFAULT_PLATFORM="${PLATFORM}"
 
 for image in "${missing_images[@]}"; do
   info "Building ${image}:${IMAGE_TAG}"
-  cargo build-docker-image "${image}" "${BUILD_ARGS[@]}"
+  cargo build-docker-image --tag "${IMAGE_TAG}" "${BUILD_ARGS[@]}" "${image}"
+
+  if docker image inspect "${CROSS_IMAGE_REPOSITORY}/${image}:${IMAGE_TAG}" >/dev/null 2>&1; then
+    docker tag "${CROSS_IMAGE_REPOSITORY}/${image}:${IMAGE_TAG}" "${image}:${IMAGE_TAG}"
+  fi
 
   if docker image inspect "${image}:${IMAGE_TAG}" >/dev/null 2>&1; then
     continue
@@ -268,4 +299,8 @@ done
 
 if [ -n "${cleanup_dir}" ]; then
   rm -rf "${cleanup_dir}"
+fi
+
+if [ -n "${osxcross_cleanup_dir}" ]; then
+  rm -rf "${osxcross_cleanup_dir}"
 fi
