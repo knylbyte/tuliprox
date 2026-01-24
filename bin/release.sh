@@ -585,8 +585,8 @@ declare -A ARCHITECTURES=(
     [WINDOWS]=x86_64-pc-windows-gnu
     [ARM7]=armv7-unknown-linux-musleabihf
     [AARCH64]=aarch64-unknown-linux-musl
-    # [DARWIN86]=x86_64-apple-darwin
-    # [DARWIN64]=aarch64-apple-darwin
+    [DARWIN86]=x86_64-apple-darwin
+    [DARWIN64]=aarch64-apple-darwin
 )
 
 declare -A DIRS=(
@@ -629,6 +629,23 @@ if [ "${HOST_OS}" = "Darwin" ] && [ "${HOST_ARCH}" = "arm64" ]; then
   else
     export CROSS_CONTAINER_OPTS="${CROSS_CONTAINER_OPTS} ${CROSS_PLATFORM_OPT}"
     echo "🧰 Extending CROSS_CONTAINER_OPTS='${CROSS_CONTAINER_OPTS}' (Apple Silicon compatibility)"
+  fi
+fi
+
+DARWIN_CROSS_ENABLED="false"
+for TARGET in "${ARCHITECTURES[@]}"; do
+  if [[ "${TARGET}" == *"-apple-darwin" ]]; then
+    DARWIN_CROSS_ENABLED="true"
+    break
+  fi
+done
+
+if [ "${DARWIN_CROSS_ENABLED}" = "true" ]; then
+  if [ "${BUILD_DARWIN_CROSS_IMAGES:-1}" = "0" ]; then
+    echo "🍎 Skipping Darwin cross image build (BUILD_DARWIN_CROSS_IMAGES=0)"
+  else
+    echo "🍎 Ensuring local cross toolchain images for Darwin targets"
+    "${WORKING_DIR}/bin/build_cross_toolchains_darwin_images.sh"
   fi
 fi
 
@@ -712,11 +729,7 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
     cd "${WORKING_DIR}"
     cargo clean || true # Clean before each build to avoid conflicts
     cd "${WORKING_DIR}" >/dev/null 2>&1 || true
-    if [ "${PLATFORM}" = "DARWIN" ]; then
-      env RUSTFLAGS="--remap-path-prefix $HOME=~" cargo build -p tuliprox --release --target "${ARCHITECTURE}"
-    else
-      env RUSTFLAGS="--remap-path-prefix $HOME=~" cross build -p tuliprox --release --target "${ARCHITECTURE}"
-    fi
+    env RUSTFLAGS="--remap-path-prefix $HOME=~" cross build -p tuliprox --release --target "${ARCHITECTURE}"
 
     if [ ! -f "${BIN_PATH}" ]; then
       die "Expected binary not found: ${BIN_PATH}"
