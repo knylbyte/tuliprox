@@ -79,7 +79,21 @@ fi
 mkdir -p "${SDK_CACHE_DIR}"
 
 find_cached_sdk() {
-  ls -t "${SDK_CACHE_DIR}"/MacOSX*.sdk.tar.xz 2>/dev/null | head -n 1 || true
+  # Pick the highest SDK version by filename (not mtime).
+  # Example: prefer MacOSX26.2.sdk.tar.xz over MacOSX26.sdk.tar.xz.
+  shopt -s nullglob
+  local files=("${SDK_CACHE_DIR}"/MacOSX*.sdk.tar.xz)
+  shopt -u nullglob
+  if [ "${#files[@]}" -eq 0 ]; then
+    return 0
+  fi
+
+  (
+    local f
+    for f in "${files[@]}"; do
+      printf '%s\t%s\n' "${f##*/}" "${f}"
+    done
+  ) | sort --version-sort -t $'\t' -k1,1 | tail -n 1 | cut -f2- || true
 }
 
 download_sdk() {
@@ -128,6 +142,24 @@ find_cross_toolchains_docker_dir() {
   return 1
 }
 
+patch_cross_toolchains_darwin_sh() {
+  local cross_toolchains_docker_dir="${1}"
+  local darwin_sh="${cross_toolchains_docker_dir}/darwin.sh"
+  if [ ! -f "${darwin_sh}" ]; then
+    return 0
+  fi
+
+  # Workaround for an osxcross/tools.sh bug: it filters out SDK paths containing
+  # a ".<digit>" substring when SDK_VERSION has no dot (e.g. "26"). cross-toolchains'
+  # darwin.sh clones osxcross into a mktemp dir like "/tmp/tmp.5abcd...", which then
+  # triggers the filter. Use a mktemp template without dots to avoid ".<digit>".
+  if grep -Fq 'td="$(mktemp -d)"' "${darwin_sh}"; then
+    info "Patching cross-toolchains darwin.sh mktemp template (osxcross SDK detection workaround)"
+    sed -i.bak 's/td=\"\\$(mktemp -d)\"/td=\"$(mktemp -d -t osxcross-aXXXXXXXX)\"/' "${darwin_sh}"
+    rm -f "${darwin_sh}.bak"
+  fi
+}
+
 ensure_osxcross_repo() {
   if [ -n "${OSXCROSS_REPO_DIR}" ]; then
     if [ ! -d "${OSXCROSS_REPO_DIR}" ]; then
@@ -146,8 +178,7 @@ run_sdk_packaging() {
   local tools_dir="${1}"
   local host_os
   host_os="$(uname -s)"
-  local before after
-  before="$(find_cached_sdk || true)"
+  local after
 
   info "Packaging macOS SDK via osxcross tools (${tools_dir})"
   if [ "${host_os}" = "Darwin" ]; then
@@ -179,8 +210,8 @@ run_sdk_packaging() {
   fi
 
   after="$(find_cached_sdk || true)"
-  if [ -z "${after}" ] || [ "${after}" = "${before}" ]; then
-    die "SDK packaging did not produce a new MacOSX*.sdk.tar.xz in ${SDK_CACHE_DIR}"
+  if [ -z "${after}" ]; then
+    die "SDK packaging did not produce any MacOSX*.sdk.tar.xz in ${SDK_CACHE_DIR}"
   fi
   echo "${after}"
 }
@@ -245,6 +276,8 @@ if [ -z "${cross_toolchains_docker_dir}" ]; then
   die "cross-toolchains docker dir not found in ${CROSS_REPO_DIR} (expected: cross-toolchains/docker or docker/cross-toolchains/docker)"
 fi
 
+patch_cross_toolchains_darwin_sh "${cross_toolchains_docker_dir}"
+
 if [ -z "${SDK_PATH_EFFECTIVE}" ]; then
   info "No macOS SDK tarball found; attempting to package one via osxcross"
   ensure_osxcross_repo
@@ -262,6 +295,8 @@ if [ -z "${SDK_PATH_EFFECTIVE}" ]; then
   SDK_PATH_EFFECTIVE="$(run_sdk_packaging "${tools_dir}")"
   SDK_BASENAME="$(basename "${SDK_PATH_EFFECTIVE}")"
 fi
+
+info "Using macOS SDK tarball: ${SDK_BASENAME}"
 
 BUILD_ARGS=()
 if [ -n "${SDK_URL}" ]; then
