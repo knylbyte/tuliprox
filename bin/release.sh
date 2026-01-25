@@ -585,7 +585,7 @@ declare -A ARCHITECTURES=(
     [WINDOWS]=x86_64-pc-windows-gnu
     [ARM7]=armv7-unknown-linux-musleabihf
     [AARCH64]=aarch64-unknown-linux-musl
-    [DARWIN86]=x86_64-apple-darwin
+    # [DARWIN86]=x86_64-apple-darwin
     [DARWIN64]=aarch64-apple-darwin
 )
 
