@@ -1,7 +1,5 @@
 use base64::{engine::general_purpose, Engine as _};
-use aes::Aes128;
-use ctr::Ctr128BE;
-use ctr::cipher::{KeyIvInit, StreamCipher};
+use openssl::symm::{Cipher, Crypter, Mode};
 use rand::{RngCore, rngs::OsRng, TryRngCore};
 use shared::error::{TuliproxError, TuliproxErrorKind};
 
@@ -44,12 +42,13 @@ pub fn obscure_text(secret: &[u8;16], url: &str) -> Result<String, TuliproxError
         rand::rng().fill_bytes(&mut iv);
     }
 
-    // AES-CTR (compatible with OpenSSL's aes_128_ctr)
-    type Aes128Ctr = Ctr128BE<Aes128>;
-    let mut buf = url.as_bytes().to_vec();
-    let mut cipher = Aes128Ctr::new_from_slices(secret, &iv)
-        .map_err(|_err| TuliproxError::new(TuliproxErrorKind::Info, "Can't create cipher".to_string()))?;
-    cipher.apply_keystream(&mut buf);
+    // AES-CTR
+    let cipher = Cipher::aes_128_ctr();
+    let mut crypter = Crypter::new(cipher, Mode::Encrypt, secret, Some(&iv)).map_err(|_err| TuliproxError::new(TuliproxErrorKind::Info, "Can't create cipher".to_string()))?;
+    let mut buf = vec![0u8; url.len() + cipher.block_size()];
+    let mut count = crypter.update(url.as_bytes(), &mut buf).map_err(|_err| TuliproxError::new(TuliproxErrorKind::Info, "Can't update encryption".to_string()))?;
+    count += crypter.finalize(&mut buf[count..]).map_err(|_err| TuliproxError::new(TuliproxErrorKind::Info, "Can't finalize encryption".to_string()))?;
+    buf.truncate(count);
 
     // IV + Ciphertext → URL-safe Base64
     let mut out = Vec::with_capacity(iv.len() + buf.len());
@@ -72,12 +71,13 @@ pub fn deobscure_text(secret: &[u8;16], encoded: &str) -> Result<String, Tulipro
 
     let (iv, ciphertext) = data.split_at(16);
 
-    // AES-CTR: encryption and decryption are identical (XOR with keystream).
-    type Aes128Ctr = Ctr128BE<Aes128>;
-    let mut buf = ciphertext.to_vec();
-    let mut cipher = Aes128Ctr::new_from_slices(secret, iv)
-        .map_err(|_err| TuliproxError::new(TuliproxErrorKind::Info, "Can't create decrypt cipher".to_string()))?;
-    cipher.apply_keystream(&mut buf);
+    // AES-CTR Decryption
+    let cipher = Cipher::aes_128_ctr();
+    let mut crypter = Crypter::new(cipher, Mode::Decrypt, secret, Some(iv)).map_err(|_err| TuliproxError::new(TuliproxErrorKind::Info, "Can't create decrypt cipher".to_string()))?;
+    let mut buf = vec![0u8; ciphertext.len() + cipher.block_size()];
+    let mut count = crypter.update(ciphertext, &mut buf).map_err(|_errerr| TuliproxError::new(TuliproxErrorKind::Info, "Can't decrypt".to_string()))?;
+    count += crypter.finalize(&mut buf[count..]).map_err(|_err| TuliproxError::new(TuliproxErrorKind::Info, "Can't finalize decrypt".to_string()))?;
+    buf.truncate(count);
 
     String::from_utf8(buf).map_err(|_err| TuliproxError::new(TuliproxErrorKind::Info, "Can't create utf8 string from decrypted".to_string()))
 }
