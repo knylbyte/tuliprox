@@ -125,12 +125,15 @@ gh_guard_permissions() {
     if ! csv_contains "${scopes_csv}" read:packages; then
       missing_optional+=("read:packages")
     fi
+    if ! csv_contains "${scopes_csv}" write:packages; then
+      missing_optional+=("write:packages")
+    fi
     if ! csv_contains "${scopes_csv}" delete:packages; then
       missing_optional+=("delete:packages")
     fi
     if [ "${#missing_optional[@]}" -gt 0 ]; then
       echo "🧨 Missing GHCR cleanup scopes: ${missing_optional[*]}" >&2
-      echo "   Fix: gh auth refresh -h github.com -s read:packages -s delete:packages" >&2
+      echo "   Fix: gh auth refresh -h github.com -s read:packages -s write:packages -s delete:packages" >&2
       echo "   Or skip cleanup: CLEANUP_DOCKER_IMAGES_ON_FAILURE=0" >&2
       die "Insufficient GitHub token scopes for GHCR cleanup."
     fi
@@ -229,6 +232,8 @@ gh_cleanup_docker_images_on_failure() {
 
   declare -a images=("tuliprox" "tuliprox-alpine")
   for image in "${images[@]}"; do
+    local restored_latest="false"
+
     # Best-effort: restore ':latest' to the previously released version before deleting the failed release tag.
     if [ -n "${previous_version}" ] && [ "${previous_version}" != "${bump_version}" ]; then
       if command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1; then
@@ -236,11 +241,19 @@ gh_cleanup_docker_images_on_failure() {
         gh_user="$(gh api user --jq .login 2>/dev/null || true)"
         if [ -n "${gh_user}" ]; then
           echo "⏪ Restoring ghcr.io/${owner}/${image}:latest -> ${previous_version}" >&2
-          gh auth token 2>/dev/null | docker login ghcr.io --username "${gh_user}" --password-stdin >/dev/null 2>&1 || true
-          docker buildx imagetools create \
-            -t "ghcr.io/${owner}/${image}:latest" \
-            "ghcr.io/${owner}/${image}:${previous_version}" \
-            >/dev/null 2>&1 || true
+          if gh auth token 2>/dev/null | docker login ghcr.io --username "${gh_user}" --password-stdin >/dev/null 2>&1; then
+            if docker buildx imagetools create \
+              -t "ghcr.io/${owner}/${image}:latest" \
+              "ghcr.io/${owner}/${image}:${previous_version}" \
+              >/dev/null 2>&1; then
+              restored_latest="true"
+            else
+              echo "⚠️ Failed to restore ':latest' for ${image} -> ${previous_version}. 'latest' may disappear if we delete the failed version." >&2
+              restored_latest="false"
+            fi
+          else
+            echo "⚠️ Failed to login to ghcr.io; cannot restore ':latest' for ${image}." >&2
+          fi
         fi
       fi
     fi
@@ -259,7 +272,7 @@ gh_cleanup_docker_images_on_failure() {
     local version_ids
     if ! version_ids="$(
       gh api "${list_endpoint}" \
-        --jq ".[] | select((.metadata.container.tags // []) | index(\"${bump_version}\")) | .id" \
+        --jq ".[] | select((.metadata.container.tags // []) | index(\"${bump_version}\")) | \"\\(.id)\\t\\(((.metadata.container.tags // []) | index(\\\"latest\\\")) != null)\"" \
         2>/dev/null
     )"; then
       echo "⚠️ Failed to list GHCR package versions for ${image} (missing read:packages scope?). Skipping delete." >&2
@@ -267,15 +280,19 @@ gh_cleanup_docker_images_on_failure() {
     fi
 
     # Defensive: avoid treating API error JSON as an ID.
-    version_ids="$(echo "${version_ids}" | awk '/^[0-9]+$/ { print }' || true)"
+    version_ids="$(echo "${version_ids}" | awk -F'\t' '$1 ~ /^[0-9]+$/ { print }' || true)"
 
     if [ -z "${version_ids}" ]; then
       echo "ℹ️ No GHCR package versions found for ${image}:${bump_version}" >&2
       continue
     fi
 
-    while IFS= read -r vid; do
+    while IFS=$'\t' read -r vid has_latest; do
       [ -z "${vid}" ] && continue
+      if [ "${has_latest}" = "true" ] && [ "${restored_latest}" != "true" ]; then
+        echo "⚠️ Skipping delete of GHCR package version id ${vid} for ${image}:${bump_version} because it contains the 'latest' tag and we could not restore it." >&2
+        continue
+      fi
       echo "🗑 Deleting package version id ${vid} (${image}:${bump_version})" >&2
       gh api -X DELETE "${delete_prefix}/${vid}" >/dev/null 2>&1 || true
     done <<< "${version_ids}"
