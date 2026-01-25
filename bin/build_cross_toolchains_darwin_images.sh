@@ -29,7 +29,7 @@ CLT_DMG="${CLT_DMG:-}"
 FORCE_SDK_REPACK="${FORCE_SDK_REPACK:-0}"
 
 IMAGES=(
-  "x86_64-apple-darwin-cross"
+  # "x86_64-apple-darwin-cross"
   "aarch64-apple-darwin-cross"
 )
 
