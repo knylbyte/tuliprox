@@ -17,6 +17,7 @@ git switch master
 git pull origin master
 
 PWD_ROOT="${PWD%%/tuliprox*}/tuliprox"
+sleep 5
 
 cd $PWD_ROOT
 ./bin/release.sh minor

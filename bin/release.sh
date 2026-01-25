@@ -763,7 +763,13 @@ if [ "${DARWIN_CROSS_ENABLED}" = "true" ]; then
     echo "🍎 Skipping Darwin cross image build (BUILD_DARWIN_CROSS_IMAGES=0)"
   else
     echo "🍎 Ensuring local cross toolchain images for Darwin targets"
-    "${WORKING_DIR}/bin/build_cross_toolchains_darwin_images.sh"
+    darwin_targets=()
+    for darwin_target in "${ARCHITECTURES[@]}"; do
+      if [[ "${darwin_target}" == *"-apple-darwin" ]]; then
+        darwin_targets+=("${darwin_target}")
+      fi
+    done
+    DARWIN_TARGET_TRIPLES="${darwin_targets[*]}" "${WORKING_DIR}/bin/build_cross_toolchains_darwin_images.sh"
   fi
 fi
 
