@@ -87,7 +87,7 @@ gh_token_scopes_csv() {
 
 gh_guard_permissions() {
   local scopes_csv
-  local -a missing_required missing_optional
+  local -a missing_required
   scopes_csv="$(gh_token_scopes_csv || true)"
 
   if [ -z "${scopes_csv}" ]; then
@@ -120,23 +120,39 @@ gh_guard_permissions() {
     fi
   fi
 
+  gh_guard_ghcr_cleanup_permissions() {
+    local owner owner_type image list_endpoint
+    owner="$(gh repo view --json owner -q .owner.login 2>/dev/null || true)"
+    if [ -z "${owner}" ]; then
+      echo "🧨 Could not resolve repo owner for GHCR cleanup permission check." >&2
+      return 1
+    fi
+
+    owner_type="$(gh api "users/${owner}" --jq .type 2>/dev/null || true)"
+    if [ -z "${owner_type}" ]; then
+      owner_type="User"
+    fi
+
+    for image in tuliprox tuliprox-alpine; do
+      if [ "${owner_type}" = "Organization" ]; then
+        list_endpoint="orgs/${owner}/packages/container/${image}/versions?per_page=1"
+      else
+        list_endpoint="users/${owner}/packages/container/${image}/versions?per_page=1"
+      fi
+
+      if ! gh api "${list_endpoint}" >/dev/null 2>&1; then
+        echo "🧨 Missing GitHub permissions for GHCR cleanup: cannot list container package versions for '${owner}/${image}'." >&2
+        echo "   Fix: gh auth refresh -h github.com -s read:packages -s write:packages -s delete:packages" >&2
+        echo "   Or skip cleanup: CLEANUP_DOCKER_IMAGES_ON_FAILURE=0" >&2
+        return 1
+      fi
+    done
+
+    return 0
+  }
+
   if [ "${CLEANUP_DOCKER_IMAGES_ON_FAILURE:-1}" != "0" ]; then
-    missing_optional=()
-    if ! csv_contains "${scopes_csv}" read:packages; then
-      missing_optional+=("read:packages")
-    fi
-    if ! csv_contains "${scopes_csv}" write:packages; then
-      missing_optional+=("write:packages")
-    fi
-    if ! csv_contains "${scopes_csv}" delete:packages; then
-      missing_optional+=("delete:packages")
-    fi
-    if [ "${#missing_optional[@]}" -gt 0 ]; then
-      echo "🧨 Missing GHCR cleanup scopes: ${missing_optional[*]}" >&2
-      echo "   Fix: gh auth refresh -h github.com -s read:packages -s write:packages -s delete:packages" >&2
-      echo "   Or skip cleanup: CLEANUP_DOCKER_IMAGES_ON_FAILURE=0" >&2
-      die "Insufficient GitHub token scopes for GHCR cleanup."
-    fi
+    gh_guard_ghcr_cleanup_permissions || die "Insufficient GitHub permissions for GHCR cleanup."
   fi
 }
 
