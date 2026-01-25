@@ -317,6 +317,72 @@ JSON
   DEVELOP_BRANCH_FROZEN="true"
 }
 
+gh_stop_actions_develop_branch() {
+  if [ "${STOP_DEVELOP_ACTIONS_ON_RELEASE:-1}" = "0" ]; then
+    echo "🛑 Skipping develop workflow cancellation (STOP_DEVELOP_ACTIONS_ON_RELEASE=0)"
+    return 0
+  fi
+
+  if ! command -v gh >/dev/null 2>&1; then
+    die "gh is required to stop workflows on develop (install GitHub CLI)."
+  fi
+  gh auth status >/dev/null 2>&1 || die "Not logged into GitHub CLI. Run 'gh auth login' first."
+
+  echo "🛑 Stopping GitHub Actions workflows on 'develop' (queued/in_progress)"
+
+  local runs
+  runs="$(
+    gh run list \
+      -b develop \
+      -L 50 \
+      --json databaseId,status,workflowName,displayTitle \
+      --jq '.[] | select(.status=="queued" or .status=="in_progress") | "\(.databaseId)\t\(.status)\t\(.workflowName)\t\(.displayTitle)"' \
+      2>/dev/null || true
+  )"
+
+  if [ -z "${runs}" ]; then
+    echo "✅ No queued/in_progress workflow runs found on 'develop'."
+    return 0
+  fi
+
+  local fail_count=0
+  local total_count=0
+  local id status workflow_name title
+  while IFS=$'\t' read -r id status workflow_name title; do
+    [ -z "${id}" ] && continue
+    total_count=$((total_count + 1))
+    echo "🛑 Cancelling run ${id} (${status}) - ${workflow_name}: ${title}" >&2
+    if ! gh run cancel "${id}" >/dev/null 2>&1; then
+      echo "⚠️ Failed to cancel run ${id}" >&2
+      fail_count=$((fail_count + 1))
+    fi
+  done <<< "${runs}"
+
+  if [ "${fail_count}" -gt 0 ]; then
+    die "Failed to cancel ${fail_count}/${total_count} workflow runs on 'develop'. Check your permissions (scopes: repo, workflow)."
+  fi
+
+  # Best-effort: wait until the queue is drained so the release doesn't race ongoing develop jobs.
+  local remaining
+  for _ in {1..20}; do
+    remaining="$(
+      gh run list \
+        -b develop \
+        -L 50 \
+        --json status \
+        --jq '[.[] | select(.status=="queued" or .status=="in_progress")] | length' \
+        2>/dev/null || echo "0"
+    )"
+    if [ "${remaining}" = "0" ]; then
+      echo "✅ All develop workflows are stopped."
+      return 0
+    fi
+    sleep 3
+  done
+
+  echo "⚠️ Some develop workflows are still not stopped (remaining=${remaining:-unknown}). Continuing anyway." >&2
+}
+
 gh_unfreeze_develop_branch() {
   if [ "${DEVELOP_BRANCH_FROZEN}" != "true" ]; then
     return 0
@@ -486,7 +552,6 @@ fi
 
 gh auth status >/dev/null 2>&1 || die "Not logged into GitHub CLI. Run 'gh auth login' first."
 gh_guard_permissions
-gh_freeze_develop_branch
 
 # Read current tag on HEAD
 VERSION="$(git describe --tags --exact-match 2>/dev/null || true)"
@@ -540,6 +605,10 @@ read -rp "Releasing version: '${BUMP_VERSION}', please confirm? [y/N] " answer
 if [[ ! "$answer" =~ ^[Yy]$ ]]; then
     die "Canceled."
 fi
+
+gh_freeze_develop_branch
+
+gh_stop_actions_develop_branch
 
 echo "🧰 Setting TMPDIR to '$PWD/dev/tmp' for isolated builds"
 TMPDIR_WORK="${WORKING_DIR}/dev/tmp"
