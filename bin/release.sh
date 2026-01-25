@@ -547,7 +547,6 @@ mkdir -p "${TMPDIR_WORK}" || die "Failed to create TMPDIR: ${TMPDIR_WORK}"
 if [ ! -d "${TMPDIR_WORK}" ] || [ ! -w "${TMPDIR_WORK}" ]; then
   die "TMPDIR is not writable: ${TMPDIR_WORK}"
 fi
-echo "🧰 Setting TMPDIR to '${TMPDIR_WORK}' for isolated builds"
 export TMPDIR="${TMPDIR_WORK}"
 
 git commit -m "ci: bump version v${BUMP_VERSION}"
