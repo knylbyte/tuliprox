@@ -16,7 +16,7 @@ serde_json = { version = "1", features = ["raw_value"] }
 quick-xml = { version = "0.39", features = ["async-tokio", "serialize"] }
 regex = "1.12"
 clap = { version = "4", features = ["derive"] }
-reqwest = { version = "0", features = ["blocking", "json", "stream", "rustls-tls", "socks"] }
+reqwest = { version = "0", default-features = false, features = ["blocking", "json", "stream", "rustls-tls", "socks"] }
 url = "2.5.8"
 chrono = "0.4"
 cron = "0.15"
@@ -31,7 +31,8 @@ path-clean = "1.0"
 pest = "2.8"
 pest_derive = "2.8"
 enum-iterator = "2"
-openssl = { version = "*", features = ["vendored"] } #https://docs.rs/openssl/0.10.34/openssl/#vendored
+aes = "0.8"
+ctr = "0.9"
 deunicode = "1.6.2"
 mime = "0.3"
 log = "0.4"
