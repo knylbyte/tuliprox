@@ -27,11 +27,42 @@ XCODE_DMG="${XCODE_DMG:-}"
 XCODE_XIP="${XCODE_XIP:-}"
 CLT_DMG="${CLT_DMG:-}"
 FORCE_SDK_REPACK="${FORCE_SDK_REPACK:-0}"
+DARWIN_TARGET_TRIPLES="${DARWIN_TARGET_TRIPLES:-}"
+OSXCROSS_COMMIT_FOR_TOOLCHAINS="${OSXCROSS_COMMIT_FOR_TOOLCHAINS:-master}"
 
 IMAGES=(
   "x86_64-apple-darwin-cross"
   "aarch64-apple-darwin-cross"
 )
+
+apply_darwin_target_filter() {
+  local triples="${1:-}"
+  if [ -z "${triples}" ]; then
+    return 0
+  fi
+
+  local -a images_filtered
+  images_filtered=()
+
+  local triple
+  for triple in ${triples}; do
+    case "${triple}" in
+      x86_64-apple-darwin) images_filtered+=("x86_64-apple-darwin-cross") ;;
+      aarch64-apple-darwin) images_filtered+=("aarch64-apple-darwin-cross") ;;
+      *)
+        die "Unsupported Darwin target triple for toolchain image build: ${triple} (expected x86_64-apple-darwin or aarch64-apple-darwin)"
+        ;;
+    esac
+  done
+
+  if [ "${#images_filtered[@]}" -eq 0 ]; then
+    die "DARWIN_TARGET_TRIPLES provided but no supported Darwin targets found: ${triples}"
+  fi
+
+  IMAGES=("${images_filtered[@]}")
+}
+
+apply_darwin_target_filter "${DARWIN_TARGET_TRIPLES}"
 
 CROSS_IMAGE_REPOSITORY="${CROSS_IMAGE_REPOSITORY:-ghcr.io/cross-rs}"
 
@@ -147,6 +178,16 @@ patch_cross_toolchains_darwin_sh() {
   local darwin_sh="${cross_toolchains_docker_dir}/darwin.sh"
   if [ ! -f "${darwin_sh}" ]; then
     return 0
+  fi
+
+  if grep -Eq '^[[:space:]]*local commit=' "${darwin_sh}"; then
+    if grep -Eq "^[[:space:]]*local commit=${OSXCROSS_COMMIT_FOR_TOOLCHAINS}$" "${darwin_sh}"; then
+      :
+    else
+      info "Patching cross-toolchains darwin.sh osxcross commit -> ${OSXCROSS_COMMIT_FOR_TOOLCHAINS}"
+      sed -i.bak -E "s/^([[:space:]]*local commit=).*/\\1${OSXCROSS_COMMIT_FOR_TOOLCHAINS}/" "${darwin_sh}"
+      rm -f "${darwin_sh}.bak"
+    fi
   fi
 
   # Workaround for an osxcross/tools.sh bug: it filters out SDK paths containing
