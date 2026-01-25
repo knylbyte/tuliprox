@@ -352,7 +352,11 @@ cleanup() {
   exit_code=$?
 
   echo "🧰 Restoring TMPDIR to original value"
-  export TMPDIR="$TMPDIR_ORIG"
+  if [ -n "${TMPDIR_ORIG:-}" ]; then
+    export TMPDIR="$TMPDIR_ORIG"
+  else
+    unset TMPDIR
+  fi
 
   # Some tools (rustc/gh) fail when the current directory was removed (e.g., 'cargo clean'
   # executed while being inside ./target). Re-anchor in the repo root for best-effort cleanup.
@@ -538,7 +542,13 @@ if [[ ! "$answer" =~ ^[Yy]$ ]]; then
 fi
 
 echo "🧰 Setting TMPDIR to '$PWD/dev/tmp' for isolated builds"
-export TMPDIR="$PWD/dev/tmp"
+TMPDIR_WORK="${WORKING_DIR}/dev/tmp"
+mkdir -p "${TMPDIR_WORK}" || die "Failed to create TMPDIR: ${TMPDIR_WORK}"
+if [ ! -d "${TMPDIR_WORK}" ] || [ ! -w "${TMPDIR_WORK}" ]; then
+  die "TMPDIR is not writable: ${TMPDIR_WORK}"
+fi
+echo "🧰 Setting TMPDIR to '${TMPDIR_WORK}' for isolated builds"
+export TMPDIR="${TMPDIR_WORK}"
 
 git commit -m "ci: bump version v${BUMP_VERSION}"
 git push origin HEAD:master
