@@ -8,6 +8,7 @@ if ! cd "${WORKING_DIR}" >/dev/null 2>&1; then
   exit 1
 fi
 
+TMPDIR_ORIG=$TMPDIR
 RESOURCES_DIR="$WORKING_DIR/resources"
 RELEASE_DIR="$WORKING_DIR/release"
 FRONTEND_DIR="${WORKING_DIR}/frontend"
@@ -350,6 +351,9 @@ JSON
 cleanup() {
   exit_code=$?
 
+  echo "🧰 Restoring TMPDIR to original value"
+  export TMPDIR="$TMPDIR_ORIG"
+
   # Some tools (rustc/gh) fail when the current directory was removed (e.g., 'cargo clean'
   # executed while being inside ./target). Re-anchor in the repo root for best-effort cleanup.
   cd "${WORKING_DIR}" >/dev/null 2>&1 || true
@@ -532,6 +536,9 @@ read -rp "Releasing version: '${BUMP_VERSION}', please confirm? [y/N] " answer
 if [[ ! "$answer" =~ ^[Yy]$ ]]; then
     die "Canceled."
 fi
+
+echo "🧰 Setting TMPDIR to '$PWD/dev/tmp' for isolated builds"
+export TMPDIR="$PWD/dev/tmp"
 
 git commit -m "ci: bump version v${BUMP_VERSION}"
 git push origin HEAD:master
