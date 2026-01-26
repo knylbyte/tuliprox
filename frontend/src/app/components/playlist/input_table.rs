@@ -6,7 +6,6 @@ use std::str::FromStr;
 use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::concat_string;
 use shared::error::{info_err_res, TuliproxError};
 use shared::model::{ConfigInputAliasDto, ConfigInputDto, SortOrder};
 use crate::app::components::menu_item::MenuItem;

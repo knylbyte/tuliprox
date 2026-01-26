@@ -278,7 +278,7 @@ impl ConfigInput {
     }
 
     pub fn get_enabled_aliases(&self) -> Option<Vec<&ConfigInputAlias>> {
-        self.aliases.as_ref().map_or(None, |aliases| {
+        self.aliases.as_ref().and_then(|aliases| {
             let result: Vec<_> = aliases.iter().filter(|alias| alias.enabled).collect();
             if result.is_empty() {
                 None
