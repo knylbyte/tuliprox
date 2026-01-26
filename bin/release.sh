@@ -285,13 +285,14 @@ gh_cleanup_docker_images_on_failure() {
       delete_prefix="users/${owner}/packages/container/${image}/versions"
     fi
 
-    local version_ids
+    local version_ids gh_err
     if ! version_ids="$(
       gh api "${list_endpoint}" \
-        --jq ".[] | select((.metadata.container.tags // []) | index(\"${bump_version}\")) | \"\\(.id)\\t\\(((.metadata.container.tags // []) | index(\\\"latest\\\")) != null)\"" \
-        2>/dev/null
+        --jq ".[] | select((.metadata.container.tags // []) | index(\"${bump_version}\")) | [.id, (((.metadata.container.tags // []) | index(\"latest\")) != null)] | @tsv" \
+        2>&1
     )"; then
-      echo "⚠️ Failed to list GHCR package versions for ${image} (missing read:packages scope?). Skipping delete." >&2
+      gh_err="${version_ids}"
+      echo "⚠️ Failed to list GHCR package versions for ${image}. Skipping delete. (${gh_err})" >&2
       continue
     fi
 
@@ -699,12 +700,12 @@ cd "$FRONTEND_DIR" || die "Can't find frontend directory"
 echo "🛠️ Building version $BUMP_VERSION"
 
 declare -A ARCHITECTURES=(
+    [DARWIN64]=aarch64-apple-darwin
     [LINUX]=x86_64-unknown-linux-musl
     [WINDOWS]=x86_64-pc-windows-gnu
     [ARM7]=armv7-unknown-linux-musleabihf
     [AARCH64]=aarch64-unknown-linux-musl
     # [DARWIN86]=x86_64-apple-darwin
-    [DARWIN64]=aarch64-apple-darwin
 )
 
 declare -A DIRS=(
