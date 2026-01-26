@@ -700,11 +700,11 @@ cd "$FRONTEND_DIR" || die "Can't find frontend directory"
 echo "🛠️ Building version $BUMP_VERSION"
 
 declare -A ARCHITECTURES=(
-    [DARWIN64]=aarch64-apple-darwin
     [LINUX]=x86_64-unknown-linux-musl
     [WINDOWS]=x86_64-pc-windows-gnu
     [ARM7]=armv7-unknown-linux-musleabihf
     [AARCH64]=aarch64-unknown-linux-musl
+    # [DARWIN64]=aarch64-apple-darwin
     # [DARWIN86]=x86_64-apple-darwin
 )
 
@@ -713,8 +713,8 @@ declare -A DIRS=(
     [WINDOWS]=tuliprox_${BUMP_VERSION}_windows_x86_64
     [ARM7]=tuliprox_${BUMP_VERSION}_armv7
     [AARCH64]=tuliprox_${BUMP_VERSION}_aarch64
-    [DARWIN86]=tuliprox_${BUMP_VERSION}_apple-darwin_x86_64
-    [DARWIN64]=tuliprox_${BUMP_VERSION}_apple-darwin_aarch64
+    # [DARWIN86]=tuliprox_${BUMP_VERSION}_apple-darwin_x86_64
+    # [DARWIN64]=tuliprox_${BUMP_VERSION}_apple-darwin_aarch64
 )
 
 # Special case mapping for binary extensions (e.g., Windows needs .exe)
