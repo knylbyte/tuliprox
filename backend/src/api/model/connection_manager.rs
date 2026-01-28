@@ -1,10 +1,12 @@
+use crate::api::model::{ActiveProviderManager, ActiveUserManager, CustomVideoStreamType, EventManager, EventMessage, ProviderHandle, SharedStreamManager};
+use crate::auth::Fingerprint;
+use crate::utils::debug_if_enabled;
+use log::{warn};
+use shared::model::{ActiveUserConnectionChange, StreamChannel, VirtualId};
+use shared::utils::sanitize_sensitive_info;
 use std::borrow::Cow;
 use std::net::SocketAddr;
-use crate::api::model::{ActiveProviderManager, ActiveUserManager, CustomVideoStreamType, EventManager, EventMessage, ProviderHandle, SharedStreamManager};
 use std::sync::Arc;
-use log::{debug};
-use shared::model::{ActiveUserConnectionChange, StreamChannel};
-use crate::auth::Fingerprint;
 
 pub struct ConnectionManager {
     pub user_manager: Arc<ActiveUserManager>,
@@ -28,7 +30,7 @@ impl ConnectionManager {
             provider_manager: Arc::clone(provider_manager),
             shared_stream_manager: Arc::clone(shared_stream_manager),
             event_manager: Arc::clone(event_manager),
-            close_socket_signal_tx
+            close_socket_signal_tx,
         }
     }
 
@@ -36,9 +38,14 @@ impl ConnectionManager {
         self.close_socket_signal_tx.subscribe()
     }
 
-    pub fn kick_connection(&self, addr: &SocketAddr) -> bool {
+    pub async fn kick_connection(&self, addr: &SocketAddr, virtual_id: VirtualId, block_secs: u64) -> bool {
+        debug_if_enabled!("User {} kicked for stream with virtual_id {virtual_id} for {block_secs} seconds with addr {}.",
+            self.user_manager.get_username_for_addr(addr).await.unwrap_or_default(), sanitize_sensitive_info(&addr.to_string()));
+        if block_secs > 0 {
+            self.user_manager.block_user_for_stream(addr, virtual_id, block_secs).await;
+        }
         if let Err(e) = self.close_socket_signal_tx.send(*addr) {
-            debug!("No active receivers for close signal ({addr}): {e:?}");
+            debug_if_enabled!("No active receivers for close signal ({}): {e:?}", sanitize_sensitive_info(&addr.to_string()));
             return false;
         }
         true
@@ -58,7 +65,7 @@ impl ConnectionManager {
 
     pub async fn release_provider_handle(&self, provider_handle: Option<ProviderHandle>) {
         if let Some(handle) = provider_handle {
-            self.release_provider_connection(&handle.id).await;
+            self.provider_manager.release_handle(&handle).await;
         }
     }
 
@@ -69,11 +76,12 @@ impl ConnectionManager {
 
     #[allow(clippy::too_many_arguments)]
     pub async fn update_connection(&self, username: &str, max_connections: u32, fingerprint: &Fingerprint,
-                                provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>) {
-        if let Some(stream_info) = self.user_manager.update_connection(username, max_connections, fingerprint, provider, stream_channel, user_agent).await {
+                                   provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>, session_token: Option<&str>) {
+        if let Some(stream_info) = self.user_manager.update_connection(username, max_connections, fingerprint, provider, stream_channel, user_agent, session_token).await {
             self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Updated(stream_info)));
         } else {
-            // TODO what do we do here ?
+            warn!("Failed to register connection for user {username} at {}; disconnecting client", fingerprint.addr);
+            let _ = self.kick_connection(&fingerprint.addr, 0, 0).await;
         }
     }
 
@@ -82,9 +90,8 @@ impl ConnectionManager {
     // }
 
     pub async fn update_stream_detail(&self, addr: &SocketAddr, video_type: CustomVideoStreamType) {
-       if let Some(stream_info) = self.user_manager.update_stream_detail(addr, video_type).await {
-           self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Updated(stream_info)));
-       }
+        if let Some(stream_info) = self.user_manager.update_stream_detail(addr, video_type).await {
+            self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Updated(stream_info)));
+        }
     }
-
 }

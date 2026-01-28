@@ -3,22 +3,28 @@ use std::rc::Rc;
 use std::collections::BTreeMap;
 use gloo_timers::callback::Interval;
 use yew::prelude::*;
-use shared::model::{ActiveUserConnectionChange, StatusCheck};
+use shared::model::{ActiveUserConnectionChange, StatusCheck, SystemInfo};
 use crate::hooks::use_service_context;
 use yew::platform::spawn_local;
 use crate::model::EventMessage;
 
+type ServerStatusState = (UseStateHandle<RefCell<Option<Rc<StatusCheck>>>>, UseStateHandle<RefCell<Option<Rc<SystemInfo>>>>);
+
 #[hook]
 pub fn use_server_status(
     status: UseStateHandle<Option<Rc<StatusCheck>>>,
-) ->  UseStateHandle<RefCell<Option<Rc<StatusCheck>>>> {
+    system_info: UseStateHandle<Option<Rc<SystemInfo>>>,
+) -> ServerStatusState {
     let services = use_service_context();
     let status_holder = use_state(|| RefCell::new(None::<Rc<StatusCheck>>));
+    let system_info_holder = use_state(|| RefCell::new(None::<Rc<SystemInfo>>));
 
     {
         let services_ctx = services.clone();
         let status_signal = status.clone();
         let status_holder_signal = status_holder.clone();
+        let system_info_signal = system_info.clone();
+        let system_info_holder_signal = system_info_holder.clone();
 
         use_effect_with((), move |_| {
             let subid = services_ctx.event.subscribe(move |msg| {
@@ -80,6 +86,11 @@ pub fn use_server_status(
                         *status_holder_signal.borrow_mut() = Some(Rc::clone(&new_status));
                         status_signal.set(Some(new_status));
                     },
+                    EventMessage::SystemInfoUpdate(system_info) => {
+                        let info = Rc::new(system_info);
+                        *system_info_holder_signal.borrow_mut() = Some(Rc::clone(&info));
+                        system_info_signal.set(Some(info));
+                    }
                     _ => {}
                 }
             });
@@ -102,5 +113,5 @@ pub fn use_server_status(
             }
         });
     }
-    status_holder
+    (status_holder, system_info_holder)
 }

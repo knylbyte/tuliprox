@@ -24,6 +24,11 @@ body {
     font-family: inherit;
   }
 
+  input::placeholder {
+    color: var(--modest-text-color);
+    opacity: 0.8;
+  }
+
   h1 {
     margin: var(--margin-mini) 0;
   }

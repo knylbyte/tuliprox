@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+use std::sync::Arc;
+use deunicode::deunicode_with_tofu_cow;
 
 pub trait Capitalize {
     fn capitalize(&self) -> String;
@@ -18,7 +20,7 @@ impl<T: AsRef<str>> Capitalize for T {
     }
 }
 
-pub fn get_trimmed_string(value: &Option<String>) -> Option<String> {
+pub fn get_trimmed_string(value: Option<&str>) -> Option<String> {
     if let Some(v) = value {
         let trimmed = v.trim();
         if !trimmed.is_empty() {
@@ -58,8 +60,8 @@ pub fn get_non_empty_str<'a>(first: &'a str, second: &'a str, third: &'a str) ->
     }
 }
 
-pub fn is_blank_optional_string(s: &Option<String>) -> bool {
-    s.is_none() || s.as_ref().is_some_and(|s| s.trim().is_empty())
+pub fn is_blank_optional_str(s: Option<&str>) -> bool {
+    s.as_ref().is_none_or(|s| s.chars().all(|c| c.is_whitespace()))
 }
 
 pub fn trim_slash(s: &str) -> Cow<'_, str> {
@@ -127,15 +129,48 @@ pub fn humanize_snake_case(s: &str) -> String {
     result
 }
 
-pub fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+pub fn deunicode_string(s: &str) -> Cow<'_, str> {
+    deunicode_with_tofu_cow(s,  "[?]")
+}
+
+pub fn longest<'a>(a: &'a Arc<str>, b: &'a Arc<str>) -> &'a Arc<str> {
    if a.len() >= b.len() { a } else { b }
 }
+
+// ------------------------------------------------------------
+// Generic string concatenation macro with optional capacity hint
+// Usage:
+//   let s = concat_string!("/", user, "/", pass, "/", id);
+//   let s = concat_string!(cap = 128; prefix, "/", value);
+// The macro writes all arguments using Display into a preallocated String
+// to minimize temporary allocations and copies.
+// ------------------------------------------------------------
+#[macro_export]
+macro_rules! concat_string {
+    (cap = $cap:expr; $($arg:expr),* $(,)?) => {{
+        let mut s = String::with_capacity($cap);
+        $( s.push_str($arg); )*
+        s
+    }};
+    ($($s:expr),+ $(,)?) => {{
+        let parts = [$($s),+];
+        let cap = parts.iter().map(|s| s.len()).sum();
+
+        let mut out = String::with_capacity(cap);
+        for s in parts {
+            out.push_str(s);
+        }
+        out
+    }};
+}
+
 
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
     use crate::utils::Capitalize;
     use super::generate_random_string;
+    use crate as shared; // allow path-based macro call in tests
 
     #[test]
     fn test_generate_random_string() {
@@ -149,6 +184,22 @@ mod test {
     #[test]
     fn test_capitalize() {
         assert_eq!("hELLO".capitalize(), "Hello");
+    }
+
+    #[test]
+    fn test_concat_string_basic() {
+        let a = "hello";
+        let b = String::from("world");
+        let n = 42;
+        let s = shared::concat_string!(a, " ", &b, " ", &n.to_string());
+        assert_eq!(s, "hello world 42");
+    }
+
+    #[test]
+    fn test_concat_string_with_cap() {
+        let part = "abc";
+        let s = shared::concat_string!(cap = 16; part, "/", &123.to_string());
+        assert_eq!(s, "abc/123");
     }
 
 }

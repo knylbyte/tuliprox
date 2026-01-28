@@ -1,4 +1,126 @@
 # Changelog
+
+
+## 3.3.0 (2026-01-03)
+
+## ⚠️ Breaking Changes
+- **Global Input Definitions**: To align input definitions with the SourceEditor, inputs are now defined globally in the `inputs` section of the config file. Each source can reference one or more inputs by their name in the `inputs` attribute.
+- **Data Format Migration**: Due to heavy refactoring, the old data format is invalid. You need to clean your `data` folder and update the playlists.
+- **B+Tree Storage Format**: Storage format has changed to a more efficient Slotted Page architecture.
+  - **Index optimization**: Added index to B+Tree to accelerate queries without tree traversal.
+  - **TargetIdMapping Optimization**: Refactored to use disk-based B+Tree operations, eliminating startup latency.
+  - **B+Tree Header Metadata**: Implemented efficient `BPlusTreeMetadata` Enum to persist `VirtualId` counter directly in the database header.
+  - **Fast Initialization**: `TargetIdMapping` now conditionally loads the tree, achieving near-instant startup for established databases.
+- **Configuration Renames**: 
+  - `threads` attribute in `config.yml` renamed to `process_parallel` (boolean).
+  - Added mandatory `rewrite_secret` to `reverse_proxy` config for stable resource URLs.
+  - Removed `forced_retry_interval_secs`.
+- **Input Batch Changes**: `name` attribute is now mandatory for input type batch to ensure stable playlist UUIDs.
+- **Favorites Redesign**: Replaced implicit `create_alias` with explicit `add_favourite(group_name)` script function.
+- **EpgSmartMatch**: Field `name_prefix` syntax needs to be changed from  `name_prefix: !suffix "."` to `name_prefix: { suffix: "." }`.
+- **Sort**: Sort can now use filter to sort specific entries.
+  ```yaml
+    sort:
+      match_as_ascii: true
+      rules:
+        - target: group
+          field: group
+          filter: Input ~ "provider_1"
+          order: asc
+        - target: channel  
+          field: caption
+          filter: Group ~ "!US_TNT_ENTERTAIN!"
+          order: asc
+          sequence:
+            - "!CHAN_SEQ!"
+            - '(?i)\bHD\b'
+            - '(?i)\bSD\b'
+  ```
+  - Trakt api config field `key` is now `api_key`. Added `user_agent` field to Trakt api config
+
+## 🌟 New Features
+- **Discord Notifications**: Support for Discord notifications via webhooks with optional Handlebars templates.
+- **Enhanced REST Messaging**: Support for custom HTTP methods, headers, and Handlebars templating.
+- **Local Library Module**: Comprehensive local video file scanning and metadata management.
+  - Recursive scanning, automatic classification, and NFO/TMDB metadata resolution.
+  - Incremental scanning and virtual ID management.
+- **Panel API Integration**: Optional integration to renew expired input accounts or provision new accounts to ensure a minimum valid input accounts.
+- **Playlist Caching**: Added `cache_duration` to inputs, allowing configurable provider playlist cache times during subsequent updates (e.g., `60s`, `5m` `12h`, `1d`).
+- **Database Viewer**: New CLI flags `--dbx` and `--dbm` to inspect internal database content.
+- **Added `disk_based_processing`**: (boolean, default `false`) to `config.yml`. When enabled, input playlists are processed from disk instead of memory.
+- **User-Agent `default_user_agent`**: Ensures that outgoing requests always pass a default user agent.
+- **Streaming**: Added `grace_period_hold_stream` configuration option to delay stream output until grace period connection checks are completed.
+
+## ⚙️ Engine & Storage Optimizations
+- **Slotted Page Architecture**: Improved space utilization and support for variable-length keys.
+- **Adaptive LZ4 Compression**: Optimized disk footprint for stored values.
+- **Atomic I/O Layer**: Refactored for atomic writes and file locking, ensuring data integrity.
+- **B+Tree Compaction**: Reclaim space after deletions or mass updates.
+- **Batch Upsert**: Significantly higher throughput during mass inserts/updates.
+- **Disk-Based Provider Processing**: New `disk_based_processing` config option massively reduces RAM usage by streaming playlist data from disk (BPlusTree) during updates.
+- **String Interning**: Implemented `Arc<str>` string interning for playlist items to further reduce memory footprint.
+
+## 🔍 Mapping & Filtering Enhancements
+- **Accent-Independent Matching**: Integrated `match_as_ascii` flag for robust text matching (e.g., "Cinema" matches "Cinéma").
+- **Deunicoding Support**: `ValueProvider` and `ValueAccessor` now support on-the-fly deunicoding.
+- **Flexible Sorting**: Added `order: none` support to retain source order in mappings.
+- **Mapper Loop enhancement**: Updated `for_each` syntax to `variable.for_each((key, value) => { ... })`. Added support for `_` ignored variables in loop.
+
+## 💻 WebUI & API
+- **Source Editor Integration**: Redesigned UI for global input management and hot-reloading.
+- **Messaging Config View**: New UI for configuring Discord and enhanced REST settings.
+- **Performance Monitoring**: Added CPU usage display to the dashboard.
+- **Stream Table Enhancements**: Added "Copy-To-Clipboard" functions and improved connection monitoring.
+- **UX Improvements**: Implemented API-user category selection and better session tracking for HLS.
+- **Filter View**: Compacted pretty printing for filters.
+- **Mapper View**: Updated to support new `for_each` syntax.
+- Added **Stream Buffer** settings (Enabled, Size) to Reverse Proxy configuration UI.
+- Added **TMDB** settings (Rate Limit, Cache Duration, Language) and **Metadata Formats** (NFO support) to Library configuration UI.
+
+## 🚀 Performance & Stability
+- **Deadlock Resolution**: Fixed a potential deadlock in `ProviderLineupManager::reconcile_connections` by refactoring `DashMap` iterations to use snapshots, preventing internal shard locks from being held during async lock acquisition.
+- **Connection Reconciliation & GC**: Resolved a critical issue where provider connection counters could leak or become stale during hot reloads. Added automatic garbage collection for unused provider records to prevent logical memory buildup.
+- **Full Async Runtime**: Transitioned to `#[tokio::main]` and async I/O throughout the entire application.
+- **Non-Blocking Operations**: Cache persistence, playlist exports, and config saves moved to async tasks to prevent runtime stalls.
+- **Zero-Copy Buffers**: Reduced memory usage for shared stream burst buffers.
+- **Improved Connection Handling**: Refactored provider registration to prevent zombie sockets and race conditions.
+- **HLS Session Tracking**: Improved session matching to maintain correct active connection counts.
+- **Resource Cache**: Avoid blocking runtime, async persistence, robust storage, incomplete downloads deleted.
+- **File Operations**: Normalized FileLockManager paths, async playlist persistence, async JSON writers, async EPG exports, async config/API proxy saves, async video download queue.
+- **M3U Exports**: Stream asynchronously.
+- **Logging**: Detailed shared-stream/buffer/provider logging.
+- **Connection Failures**: Explicit disconnect on registration failures.
+- **API User DB**: Async persistence for user management APIs.
+- **Playlist Updates**: Use Tokio tasks for reduced overhead.
+- **XMLTV Timeshift**: Stream asynchronously.
+- **Healthcheck CLI**: Uses async Reqwest client.
+- **Shared Stream Shutdown**: Drops registry locks before releasing provider handles.
+- **EPG Icon URLs**: Rewritten in reverse proxy mode.
+- **Short EPG**: Served from local disk.
+- **Client Requests**: Extended debug logging for client requests and ID chain.
+- **XTream Fixes**: Fixed series/catch-up lookups using `series-info virtual_id`.
+- **Cloudflare Header**: Added `cloudflare_header` to reverse proxy `disable_header` settings.
+- **Kick Seconds**: `kick_secs` added to `config.yml web_ui` config.
+- **Improved connection handling** for users with strict connection limits during streaming operations.
+- **Fixed streaming response handling** for specific content types.
+- **Enhanced validation of response headers** to prevent invalid values.
+- **Corrected request header prioritization logic**.
+- **Fix**: Re-instated EPG Title Synchronization after playlist updates.
+- **Optimization**: Significant EPG memory reduction.
+- **Optimization**: Improved EPG parsing performance.
+- **EPG**: Fixed XMLTV timeshift to correctly apply user-defined timezone offsets in the generated XML output.
+
+## ⚙️ Messaging Refactoring
+- **Structured Messaging**: Transitioned from JSON-string-based notifications to a strictly typed messaging pipeline.
+- **Backend Model Migration**: Moved complex messaging models (`WatchChanges`, `ProcessingStats`) from the shared crate to the backend to reduce shared-library overhead.
+- **Unified API**: Consolidated all notification types into a single, type-safe `send_message` function.
+- **Template Improvements**:
+  - Added per-message-type templates for Telegram, Discord, and REST messaging channels with support for Info, Stats, Error, and Watch notifications.
+  - Renamed template context fields for better clarity (e.g., `event` → `processing`).
+  - Improved data accessibility in Handlebars templates with optimized context mapping (e.g., `{{processing.stats}}` or shorthand `{{stats}}`).
+  - Implemented template loading from files and HTTP/HTTPS URIs with automatic discovery from configuration directories.
+  - Added UI components for managing per-type templates with textarea editor support.
+
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
 - Real-time active provider connection monitoring (dashboard + websocket)
@@ -7,7 +129,7 @@
 - More robust connection-state and provider-handle management
 - Streamlined event notifications and provider-count reporting
 - Added configurable `reverse_proxy.resource_retry` (UI + server) to tune max attempts, base delay, and exponential backoff multiplier for proxied resources.
-- Multi Strm outputs with same type is now allowed. 
+- Multi Strm outputs with same type is now allowed.
 - Added new mapper function `pad(text | number, number, char, optional position: "<" | ">" | "^")`
 - Added new mapper function `format` for simple in-text replacement like `format("Hello {}! Hello {}!", "Bob", "World")`
 - Added `reverse_proxy.stream.shared_burst_buffer_mb` to control shared-stream burst buffer size (default 12 MB).
@@ -19,13 +141,13 @@
 - Catchup stream fix cycling through multiple providers on play.
 - Custom streams fix and update webui stream info
 - Added TimeZone to `epg_timeshift: [-+]hh:mm or TimeZone`, example `Europe/Paris`, `America/New_York`, `-2:30`(-2h30m), `+0:15` (15m), `2` (2h), `:30` (30m), `:3` (3m)
-If you use TimeZone the timeshift will change on Summer/Winter time if its applied in the TZ.
+  If you use TimeZone the timeshift will change on Summer/Winter time if its applied in the TZ.
 - Fixed: Mappings now automatically reload and reapply after configuration changes, preventing stale settings.
 - Search in Playlist Explorer now returns groups instead of matching flat channel list.
 - Added `use_memory_cache` attribute to target definition to hold playlist in memory to reduce disc access.
-Placing playlist into memory causes more RAM usage but reduces disk access.
-- Added optional `filter` attribute to Output (except HDHomerun-Output). 
-Output filters are applied after all transformations have been performed, therefore, all filter contents must refer to the final state of the playlist.
+  Placing playlist into memory causes more RAM usage but reduces disk access.
+- Added optional `filter` attribute to Output (except HDHomerun-Output).
+  Output filters are applied after all transformations have been performed, therefore, all filter contents must refer to the final state of the playlist.
 - Added burst buffer to shared stream
 - Telegram message thread support. thread id can now be appended to chat-id like `chat-id:thread-id`.
 - Telegram supports markdown generation for structured json messages. simply set `markdown: true` in telegram config.
@@ -39,11 +161,12 @@ Output filters are applied after all transformations have been performed, theref
 - UserTable: Copy credentials to clipboard from user table
 - UserTable: Kick user action from streams table
 - UserTable: Auto-generated username/password for new proxy users
+- Update process uses now streams for data processing. 
 
 # 3.1.7 (2025-10-10)
 - Added Dark/Bright theme switch
 - Resource proxy retries failed requests up to three times and respects the `Retry-After` header (falls back to 100 ms wait)
-to reduce transient HTTP errors (400, 408, 425, 429, 5xx)
+  to reduce transient HTTP errors (400, 408, 425, 429, 5xx)
 - Added `accept_insecure_ssl_certificates` option in `config.yml` (for serving images over HTTPS without a valid SSL certificate)
 - VOD streams now use tmdbid from `get_vod_streams` if available, removing the need for `resolve_vod` in STRM generation
 - Fixed file length issue in STRM generation
@@ -63,14 +186,14 @@ to reduce transient HTTP errors (400, 408, 425, 429, 5xx)
 - Fixed auto EPG for batch inputs
 - Fixed EPG URL prepare
 - Content Security Policies configurable via config, default OFF
-- WebUI Config View editor for config.yml added 
+- WebUI Config View editor for config.yml added
 
 # 3.1.5 (2025-08-14)
 - Hot reload for config
 - New WebUI (currently only readonly)
 - Fixed shared stream provider connection count
 - Added hanging client connection release
-- Added `replace` built-in function for mapper scripts 
+- Added `replace` built-in function for mapper scripts
 - Added `token_ttl_mins` to web_auth config to define auth token expiration duration.
 - Staged sources. Side-loading playlist. Load from staged, serve from provider.
 - Fixed proxy config
@@ -87,7 +210,7 @@ to reduce transient HTTP errors (400, 408, 425, 429, 5xx)
 ```
    station_prefix = template(concat("US_", station, "_PREFIX")),
 ```
-If we assume the variable `station` contains the value `WINK`, 
+If we assume the variable `station` contains the value `WINK`,
 this script receives the template with the concatenated name `US_WINK_PREFIX` which should be defined in `templates` section,
 and assigns it to the variable `station_prefix`.
 - Extended STRM export functionality with:

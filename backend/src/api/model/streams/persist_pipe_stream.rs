@@ -1,95 +1,132 @@
-use std::io::Write;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::task::{Context, Poll};
+use crate::utils::request::DynReader;
+use crate::utils::{async_file_writer, IO_BUFFER_SIZE};
 use bytes::Bytes;
-use log::error;
-use tokio_stream::Stream;
+use log::{debug, error};
+use std::path::{Path,};
+use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::StreamExt;
 use crate::api::model::StreamError;
 
-/// `PersistPipeStream`
-///
-/// A stream wrapper that pipes data from an input stream to a writer while tracking
-/// the total number of bytes processed. Upon completion, it triggers a user-provided
-/// callback with the total size of the data written.
-/// - `callback`: A user-provided function that is called with the total size of the processed data once the stream is completed.
-///
-/// # Stream Implementation
-/// - Implements the `Stream` trait to poll the underlying stream for data.
-/// - For each chunk of data:
-///   - Writes it to the writer.
-///   - Updates the size tracker.
-/// - When the stream is exhausted:
-///   - Calls `on_complete()` to finalize the operation and trigger the callback.
-pub struct PersistPipeStream<S, W> {
-    inner: S,
-    completed: bool,
-    writer: W,
-    size: AtomicUsize,
+pub fn tee_stream<S, W>(
+    mut stream: S,
+    mut writer: W,
+    file_path: &Path,
     callback: Arc<dyn Fn(usize) + Send + Sync>,
+) -> ReceiverStream<Result<Bytes, StreamError>>
+where
+    S: tokio_stream::Stream<Item=Result<Bytes, StreamError>> + Send + Unpin + 'static,
+    W: tokio::io::AsyncWrite + Send + Unpin + 'static,
+{
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, StreamError>>(32);
+    let resource_path = file_path.to_owned();
+
+    tokio::spawn(async move {
+        let mut total_size = 0usize;
+        let mut writer_active = true;
+        let mut write_err: Option<StreamError> = None;
+        let mut write_counter = 0usize;
+
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                Ok(bytes) => {
+                    if writer_active {
+                        total_size += bytes.len();
+                        if let Err(e) = writer.write_all(&bytes).await {
+                            writer_active = false;
+                            write_err = Some(StreamError::StdIo(e.to_string()));
+                        } else {
+                            write_counter += bytes.len();
+                            if write_counter >= IO_BUFFER_SIZE {
+                                write_counter = 0;
+                                if let Err(err) = writer.flush().await {
+                                    writer_active = false;
+                                    write_err = Some(StreamError::StdIo(format!("Failed periodic flush of tee_stream writer {err}")));
+                                }
+                            }
+                        }
+                    }
+
+                    let _ = tx.send(Ok(bytes)).await;
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(e)).await;
+                }
+            }
+        }
+
+        // final flush & shutdown
+        if writer_active {
+            if let Err(e) = writer.flush().await {
+                writer_active = false;
+                write_err = Some(StreamError::StdIo(e.to_string()));
+            }
+        }
+        let _ = writer.shutdown().await;
+
+        if writer_active {
+            debug!("Persisted {total_size} bytes to cache resource");
+            (callback)(total_size);
+        } else {
+            if let Some(err) = write_err {
+                error!("Persisted stream error: {err}.");
+            }
+            drop(writer);
+            let _ = tokio::fs::remove_file(&resource_path).await;
+        }
+    });
+
+    ReceiverStream::new(rx)
 }
 
-impl<S, W> PersistPipeStream<S, W>
-where
-    S: Stream + Unpin,
-    W: Write + Unpin + 'static,
-{
-    ///   - Creates a new `PersistPipeStream` instance.
-    ///   - Arguments:
-    ///     - `inner`: The input stream providing the data.
-    ///     - `writer`: The writer to which the data is written.
-    ///     - `callback`: A callback function to be called with the total size upon stream completion.
-    pub fn new(inner: S, writer: W, callback: Arc<dyn Fn(usize) + Send + Sync>) -> Self {
-        Self {
-            inner,
-            completed: false,
-            writer,
-            size: AtomicUsize::new(0),
-            callback,
+pub async fn tee_dyn_reader(
+    reader: DynReader,
+    persist_path: &Path,
+    callback: Option<Arc<dyn Fn(usize) + Send + Sync>>,
+) -> DynReader {
+    let file = match tokio::fs::File::create(persist_path).await {
+        Ok(f) => f,
+        Err(err) => {
+            error!("Can't open file to write: {}, {err}", persist_path.display());
+            return reader;
         }
-    }
+    };
 
-    fn on_complete(&mut self) {
-        if !self.completed {
-            self.completed = true;
-            let size = self.size.load(Ordering::SeqCst);
-            if self.writer.flush().is_ok() {
-                (self.callback)(size);
+    let (mut tx, rx) = tokio::io::duplex(IO_BUFFER_SIZE);
+    let mut writer = async_file_writer(file);
+    let reader_arc = reader;
+
+    tokio::spawn(async move {
+        let mut total_bytes = 0usize;
+        let mut buf = [0u8; 8192];
+
+        let mut reader = reader_arc;
+
+        loop {
+            let n = match reader.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => n,
+            };
+
+            total_bytes += n;
+
+            if tx.write_all(&buf[..n]).await.is_err() {
+                break;
+            }
+
+            if writer.write_all(&buf[..n]).await.is_err() {
+                break;
             }
         }
-    }
 
-    fn on_data(&mut self, data: &Result<Bytes, StreamError>) {
-        if let Ok(bytes) = data {
-            self.size.fetch_add(bytes.len(), Ordering::SeqCst);
-            let bytes_to_write = bytes.clone();
-            if let Err(e) = self.writer.write_all(&bytes_to_write) {
-                error!("Error writing to resource file: {e}");
-            }
+        let _ = writer.flush().await;
+        let _ = tx.shutdown().await;
+
+        if let Some(cb) = callback {
+            cb(total_bytes);
         }
-    }
-}
+    });
 
-impl<S, W> Stream for PersistPipeStream<S, W>
-where
-    S: Stream<Item = Result<bytes::Bytes, StreamError>> + Unpin,
-    W: Write + Unpin + 'static,
-{
-    type Item = Result<Bytes, StreamError>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.get_mut();
-        match Pin::new(&mut this.inner).poll_next(cx) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(None) => {
-                this.on_complete();
-                Poll::Ready(None)
-            }
-            Poll::Ready(Some(item)) => {
-                this.on_data(&item);
-                Poll::Ready(Some(item))
-            }
-        }
-    }
+    Box::pin(rx) as DynReader
 }

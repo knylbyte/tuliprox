@@ -1,0 +1,17 @@
+.tp__titled-card {
+  position: relative;
+  padding: 1em 0.5em 0.5em 0.5em;
+  border: 1px solid var(--card-border-color);
+  border-radius: var(--border-radius);
+}
+
+.tp__titled-card__title {
+  position: absolute;
+  top: -0.7em;
+  left: 15px;
+  padding: 0 4px;
+  z-index: 2;
+  font-size: 14px;
+  line-height: 1.2;
+  background: linear-gradient(to bottom, #00000000 50%, var(--card-background-color) 50%);
+}

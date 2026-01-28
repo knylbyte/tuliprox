@@ -1,12 +1,33 @@
 .tp__source-editor {
    position: relative;
    display: flex;
-   flex-flow: row nowrap;
+   flex-flow: column;
    box-sizing: border-box;
    width: 100%;
    height: 100%;
    gap: var(--gap-default);
    font-size: 1rem;
+
+   &__header {
+      position: relative;
+      display: flex;
+      flex-flow: row nowrap;
+      box-sizing: border-box;
+      width: 100%;
+      gap: var(--gap-default);
+      font-size: 1rem;
+   }
+
+   &__content {
+      position: relative;
+      display: flex;
+      flex-flow: row nowrap;
+      box-sizing: border-box;
+      width: 100%;
+      height: 100%;
+      gap: var(--gap-default);
+      font-size: 1rem;
+   }
 
    &__sidebar {
       display: flex;
@@ -80,7 +101,7 @@
    }
 
    &__selection-rect {
-      position:absolute;
+      position: absolute;
       display: none;
       border: 1px dashed var(--selection-area-border-color);
       background: var(--selection-area-background-color);
@@ -88,7 +109,11 @@
       pointer-events: none;
    }
 
+   .tp__form-page__toolbar {
+      padding: var(--padding-default) 0 var(--padding-default) var(--padding-small);
+   }
 }
+
 
 .graph-paper-advanced {
    background-image:
@@ -110,15 +135,4 @@
 
 .clickable {
    cursor: pointer;
-}
-
-.tp__form-page__toolbar {
-   margin-top: var(--padding-default);
-   padding-top: var(--padding-default);
-   display: flex;
-   flex-flow: row;
-   gap: var(--gap-large);
-   box-sizing: border-box;
-   width: 100%;
-   border-top: 1px solid var(--card-border-color);
 }

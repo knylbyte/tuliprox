@@ -1,13 +1,13 @@
-use std::borrow::Cow;
-use std::path::{Path, PathBuf};
+use crate::model::{macros, ConfigApi, LibraryConfig, ReverseProxyConfig, ReverseProxyDisabledHeaderConfig, ScheduleConfig};
+use crate::model::{HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyConfig, VideoConfig, WebUiConfig};
+use crate::utils;
 use log::{error, info};
 use path_clean::PathClean;
-use shared::error::{TuliproxError};
+use shared::error::TuliproxError;
 use shared::model::{ConfigDto, HdHomeRunDeviceOverview};
-use shared::utils::set_sanitize_sensitive_info;
-use crate::model::{macros, ConfigApi, ReverseProxyConfig, ScheduleConfig};
-use crate::model::{HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyConfig, VideoConfig, WebUiConfig};
-use crate::{utils};
+use shared::utils::{default_grace_period_millis, default_grace_period_timeout_secs, set_sanitize_sensitive_info};
+use std::borrow::Cow;
+use std::path::{Path, PathBuf};
 
 const DEFAULT_BACKUP_DIR: &str = "backup";
 
@@ -40,12 +40,30 @@ fn create_directories(cfg: &Config, temp_path: &Path) {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct GracePeriodOptions {
+    pub period_millis: u64,
+    pub timeout_secs: u64,
+    pub hold_stream: bool,
+}
+
+impl Default for GracePeriodOptions {
+    fn default() -> Self {
+        Self {
+            period_millis: default_grace_period_millis(),
+            timeout_secs: default_grace_period_timeout_secs(),
+            hold_stream: false,
+        }
+    }
+}
+
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Default)]
 pub struct Config {
-    pub threads: u8,
+    pub process_parallel: bool,
     pub api: ConfigApi,
     pub working_dir: String,
+    pub default_user_agent: Option<String>,
     pub backup_dir: Option<String>,
     pub user_config_dir: Option<String>,
     pub mapping_path: Option<String>,
@@ -58,6 +76,7 @@ pub struct Config {
     pub sleep_timer_mins: Option<u32>,
     pub update_on_boot: bool,
     pub config_hot_reload: bool,
+    pub disk_based_processing: bool,
     pub accept_insecure_ssl_certificates: bool,
     pub web_ui: Option<WebUiConfig>,
     pub messaging: Option<MessagingConfig>,
@@ -65,6 +84,7 @@ pub struct Config {
     pub hdhomerun: Option<HdHomeRunConfig>,
     pub proxy: Option<ProxyConfig>,
     pub ipcheck: Option<IpCheckConfig>,
+    pub library: Option<LibraryConfig>,
 }
 
 impl Config {
@@ -76,6 +96,14 @@ impl Config {
         self.prepare_api_web_root();
         if let Some(ref mut webui) = &mut self.web_ui {
             webui.prepare(config_path)?;
+        }
+
+        if let Some(library) = self.library.as_mut() {
+            library.prepare()?;
+        }
+
+        if let Some(messaging) = self.messaging.as_mut() {
+            messaging.prepare(config_path);
         }
 
         Ok(())
@@ -121,6 +149,24 @@ impl Config {
     pub fn is_geoip_enabled(&self) -> bool {
         self.reverse_proxy.as_ref().is_some_and(|r| r.geoip.as_ref().is_some_and(|g| g.enabled))
     }
+
+    pub fn get_disabled_headers(&self) -> Option<ReverseProxyDisabledHeaderConfig> {
+        self.reverse_proxy
+            .as_ref()
+            .and_then(|r| r.disabled_header.clone())
+    }
+
+    pub fn get_grace_options(&self) -> GracePeriodOptions {
+        self.reverse_proxy
+            .as_ref()
+            .and_then(|r| r.stream.as_ref())
+            .map_or_else(GracePeriodOptions::default,
+                         |s| GracePeriodOptions {
+                             period_millis: s.grace_period_millis,
+                             timeout_secs: s.grace_period_timeout_secs,
+                             hold_stream: s.grace_period_hold_stream,
+                         })
+    }
 }
 
 macros::from_impl!(Config);
@@ -128,9 +174,11 @@ macros::from_impl!(Config);
 impl From<&ConfigDto> for Config {
     fn from(dto: &ConfigDto) -> Self {
         Config {
-            threads: dto.threads,
+            process_parallel: dto.process_parallel,
+            disk_based_processing: dto.disk_based_processing,
             api: ConfigApi::from(&dto.api),
             working_dir: dto.working_dir.clone(),
+            default_user_agent: dto.default_user_agent.clone(),
             backup_dir: dto.backup_dir.clone(),
             user_config_dir: dto.user_config_dir.clone(),
             mapping_path: dto.mapping_path.clone(),
@@ -150,6 +198,7 @@ impl From<&ConfigDto> for Config {
             hdhomerun: dto.hdhomerun.as_ref().map(Into::into),
             proxy: dto.proxy.as_ref().map(Into::into),
             ipcheck: dto.ipcheck.as_ref().map(Into::into),
+            library: dto.library.as_ref().map(Into::into),
         }
     }
 }

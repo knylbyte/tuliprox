@@ -93,7 +93,7 @@ impl ToastrService {
     ) {
         let mut state = self.state.borrow_mut();
         let toast = Toast {
-            id: self.counter.fetch_add(1, Ordering::Acquire),
+            id: self.counter.fetch_add(1, Ordering::AcqRel),
             message: msg.into(),
             toast_type: toast_type.clone(),
             close_mode: options.close_mode,

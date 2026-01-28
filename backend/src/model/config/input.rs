@@ -1,14 +1,17 @@
-use crate::model::{macros, EpgConfig};
-use shared::error::{TuliproxError};
-use shared::{check_input_connections, info_err, write_if_some};
+use crate::model::{macros, EpgConfig, PanelApiConfig};
+use crate::repository::get_csv_file_path;
+use chrono::Utc;
+use log::warn;
+use shared::check_input_credentials;
+use shared::error::TuliproxError;
 use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType, StagedInputDto};
-use shared::utils::{get_base_url_from_str, get_credentials_from_url};
-use shared::{check_input_credentials};
+use shared::utils::{get_credentials_from_url, Internable};
+use shared::{check_input_connections, info_err_res, write_if_some};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
+use std::sync::Arc;
 use url::Url;
-use crate::utils::{get_csv_file_path};
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
@@ -68,7 +71,7 @@ impl InputUserInfo {
 
 #[derive(Debug, Clone, Default)]
 pub struct StagedInput {
-    pub name: String,
+    pub name: Arc<str>,
     pub url: String,
     pub username: Option<String>,
     pub password: Option<String>,
@@ -95,12 +98,14 @@ impl From<&StagedInputDto> for StagedInput {
 #[derive(Debug, Clone)]
 pub struct ConfigInputAlias {
     pub id: u16,
-    pub name: String,
+    pub name: Arc<str>,
     pub url: String,
     pub username: Option<String>,
     pub password: Option<String>,
     pub priority: i16,
     pub max_connections: u16,
+    pub exp_date: Option<i64>,
+    pub enabled: bool,
 }
 
 macros::from_impl!(ConfigInputAlias);
@@ -109,11 +114,13 @@ impl From<&ConfigInputAliasDto> for ConfigInputAlias {
         Self {
             id: dto.id,
             name: dto.name.clone(),
-            url: get_base_url_from_str(&dto.url).map_or_else(|| dto.url.clone(), |base_url| base_url),
+            url: dto.url.clone(),
             username: dto.username.clone(),
             password: dto.password.clone(),
             priority: dto.priority,
             max_connections: dto.max_connections,
+            exp_date: dto.exp_date,
+            enabled: dto.enabled,
         }
     }
 }
@@ -121,7 +128,7 @@ impl From<&ConfigInputAliasDto> for ConfigInputAlias {
 #[derive(Debug, Clone, Default)]
 pub struct ConfigInput {
     pub id: u16,
-    pub name: String,
+    pub name: Arc<str>,
     pub input_type: InputType,
     pub headers: HashMap<String, String>,
     pub url: String,
@@ -136,18 +143,42 @@ pub struct ConfigInput {
     pub max_connections: u16,
     pub method: InputFetchMethod,
     pub staged: Option<StagedInput>,
+    pub exp_date: Option<i64>,
     pub t_batch_url: Option<String>,
+    pub panel_api: Option<PanelApiConfig>,
+    pub cache_duration_seconds: u64,
 }
 
 impl ConfigInput {
     pub fn prepare(&mut self) -> Result<Option<PathBuf>, TuliproxError> {
         let batch_file_path = self.prepare_batch();
-        check_input_credentials!(self, self.input_type, false);
-        check_input_connections!(self, self.input_type);
-        if let Some(staged_input) = &mut self.staged {
-            check_input_credentials!(staged_input, staged_input.input_type, false);
-            if !matches!(staged_input.input_type, InputType::M3u | InputType::Xtream) {
-                return Err(info_err!("Staged input can only be from type m3u or xtream".to_owned()));
+        self.name = self.name.trim().intern();
+        if self.enabled {
+            check_input_credentials!(self, self.input_type, false, false);
+            check_input_connections!(self, self.input_type, false);
+            if let Some(staged_input) = &mut self.staged {
+                check_input_credentials!(staged_input, staged_input.input_type, false, true);
+                if !matches!(staged_input.input_type, InputType::M3u | InputType::Xtream) {
+                    return info_err_res!("Staged input can only be from type m3u or xtream");
+                }
+            }
+
+            if is_input_expired(self.exp_date) {
+                warn!("Account {} expired for provider: {}", self.username.as_ref().map_or("?", |s| s.as_str()), self.name);
+                self.enabled = false;
+            }
+
+            if let Some(aliases) = &mut self.aliases {
+                for alias in aliases {
+                    if is_input_expired(alias.exp_date) {
+                        warn!("Account {} expired for provider: {}", alias.username.as_ref().map_or("?", |s| s.as_str()), alias.name);
+                        alias.enabled = false;
+                    }
+                }
+            }
+
+            if let Some(panel_api) = &mut self.panel_api {
+                panel_api.prepare()?;
             }
         }
         Ok(batch_file_path)
@@ -180,20 +211,35 @@ impl ConfigInput {
                 InputType::Xtream
             };
 
-            self.t_batch_url= Some(self.url.clone());
+            self.t_batch_url = Some(self.url.clone());
             let file_path = get_csv_file_path(self.url.as_str()).ok();
+            if self.enabled {
 
-            if let Some(aliases) = self.aliases.as_mut() {
-                if !aliases.is_empty() {
-                    let mut first = aliases.remove(0);
-                    self.id = first.id;
-                    self.username = first.username.take();
-                    self.password = first.password.take();
-                    self.url = first.url.trim().to_string();
-                    self.max_connections = first.max_connections;
-                    self.priority = first.priority;
-                    if self.name.is_empty() {
-                        self.name.clone_from(&first.name);
+                if let Some(aliases) = self.aliases.as_mut() {
+                    if !aliases.is_empty() {
+                        for alias in aliases.iter_mut() {
+                            if is_input_expired(alias.exp_date) {
+                                alias.enabled = false;
+                                warn!("Alias-Account {} expired for provider: {}", alias.username.as_ref().map_or("?", |s| s.as_str()), alias.name);
+                            }
+                        }
+
+                        if let Some(index) = aliases.iter().position(|alias| alias.enabled) {
+                            let mut first = aliases.remove(index);
+                            self.id = first.id;
+                            self.username = first.username.take();
+                            self.password = first.password.take();
+                            self.url = first.url.trim().to_string();
+                            self.max_connections = first.max_connections;
+                            self.priority = first.priority;
+                            self.enabled = first.enabled;
+                            self.exp_date = first.exp_date;
+                            if self.name.is_empty() {
+                                self.name.clone_from(&first.name);
+                            }
+                        } else {
+                            self.enabled = false;
+                        }
                     }
                 }
             }
@@ -223,8 +269,28 @@ impl ConfigInput {
             max_connections: alias.max_connections,
             method: self.method,
             staged: None,
+            exp_date: None,
             t_batch_url: None,
+            panel_api: self.panel_api.clone(),
+            cache_duration_seconds: self.cache_duration_seconds,
         }
+    }
+
+    pub fn has_enabled_aliases(&self) -> bool {
+        self.aliases
+            .as_ref()
+            .is_some_and(|aliases| aliases.iter().any(|a| a.enabled))
+    }
+
+    pub fn get_enabled_aliases(&self) -> Option<Vec<&ConfigInputAlias>> {
+        self.aliases.as_ref().and_then(|aliases| {
+            let result: Vec<_> = aliases.iter().filter(|alias| alias.enabled).collect();
+            if result.is_empty() {
+                None
+            } else {
+                Some(result)
+            }
+        })
     }
 }
 
@@ -236,7 +302,7 @@ impl From<&ConfigInputDto> for ConfigInput {
             name: dto.name.clone(),
             input_type: dto.input_type,
             headers: dto.headers.clone(),
-            url: dto.url.clone(), //get_base_url_from_str(&dto.url).map_or_else(|| dto.url.to_string(), |base_url| base_url),
+            url: dto.url.clone(),
             epg: dto.epg.as_ref().map(EpgConfig::from),
             username: dto.username.clone(),
             password: dto.password.clone(),
@@ -247,8 +313,11 @@ impl From<&ConfigInputDto> for ConfigInput {
             priority: dto.priority,
             max_connections: dto.max_connections,
             method: dto.method,
-            t_batch_url: None,
+            exp_date: dto.exp_date,
             staged: dto.staged.as_ref().map(StagedInput::from),
+            t_batch_url: None,
+            panel_api: dto.panel_api.as_ref().map(PanelApiConfig::from),
+            cache_duration_seconds: dto.cache_duration_seconds,
         }
     }
 }
@@ -275,5 +344,15 @@ impl fmt::Display for ConfigInput {
         write!(f, " }}")?;
 
         Ok(())
+    }
+}
+
+pub fn is_input_expired(exp_date: Option<i64>) -> bool {
+    match exp_date {
+        Some(ts) => {
+            let now = Utc::now().timestamp();
+            ts <= now
+        }
+        None => false,
     }
 }

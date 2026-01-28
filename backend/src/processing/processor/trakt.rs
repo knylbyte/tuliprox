@@ -1,13 +1,12 @@
-use std::borrow::Cow;
 use crate::model::{ConfigTarget, TraktListItem, TraktMatchItem};
-use shared::model::{FieldGetAccessor, FieldSetAccessor, PlaylistGroup, PlaylistItem, TraktContentType, XtreamCluster};
 use crate::model::{TraktConfig, TraktListConfig, TraktMatchResult};
-use shared::error::TuliproxError;
-use crate::utils::{TraktClient, extract_year_from_title, normalize_title_for_matching};
-use shared::utils::{get_u32_from_serde_value};
-use shared::utils::{CONSTANTS};
+use crate::utils::{extract_year_from_title, normalize_title_for_matching, TraktClient};
 use crate::utils::{trace_if_enabled, with};
 use log::{debug, info, trace, warn};
+use shared::error::TuliproxError;
+use shared::model::{FieldGetAccessor, FieldSetAccessor, PlaylistGroup, PlaylistItem, TraktContentType, XtreamCluster};
+use shared::utils::{Internable, CONSTANTS};
+use indexmap::IndexMap;
 use std::sync::Arc;
 use strsim::normalized_levenshtein;
 
@@ -36,22 +35,6 @@ fn is_compatible_content_type(cluster: XtreamCluster, content_type: TraktContent
         TraktContentType::Series => cluster == XtreamCluster::Series,
         TraktContentType::Both => matches!(cluster, XtreamCluster::Video | XtreamCluster::Series),
     }
-}
-
-/// Extract TMDB ID from playlist item
-fn extract_tmdb_id_from_playlist_item(item: &PlaylistItem) -> Option<u32> {
-    if let Some(additional_props) = &item.header.additional_properties {
-        if let Some(props_str) = additional_props.as_str() {
-            if let Ok(props) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(props_str) {
-                return props
-                    .get("tmdb_id")
-                    .and_then(get_u32_from_serde_value)
-                    .filter(|&id| id != 0)
-                    .or_else(|| props.get("tmdb").and_then(get_u32_from_serde_value));
-            }
-        }
-    }
-    None
 }
 
 fn calculate_year_bonus(playlist_year: Option<u32>, trakt_year: Option<u32>) -> f64 {
@@ -146,10 +129,10 @@ fn find_best_match_for_item<'a>(
 fn create_category_from_matches<'a>(
     matches: Vec<TraktMatchResult<'a>>,
     list_config: &'a TraktListConfig,
-) -> Option<PlaylistGroup> {
-    if matches.is_empty() { return None; }
+) -> Vec<PlaylistGroup> {
+    if matches.is_empty() { return vec![]; }
 
-    let mut matched_items = Vec::new();
+    let mut matched_items_by_cluster: IndexMap<XtreamCluster, Vec<PlaylistItem>> = IndexMap::new();
 
     let mut sorted_matches = matches;
     sorted_matches.sort_by(|a, b| {
@@ -162,16 +145,12 @@ fn create_category_from_matches<'a>(
         ))
     });
 
-    let group_title = &list_config.category_name;
+    let group_title = list_config.category_name.as_str().intern();
 
     for match_result in sorted_matches {
         let mut modified_item = match_result.playlist_item.clone();
-        // Use the (possibly numbered) title from the match result (which now contains the original playlist title)
         with!(mut modified_item.header => header {
-            // Synchronize name with title so both fields show the same value
-            // header.title.clone_from(&match_result.trakt_item.title.to_string());
-            // header.name.clone_from(&match_result.trakt_item.title.to_string());
-            let title = header.get_field("caption").unwrap_or_else(|| Cow::Borrowed(&header.title));
+            let title = header.get_field("caption").unwrap_or_else(|| Arc::clone(&header.title));
             if extract_quality(&title).is_none() {
                 if let Some(quality) = extract_quality(&header.group) {
                     let mut caption = String::with_capacity(title.len() + 6);
@@ -182,37 +161,27 @@ fn create_category_from_matches<'a>(
                     header.set_field("caption", &caption);
                 }
             }
-            header.group = String::from(group_title);
+            header.group = group_title.clone();
             header.gen_uuid();
+            matched_items_by_cluster.entry(header.xtream_cluster).or_default().push(modified_item);
         });
-        matched_items.push(modified_item);
     }
 
-    if matched_items.is_empty() { return None; }
-
-
-    let cluster = match list_config.content_type {
-        TraktContentType::Vod => XtreamCluster::Video,
-        TraktContentType::Series => XtreamCluster::Series,
-        TraktContentType::Both => {
-            matched_items.first()
-                .map_or(XtreamCluster::Video, |item| item.header.xtream_cluster)
+    matched_items_by_cluster.into_iter().map(|(cluster, channels)| {
+        PlaylistGroup {
+            id: 0,
+            title: group_title.clone(),
+            channels,
+            xtream_cluster: cluster,
         }
-    };
-
-    Some(PlaylistGroup {
-        id: 0,
-        title: String::from(group_title),
-        channels: matched_items,
-        xtream_cluster: cluster,
-    })
+    }).collect()
 }
 
 fn match_trakt_items_with_playlist<'a>(
     trakt_items: &'a [TraktListItem],
     playlist: &'a [PlaylistGroup],
     list_config: &'a TraktListConfig,
-) -> Option<PlaylistGroup> {
+) -> Vec<PlaylistGroup> {
     let trakt_match_items: Vec<TraktMatchItem<'a>> = trakt_items
         .iter()
         .filter(|item| should_include_item(item, list_config.content_type))
@@ -227,7 +196,7 @@ fn match_trakt_items_with_playlist<'a>(
             if is_compatible_content_type(channel.header.xtream_cluster, list_config.content_type) {
                 let normalized_title = normalize_title_for_matching(&channel.header.title);
                 let channel_year = extract_year_from_title(&channel.header.title);
-                let channel_tmdb_id = extract_tmdb_id_from_playlist_item(channel);
+                let channel_tmdb_id = channel.get_tmdb_id();
                 if let Some(matched) = find_best_match_for_item((channel, normalized_title, channel_year, channel_tmdb_id), &trakt_match_items, list_config) {
                     matches.push(matched);
                 }
@@ -243,8 +212,8 @@ pub struct TraktCategoriesProcessor {
 }
 
 impl TraktCategoriesProcessor {
-    pub fn new(http_client: Arc<reqwest::Client>, trakt_config: &TraktConfig) -> Self {
-        let client = TraktClient::new(http_client, trakt_config.api.clone());
+    pub fn new(http_client: &reqwest::Client, trakt_config: &TraktConfig) -> Self {
+        let client = TraktClient::new(http_client.clone(), trakt_config.api.clone());
         Self { client }
     }
 
@@ -262,6 +231,7 @@ impl TraktCategoriesProcessor {
         info!("Processing {} Trakt lists for target {}", trakt_config.lists.len(), target.name);
         let mut new_categories = Vec::new();
         let mut total_matches = 0;
+
         for list_config in &trakt_config.lists {
             let cache_key = format!("{}:{}", list_config.user, list_config.list_slug);
 
@@ -269,7 +239,8 @@ impl TraktCategoriesProcessor {
                 Ok(trakt_items) => {
                     debug!("Processing Trakt list {cache_key} with {} items", trakt_items.len());
 
-                    if let Some(category) = match_trakt_items_with_playlist(&trakt_items, playlist, list_config) {
+                    let categories = match_trakt_items_with_playlist(&trakt_items, playlist, list_config);
+                    for category in categories {
                         if !category.channels.is_empty() {
                             total_matches += category.channels.len();
                             let category_len = category.channels.len();
@@ -292,14 +263,17 @@ impl TraktCategoriesProcessor {
     }
 }
 pub async fn process_trakt_categories_for_target(
-    http_client: Arc<reqwest::Client>,
+    http_client: &reqwest::Client,
     playlist: &[PlaylistGroup],
     target: &ConfigTarget,
 ) -> Result<Option<Vec<PlaylistGroup>>, Vec<TuliproxError>> {
     let Some(trakt_config) = target.get_xtream_output().and_then(|output| output.trakt.as_ref()) else {
-        debug!("No Trakt configuration found for target {}", target.name);
+        trace!("No Trakt configuration found for target {}", target.name);
         return Ok(None);
     };
+    if !trakt_config.enabled {
+        return Ok(None);
+    }
 
     let processor = TraktCategoriesProcessor::new(http_client, trakt_config);
     processor.process_trakt_categories(playlist, target, trakt_config).await

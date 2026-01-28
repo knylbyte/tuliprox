@@ -8,6 +8,8 @@ $toggle-switch-toggle-end-pos: calc($toggle-switch-width - ($toggle-switch-toggl
   position: relative;
   display: inline-block;
   width: $toggle-switch-width;
+  min-width: $toggle-switch-width;
+  max-width: $toggle-switch-width;
   height: $toggle-switch-height;
   cursor: pointer;
   border: 2px solid transparent;

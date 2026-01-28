@@ -1,29 +1,46 @@
+use crate::utils::debug_if_enabled;
+use log::{debug, error, trace};
+use path_clean::PathClean;
+use shared::error::str_to_io_error;
+use shared::utils::{API_PROXY_FILE, CONFIG_FILE, CONFIG_PATH, MAPPING_FILE, SOURCE_FILE, USER_FILE};
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::{env, fs};
+use tokio::fs as tokio_fs;
 
-use shared::error::str_to_io_error;
-use crate::utils::debug_if_enabled;
-use shared::utils::{API_PROXY_FILE, CONFIG_FILE, CONFIG_PATH, MAPPING_FILE, SOURCE_FILE, USER_FILE};
-use log::{debug, error};
-use path_clean::PathClean;
+pub const IO_BUFFER_SIZE: usize = 256 * 1024; // 256kb
 
-pub fn file_writer<W>(w: W) -> BufWriter<W>
+pub fn file_writer<W>(w: W) -> std::io::BufWriter<W>
 where
-    W: Write,
+    W: std::io::Write,
 {
-    BufWriter::with_capacity(131_072, w)
+    std::io::BufWriter::with_capacity(IO_BUFFER_SIZE, w)
 }
 
-pub fn file_reader<R>(r: R) -> BufReader<R>
+pub fn file_reader<R>(r: R) -> std::io::BufReader<R>
 where
-    R: Read,
+    R: std::io::Read,
 {
-    BufReader::with_capacity(131_072, r)
+    std::io::BufReader::with_capacity(IO_BUFFER_SIZE, r)
 }
+
+pub fn async_file_writer<W>(w: W) -> tokio::io::BufWriter<W>
+where
+    W: tokio::io::AsyncWrite,
+{
+    tokio::io::BufWriter::with_capacity(IO_BUFFER_SIZE, w)
+}
+
+pub fn async_file_reader<R>(r: R) -> tokio::io::BufReader<R>
+where
+    R: tokio::io::AsyncRead,
+{
+    tokio::io::BufReader::with_capacity(IO_BUFFER_SIZE, r)
+}
+
 
 pub fn get_exe_path() -> PathBuf {
     let default_path = std::path::PathBuf::from("./");
@@ -123,21 +140,21 @@ pub fn resolve_directory_path(input: &str) -> String {
         )
 }
 
+pub async fn file_exists_async(path: &Path) -> bool {
+    tokio::fs::try_exists(path).await.unwrap_or(false)
+}
 
 #[inline]
 pub fn open_file(file_name: &Path) -> Result<File, std::io::Error> {
     File::open(file_name)
 }
 
-pub fn persist_file(persist_file: Option<PathBuf>, text: &str) {
+pub async fn persist_file(persist_file: Option<PathBuf>, text: &str) {
     if let Some(path_buf) = persist_file {
         let filename = &path_buf.to_str().unwrap_or("?");
-        match File::create(&path_buf) {
-            Ok(mut file) => match file.write_all(text.as_bytes()) {
-                Ok(()) => debug!("persisted: {filename}"),
-                Err(e) => error!("failed to persist file {filename}, {e}")
-            },
-            Err(e) => error!("failed to persist file {filename}, {e}")
+        match tokio::fs::write(&path_buf, text).await {
+            Ok(()) => debug!("persisted: {filename}"),
+            Err(e) => error!("failed to persist file {filename}, {e}"),
         }
     }
 }
@@ -196,13 +213,23 @@ pub fn sanitize_filename(file_name: &str) -> String {
 }
 
 #[inline]
-pub fn append_or_crate_file(path: &Path) -> std::io::Result<File> {
+pub fn append_or_create_file(path: &Path) -> std::io::Result<File> {
     OpenOptions::new().create(true).append(true).open(path)
 }
 
 #[inline]
-pub fn create_new_file_for_write(path: &Path) -> std::io::Result<File> {
-    OpenOptions::new().write(true).create(true).truncate(true).open(path)
+pub async fn async_append_or_create_file(path: &Path) -> std::io::Result<tokio::fs::File> {
+    tokio::fs::OpenOptions::new().create(true).append(true).open(path).await
+}
+
+#[inline]
+pub async fn create_new_file_for_write(path: &Path) -> tokio::io::Result<tokio_fs::File> {
+    tokio_fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
+        .await
 }
 
 #[inline]
@@ -218,6 +245,11 @@ pub fn open_read_write_file(path: &Path) -> std::io::Result<File> {
 #[inline]
 pub fn open_readonly_file(path: &Path) -> std::io::Result<File> {
     OpenOptions::new().read(true).write(false).truncate(false).create(false).open(path)
+}
+
+#[inline]
+pub async fn async_open_readonly_file(path: &Path) -> std::io::Result<tokio::fs::File> {
+    tokio::fs::OpenOptions::new().read(true).write(false).truncate(false).create(false).open(path).await
 }
 
 pub fn rename_or_copy(src: &Path, dest: &Path, remove_old: bool) -> std::io::Result<()> {
@@ -322,10 +354,25 @@ pub fn cleanup_unlisted_files_with_suffix(
         for entry in (fs::read_dir(dir)?).flatten() {
             let path = entry.path();
 
-            if path.is_file() && !keep_set.contains(&path) && path.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|name| name.ends_with(suffix)) && fs::remove_file(&path).is_ok() {
-                debug!("Deleted {:?}", path.display());
+            if !path.is_file() || keep_set.contains(&path) {
+                continue;
+            }
+
+            let delete = {
+                let zero_size = entry
+                    .metadata()
+                    .is_ok_and(|m| m.len() == 0);
+
+                let suffix_match = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|name| name.ends_with(suffix));
+
+                zero_size || suffix_match
+            };
+
+            if delete && fs::remove_file(&path).is_ok() {
+                trace!("Deleted {:?}", path.display());
             }
         }
     }
@@ -345,8 +392,8 @@ pub fn truncate_filename(path: &Path, max_len: usize) -> PathBuf {
             if max_len > ext_len {
                 let name_len = max_len - ext_len;
                 let name_without_ext = path.file_stem()
-                                        .and_then(|s| s.to_str())
-                                        .unwrap_or_default();
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default();
                 let truncated = name_without_ext.chars().take(name_len).collect::<String>();
                 format!("{truncated}.{ext}")
             } else {
@@ -369,6 +416,13 @@ pub fn normalize_string_path(path: &str) -> String {
         .collect::<std::path::PathBuf>()
         .to_string_lossy()
         .to_string()
+}
+
+pub fn get_file_extension(path: &str) -> Option<String> {
+    Path::new(path)
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(ToString::to_string)
 }
 
 #[cfg(test)]

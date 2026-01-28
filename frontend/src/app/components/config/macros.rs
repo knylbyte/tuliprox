@@ -94,6 +94,20 @@ macro_rules! config_field_custom {
 }
 
 #[macro_export]
+macro_rules! config_field_custom_hide {
+    ($label:expr, $value:expr) => {
+        html! {
+            <div class="tp__form-field tp__form-field__text">
+                <label>{$label}</label>
+                <span class="tp__form-field__value">
+                    <$crate::app::components::HideContent content={$value}></$crate::app::components::HideContent>
+                </span>
+            </div>
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! config_field_child {
     ($label:expr, $body:block) => {
         html! {
@@ -155,6 +169,29 @@ macro_rules! edit_field_text_option {
 }
 
 #[macro_export]
+macro_rules! edit_field_textarea_option {
+    ($instance:expr, $label:expr, $field:ident, $action:path) => {{
+        let instance = $instance.clone();
+        html! {
+            <div class="tp__form-field tp__form-field__textarea">
+                <$crate::app::components::TextArea
+                    label={$label}
+                    name={stringify!($field)}
+                    value={instance.form.$field.as_ref().map_or_else(String::new, |v|v.to_string())}
+                    on_change={Callback::from(move |value: String| {
+                        instance.dispatch($action(if value.is_empty() {
+                            None
+                        } else {
+                            Some(value)
+                        }));
+                    })}
+                />
+            </div>
+        }
+    }};
+}
+
+#[macro_export]
 macro_rules! edit_field_text {
     ($instance:expr, $label:expr, $field:ident, $action:path) => {
         $crate::edit_field_text!(@inner $instance, $label, $field, $action, false)
@@ -171,9 +208,9 @@ macro_rules! edit_field_text {
                     hidden={$hidden}
                     name={stringify!($field)}
                     autocomplete={true}
-                    value={instance.form.$field.clone()}
+                    value={instance.form.$field.to_string()}
                     on_change={Callback::from(move |value: String| {
-                        instance.dispatch($action(value));
+                        instance.dispatch($action(value.into()));
                     })}
                 />
             </div>
@@ -350,6 +387,31 @@ macro_rules! edit_field_number_u64 {
 }
 
 #[macro_export]
+macro_rules! edit_field_number_usize {
+    ($instance:expr, $label:expr, $field:ident, $action:path) => {{
+        let instance = $instance.clone();
+        html! {
+            <div class="tp__form-field tp__form-field__number">
+                <$crate::app::components::number_input::NumberInput
+                    label={$label}
+                    name={stringify!($field)}
+                    value={instance.form.$field as i64}
+                    on_change={Callback::from(move |value: Option<i64>| {
+                        match value {
+                             Some(value) => {
+                                 let val = usize::try_from(value).unwrap_or(0);
+                                 instance.dispatch($action(val))
+                             },
+                             None => instance.dispatch($action(0)),
+                        }
+                    })}
+                />
+            </div>
+        }
+    }};
+}
+
+#[macro_export]
 macro_rules! edit_field_number_option {
     ($instance:expr, $label:expr, $field:ident, $action:path) => {{
         let instance = $instance.clone();
@@ -484,7 +546,7 @@ macro_rules! generate_form_reducer {
                     $(
                         $action_name::$set_name(v) => {
                             let mut new_data = self.$data_field.clone();
-                            new_data.$field_name = v;
+                            new_data.$field_name = v.into();
                             if !modified { modified = true; }
                             new_data
                         },

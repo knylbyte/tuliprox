@@ -2,7 +2,7 @@ use web_sys::MouseEvent;
 use yew::{classes, function_component, html, Callback, Html, Properties, TargetCast};
 use yew_i18n::use_translation;
 use crate::html_if;
-use crate::app::components::{Block, BlockId, BlockInstance, BlockType, PortStatus};
+use crate::app::components::{Block, BlockId, BlockInstance, PortStatus};
 #[derive(Properties, PartialEq)]
 pub struct BlockProps {
     pub(crate) block: Block,
@@ -33,8 +33,8 @@ pub fn BlockView(props: &BlockProps) -> Html {
     let from_id = block_id;
     let to_id = block_id;
 
-    let is_target = matches!(block_type, BlockType::Target);
-    let is_input = !is_target && matches!(block_type, BlockType::InputM3u | BlockType::InputXtream);
+    let is_target = block_type.is_target();
+    let is_input = !is_target && block_type.is_input();
     let is_output =  !is_input && !is_target;
 
     let port_style = match port_status {
@@ -69,17 +69,17 @@ pub fn BlockView(props: &BlockProps) -> Html {
         let (dto_title, show_type, is_batch) = match &block.instance {
             BlockInstance::Input(dto) => {
                 dto.aliases.as_ref().map_or(
-                    (dto.name.clone(), true, false),
+                    (dto.name.to_string(), true, false),
                     |a| {
                         if a.is_empty() {
-                            (dto.name.clone(), true, false)
+                            (dto.name.to_string(), true, false)
                         } else {
-                            (if dto.name.is_empty() {a[0].name.clone()} else {dto.name.clone()}, true, true)
+                            (if dto.name.is_empty() {a[0].name.to_string()} else {dto.name.to_string()}, true, true)
                         }
                     }
                 )
             },
-            BlockInstance::Target(dto) => (dto.name.clone(), true, false),
+            BlockInstance::Target(dto) => (dto.name.to_string(), true, false),
             BlockInstance::Output(_output) => {
                 (translate.t(&format!("SOURCE_EDITOR.BRICK_{}", block_type)), false, false)
             }
@@ -93,7 +93,7 @@ pub fn BlockView(props: &BlockProps) -> Html {
 
     html! {
         <div id={format!("block-{block_id}")} class={format!("tp__source-editor__block no-select tp__source-editor__block-{}{}{}", block_type, if props.edited {" tp__source-editor__block-editing"} else {""}, if props.selected {" tp__source-editor__block-selected"} else {""})}
-              style={style}>
+              style={style} title={title.clone()}>
             <div class={"tp__source-editor__block-header"}>
                 // Block handle (drag)
                 <div class="tp__source-editor__block-handle" onmousedown={handle_mouse_down.clone()} />
@@ -128,6 +128,7 @@ pub fn BlockView(props: &BlockProps) -> Html {
                         let on_connection_drop = props.on_connection_drop.clone();
                         Callback::from(move |e: MouseEvent| {
                            e.prevent_default();
+                           e.stop_propagation();
                            on_connection_drop.emit(to_id)
                        })
                     }} />
@@ -141,6 +142,7 @@ pub fn BlockView(props: &BlockProps) -> Html {
                         let on_connection_start = props.on_connection_start.clone();
                         Callback::from(move |e: MouseEvent| {
                            e.prevent_default();
+                           e.stop_propagation();
                            on_connection_start.emit(from_id);
                         })
                     }} />

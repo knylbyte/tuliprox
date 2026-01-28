@@ -10,35 +10,29 @@ use crate::app::components::{Block, BlockType, Connection};
 ///   - 1x OutputHdhomerun
 ///   - up to 4x OutputStrm
 pub fn can_connect(from_block: &Block, to_block: &Block, connections: &[Connection], blocks: &[Block]) -> bool {
-    // 1️⃣ Prevent self-connection
+    // Prevent self-connection
     if from_block.id == to_block.id {
         return false;
     }
 
-    // 2️⃣ Identify block categories
-    let is_input = matches!(from_block.block_type, BlockType::InputM3u | BlockType::InputXtream);
-    let is_target = matches!(from_block.block_type, BlockType::Target);
-    let to_is_target = matches!(to_block.block_type, BlockType::Target);
-    let to_is_output = matches!(
-        to_block.block_type,
-        BlockType::OutputM3u
-            | BlockType::OutputXtream
-            | BlockType::OutputHdHomeRun
-            | BlockType::OutputStrm
-    );
+    // Identify block categories
+    let is_input = from_block.block_type.is_input();
+    let is_target = from_block.block_type.is_target();
+    let to_is_target = to_block.block_type.is_target();
+    let to_is_output = to_block.block_type.is_output();
 
-    // 3️⃣ Only allow Input → Target OR Target → Output
+    // Only allow Input → Target OR Target → Output
     let valid_direction = (is_input && to_is_target) || (is_target && to_is_output);
     if !valid_direction {
         return false;
     }
 
-    // 4️⃣ Prevent duplicate connection
+    // Prevent duplicate connection
     if connections.iter().any(|c| c.from == from_block.id && c.to == to_block.id) {
         return false;
     }
 
-    // 5️⃣ Output can have only one incoming connection
+    // Output can have only one incoming connection
     if to_is_output {
         let has_input_already = connections.iter().any(|c| c.to == to_block.id);
         if has_input_already {
@@ -46,7 +40,7 @@ pub fn can_connect(from_block: &Block, to_block: &Block, connections: &[Connecti
         }
     }
 
-    // 6️⃣ Per-target output type limits
+    // 6Per-target output type limits
     if is_target && to_is_output {
         let from_id = from_block.id;
 
@@ -77,6 +71,6 @@ pub fn can_connect(from_block: &Block, to_block: &Block, connections: &[Connecti
         }
     }
 
-    // ✅ Passed all checks
+    // Passed all checks
     true
 }

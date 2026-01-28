@@ -1,13 +1,14 @@
 use crate::model::config::cache::CacheConfig;
 use crate::model::{macros, GeoIpConfig, RateLimitConfig, StreamConfig};
 use shared::model::{ResourceRetryConfigDto, ReverseProxyConfigDto, ReverseProxyDisabledHeaderConfigDto};
-use shared::utils::{default_resource_retry_attempts, default_resource_retry_backoff_ms, default_resource_retry_backoff_multiplier};
+use shared::utils::{default_resource_retry_attempts, default_resource_retry_backoff_ms, default_resource_retry_backoff_multiplier, hex_to_u8_16, u8_16_to_hex};
 use std::cmp::max;
 
 #[derive(Debug, Clone)]
 pub struct ReverseProxyDisabledHeaderConfig {
     pub referer_header: bool,
     pub x_header: bool,
+    pub cloudflare_header: bool,
     pub custom_header: Vec<String>,
 }
 
@@ -18,6 +19,9 @@ impl ReverseProxyDisabledHeaderConfig {
             return true;
         }
         if self.x_header && header_lc.starts_with("x-") {
+            return true;
+        }
+        if self.cloudflare_header && header_lc.starts_with("cf-") {
             return true;
         }
         self.custom_header
@@ -95,6 +99,7 @@ impl From<&ResourceRetryConfig> for ResourceRetryConfigDto {
 #[derive(Debug, Clone)]
 pub struct ReverseProxyConfig {
     pub resource_rewrite_disabled: bool,
+    pub rewrite_secret: [u8; 16],
     pub resource_retry: ResourceRetryConfig,
     pub disabled_header: Option<ReverseProxyDisabledHeaderConfig>,
     pub stream: Option<StreamConfig>,
@@ -109,6 +114,7 @@ impl From<&ReverseProxyConfigDto> for ReverseProxyConfig {
     fn from(dto: &ReverseProxyConfigDto) -> Self {
         Self {
             resource_rewrite_disabled: dto.resource_rewrite_disabled,
+            rewrite_secret: hex_to_u8_16(&dto.rewrite_secret).unwrap_or_default(),
             resource_retry: dto
                 .resource_retry
                 .as_ref()
@@ -116,6 +122,7 @@ impl From<&ReverseProxyConfigDto> for ReverseProxyConfig {
             disabled_header: dto.disabled_header.as_ref().map(|d| ReverseProxyDisabledHeaderConfig {
                 referer_header: d.referer_header,
                 x_header: d.x_header,
+                cloudflare_header: d.cloudflare_header,
                 custom_header: d.custom_header.clone(),
             }),
             stream: dto.stream.as_ref().map(Into::into),
@@ -130,10 +137,12 @@ impl From<&ReverseProxyConfig> for ReverseProxyConfigDto {
     fn from(instance: &ReverseProxyConfig) -> Self {
         Self {
             resource_rewrite_disabled: instance.resource_rewrite_disabled,
+            rewrite_secret: u8_16_to_hex(&instance.rewrite_secret),
             resource_retry: Some(ResourceRetryConfigDto::from(&instance.resource_retry)),
             disabled_header: instance.disabled_header.as_ref().map(|d| ReverseProxyDisabledHeaderConfigDto {
                 referer_header: d.referer_header,
                 x_header: d.x_header,
+                cloudflare_header: d.cloudflare_header,
                 custom_header: d.custom_header.clone(),
             }),
             stream: instance.stream.as_ref().map(Into::into),

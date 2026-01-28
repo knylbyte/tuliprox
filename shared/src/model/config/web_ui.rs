@@ -1,6 +1,6 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::WebAuthConfigDto;
-use crate::utils::{default_as_true, is_blank_optional_string};
+use crate::utils::{is_true, default_as_true, is_blank_optional_string, default_kick_secs, is_default_kick_secs, is_blank_optional_str};
 
 const RESERVED_PATHS: &[&str] = &[
     "cvs",
@@ -70,18 +70,20 @@ impl ContentSecurityPolicyConfigDto {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct WebUiConfigDto {
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
     pub enabled: bool,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
     pub user_ui_enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_security_policy: Option<ContentSecurityPolicyConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<WebAuthConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub player_server: Option<String>,
+    #[serde(default = "default_kick_secs", skip_serializing_if = "is_default_kick_secs")]
+    pub kick_secs: u64,
 }
 
 impl Default for WebUiConfigDto {
@@ -93,6 +95,7 @@ impl Default for WebUiConfigDto {
             path: None,
             auth: None,
             player_server: None,
+            kick_secs: default_kick_secs(),
         }
     }
 }
@@ -102,8 +105,9 @@ impl WebUiConfigDto {
         let empty = WebUiConfigDto::default();
         self.enabled == empty.enabled
             && self.user_ui_enabled == empty.user_ui_enabled
-            && is_blank_optional_string(&self.path)
-            && is_blank_optional_string(&self.player_server)
+            && is_blank_optional_str(self.path.as_deref())
+            && is_blank_optional_str(self.player_server.as_deref())
+            && self.kick_secs == default_kick_secs()
             && (self.content_security_policy.is_none()
                 || self
                     .content_security_policy
@@ -124,12 +128,13 @@ impl WebUiConfigDto {
             self.auth = None;
         }
 
-        if is_blank_optional_string(&self.path) {
+        if is_blank_optional_str(self.path.as_deref()) {
             self.path = None;
         }
-        if is_blank_optional_string(&self.player_server) {
+        if is_blank_optional_str(self.player_server.as_deref()) {
             self.player_server = None;
         }
+        self.kick_secs = default_kick_secs();
     }
 
     pub fn prepare(&mut self) -> Result<(), TuliproxError> {

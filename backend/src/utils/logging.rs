@@ -1,13 +1,14 @@
-use log::{error, info, LevelFilter};
-use env_logger::{Builder, Target};
-use std::fs::File;
 use crate::model::LogLevelConfig;
 use crate::utils::config_file_reader;
+use env_logger::{Builder, Target};
+use log::{error, info, LevelFilter};
+use std::fs::File;
 
 const LOG_ERROR_LEVEL_MOD: &[&str] = &[
     "reqwest::async_impl::client",
     "reqwest::connect",
     "hyper_util::client",
+    "tungstenite::protocol"
 ];
 
 
@@ -22,7 +23,7 @@ fn get_log_level(log_level: &str) -> LevelFilter {
     }
 }
 
-pub fn init_logger(user_log_level: Option<&String>, config_file: &str) {
+pub fn init_logger(user_log_level: Option<&str>, config_file: &str) {
 
 
     // tracing_subscriber::registry()
@@ -30,7 +31,6 @@ pub fn init_logger(user_log_level: Option<&String>, config_file: &str) {
     //     .with(EnvFilter::from_default_env())
     //     .with(fmt::layer()) // stdout logging
     //     .init();
-
 
     let env_log_level = std::env::var("TULIPROX_LOG").ok();
 
@@ -43,7 +43,7 @@ pub fn init_logger(user_log_level: Option<&String>, config_file: &str) {
         .or(env_log_level) // env
         .or_else(|| {               // config
             File::open(config_file).ok()
-                .and_then(|file| serde_yaml::from_reader::<_, LogLevelConfig>(config_file_reader(file, true))
+                .and_then(|file| serde_saphyr::from_reader::<_, LogLevelConfig>(config_file_reader(file, true))
                     .map_err(|e| error!("Failed to parse log config file: {e}"))
                     .ok())
                 .and_then(|cfg| cfg.log.and_then(|l| l.log_level))
@@ -56,13 +56,12 @@ pub fn init_logger(user_log_level: Option<&String>, config_file: &str) {
             if pair.contains('=') {
                 let mut kv_iter = pair.split('=').map(str::trim);
                 if let (Some(module), Some(level)) = (kv_iter.next(), kv_iter.next()) {
-                    let log_level =  get_log_level(level);
+                    let log_level = get_log_level(level);
                     log_levels.push(format!("{module}={log_level}"));
                     log_builder.filter_module(module, log_level);
-
                 }
             } else {
-                let level =  get_log_level(pair);
+                let level = get_log_level(pair);
                 log_levels.push(level.to_string());
                 log_builder.filter_level(level);
             }
@@ -75,6 +74,6 @@ pub fn init_logger(user_log_level: Option<&String>, config_file: &str) {
     for module in LOG_ERROR_LEVEL_MOD {
         log_builder.filter_module(module, LevelFilter::Error);
     }
-    log_builder.init();
+    let _ = log_builder.try_init();
     info!("Log Level {}", &log_levels.join(", "));
 }

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use crate::error::{TuliproxError};
-use crate::info_err;
-use crate::utils::{is_blank_optional_string, parse_size_base_2};
+use crate::{info_err_res};
+use crate::utils::{is_blank_optional_str, is_blank_optional_string, parse_size_base_2};
 use path_clean::PathClean;
 
 
@@ -10,15 +10,15 @@ use path_clean::PathClean;
 pub struct CacheConfigDto {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub size: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub dir: Option<String>,
 }
 
 impl CacheConfigDto {
     pub fn is_empty(&self) -> bool {
-        !self.enabled && is_blank_optional_string(&self.size) && is_blank_optional_string(&self.dir)
+        !self.enabled && is_blank_optional_str(self.size.as_deref()) && is_blank_optional_str(self.dir.as_deref())
     }
 
     pub(crate) fn prepare(&mut self, working_dir: &str) -> Result<(), TuliproxError> {
@@ -38,11 +38,11 @@ impl CacheConfigDto {
                 match parse_size_base_2(val) {
                     Ok(size) => {
                         if let Err(err) = usize::try_from(size) {
-                            return Err(info_err!(format!("Cache size could not be determined: {err}")));
+                            return info_err_res!("Cache size could not be determined: {err}");
                         }
                     }
                     Err(err) => {
-                        return Err(info_err!(format!("Failed to read cache size: {err}")))
+                        return info_err_res!("Failed to read cache size: {err}")
                     }
                 }
             }

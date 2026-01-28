@@ -3,17 +3,20 @@ use shared::error::{TuliproxError};
 use crate::model::{AppConfig, ProxyUserCredentials};
 use crate::model::{ConfigTarget};
 use shared::model::{ConfigTargetOptions, M3uPlaylistItem, PlaylistItemType, ProxyType, TargetType, XtreamCluster};
-use crate::repository::indexed_document::IndexedDocumentIterator;
-use crate::repository::m3u_repository::m3u_get_file_paths;
-use crate::repository::storage::ensure_target_storage_path;
+use crate::repository::{BPlusTreeQuery, PlaylistIteratorReader};
+use crate::repository::m3u_get_file_path_for_db;
+use crate::repository::{ensure_target_storage_path, get_file_path_for_db_index};
 use crate::repository::storage_const;
-use crate::repository::user_repository::user_get_bouquet_filter;
+use crate::repository::user_get_bouquet_filter;
 use crate::utils::FileReadGuard;
 use std::collections::HashSet;
+use std::iter::Peekable;
+use log::error;
+use shared::utils::Internable;
 
 #[allow(clippy::struct_excessive_bools)]
 pub struct M3uPlaylistIterator {
-    reader: IndexedDocumentIterator<u32, M3uPlaylistItem>,
+    reader: Peekable<PlaylistIteratorReader<M3uPlaylistItem>>,
     base_url: String,
     username: String,
     password: String,
@@ -36,16 +39,31 @@ impl M3uPlaylistIterator {
 
         // TODO use playlist memory cache, but be aware of sorting !
 
-        let m3u_output = target.get_m3u_output().ok_or_else(|| info_err!(format!("Unexpected failure, missing m3u target output for target {}",  target.name)))?;
+        let m3u_output = target.get_m3u_output().ok_or_else(|| info_err!("Unexpected failure, missing m3u target output for target {}",  target.name))?;
         let config = cfg.config.load();
         let target_path = ensure_target_storage_path(&config, target.name.as_str())?;
-        let (m3u_path, idx_path) = m3u_get_file_paths(&target_path);
+        let m3u_path = m3u_get_file_path_for_db(&target_path);
 
         let file_lock = cfg.file_locks.read_lock(&m3u_path).await;
 
-        let reader =
-            IndexedDocumentIterator::<u32, M3uPlaylistItem>::new(&m3u_path, &idx_path)
-                .map_err(|err| info_err!(format!("Could not deserialize file {m3u_path:?} - {err}")))?;
+        let index_path = get_file_path_for_db_index(&m3u_path);
+        let reader = if index_path.exists() {
+             let query = BPlusTreeQuery::<u32, M3uPlaylistItem>::try_new(&m3u_path)
+                 .map_err(|err| info_err!("Could not open BPlusTreeQuery {m3u_path:?} - {err}"))?;
+             match query.disk_iter_sorted() {
+                 Ok(reader) => PlaylistIteratorReader::Sorted(reader),
+                 Err(err) => {
+                     error!("Sorted index error for m3u, fallback: {err}");
+                     let query = BPlusTreeQuery::<u32, M3uPlaylistItem>::try_new(&m3u_path)
+                         .map_err(|err| info_err!("Could not open BPlusTreeQuery {m3u_path:?} - {err}"))?;
+                     PlaylistIteratorReader::Unsorted(query.disk_iter())
+                 }
+             }
+        } else {
+             let query = BPlusTreeQuery::<u32, M3uPlaylistItem>::try_new(&m3u_path)
+                 .map_err(|err| info_err!("Could not open BPlusTreeQuery {m3u_path:?} - {err}"))?;
+             PlaylistIteratorReader::Unsorted(query.disk_iter())
+        }.peekable();
 
         let filter = user_get_bouquet_filter(&config, &user.username, None, TargetType::M3u, XtreamCluster::Live).await;
 
@@ -67,26 +85,39 @@ impl M3uPlaylistIterator {
     }
 
     fn get_rewritten_url(&self, m3u_pli: &M3uPlaylistItem, typed: bool, prefix_path: &str) -> String {
-        if typed {
-            let stream_type = match m3u_pli.item_type {
+        // Build URL efficiently with a single allocation using concat_string! macro
+        let stream_type: &str = if typed {
+            match m3u_pli.item_type {
                 PlaylistItemType::Live
                 | PlaylistItemType::Catchup
                 | PlaylistItemType::LiveUnknown
                 | PlaylistItemType::LiveHls
                 | PlaylistItemType::LiveDash => "live",
-                PlaylistItemType::Video => "movie",
-                PlaylistItemType::Series
-                | PlaylistItemType::SeriesInfo => "series",
-            };
-            format!("{}/{prefix_path}/{stream_type}/{}/{}/{}",
-                    &self.base_url,
-                    &self.username,
-                    &self.password,
-                    m3u_pli.virtual_id
+                PlaylistItemType::Video | PlaylistItemType::LocalVideo => "movie",
+                PlaylistItemType::Series | PlaylistItemType::SeriesInfo | PlaylistItemType::LocalSeries | PlaylistItemType::LocalSeriesInfo => "series",
+            }
+        } else {
+            ""
+        };
+
+        let mut cap = self.base_url.len()
+            + prefix_path.len()
+            + self.username.len()
+            + self.password.len()
+            + 32; // separators and id
+        if typed { cap += stream_type.len() + 1; }
+
+        if typed {
+            shared::concat_string!(
+                cap = cap;
+                &self.base_url, "/", prefix_path, "/", stream_type, "/",
+                &self.username, "/", &self.password, "/", &m3u_pli.virtual_id.to_string()
             )
         } else {
-            format!("{}/{prefix_path}/{}/{}/{}",
-                    &self.base_url, &self.username, &self.password, m3u_pli.virtual_id
+            shared::concat_string!(
+                cap = cap;
+                &self.base_url, "/", prefix_path, "/",
+                &self.username, "/", &self.password, "/", &m3u_pli.virtual_id.to_string()
             )
         }
     }
@@ -98,17 +129,35 @@ impl M3uPlaylistIterator {
         self.get_rewritten_url(m3u_pli, false, storage_const::M3U_RESOURCE_PATH)
     }
 
+    fn find_next_matching(reader: &mut Peekable<PlaylistIteratorReader<M3uPlaylistItem>>, set: &HashSet<String>) -> Option<M3uPlaylistItem> {
+        loop {
+            match reader.next() {
+                Some(Ok((_, item))) => {
+                    if set.contains(&*item.group) {
+                        return Some(item);
+                    }
+                }
+                Some(Err(e)) => {
+                    error!("Iterator error: {e}");
+                    return None;
+                }
+                None => return None,
+            }
+        }
+    }
+
     fn get_next(&mut self) -> Option<(M3uPlaylistItem, bool)> {
         let entry = if let Some(set) = &self.filter {
             if let Some((current_item, _)) = self.lookup_item.take() {
-                let next_valid = self.reader.find(|(pli, _)| set.contains(&pli.group.clone()));
-                self.lookup_item = next_valid;
+                // Avoid cloning strings while filtering
+                let next_valid = Self::find_next_matching(&mut self.reader, set);
+                self.lookup_item = next_valid.map(|v| (v, true)); // has_next handled by iterator usually, but here we just need the item
                 let has_next = self.lookup_item.is_some();
                 Some((current_item, has_next))
             } else {
-                let current_item = self.reader.find(|(item, _)| set.contains(&item.group.clone()));
-                if let Some((item, _)) = current_item {
-                    self.lookup_item = self.reader.find(|(item, _)| set.contains(&item.group.clone()));
+                let current_item = Self::find_next_matching(&mut self.reader, set);
+                if let Some(item) = current_item {
+                    self.lookup_item = Self::find_next_matching(&mut self.reader, set).map(|item| (item, true));
                     let has_next = self.lookup_item.is_some();
                     Some((item, has_next))
                 } else {
@@ -116,24 +165,44 @@ impl M3uPlaylistIterator {
                 }
             }
         } else {
-            self.reader.next()
+            match self.reader.next() {
+                Some(Ok((_, v))) => {
+                    let has_next = matches!(self.reader.peek(), Some(Ok(_)));
+                    Some((v, has_next))
+                },
+                Some(Err(e)) => {
+                    error!("Iterator error: {e}");
+                    None
+                }
+                None => None,
+            }
         };
 
         // TODO hls and unknown reverse proxy
         entry.map(|(mut m3u_pli, has_next)| {
-            let is_redirect = self.proxy_type.is_redirect(m3u_pli.item_type) || self.target_options.as_ref().and_then(|o| o.force_redirect.as_ref()).is_some_and(|f| f.has_cluster(m3u_pli.item_type));
-            let should_rewrite_urls = if is_redirect { self.mask_redirect_url} else { true };
-            let rewrite_urls = if should_rewrite_urls {
-                Some((self.get_stream_url(&m3u_pli, self.include_type_in_url), if self.rewrite_resource { Some(self.get_resource_url(&m3u_pli)) } else { None }))
-            } else {
-                None
-            };
-            let url = m3u_pli.url.clone();
-            let (stream_url, resource_url) = rewrite_urls
-                .map_or_else(|| (url, None), |(su, ru)| (su, ru.as_ref().map(String::to_string)));
+            let is_redirect = self.proxy_type.is_redirect(m3u_pli.item_type)
+                || self
+                    .target_options
+                    .as_ref()
+                    .and_then(|o| o.force_redirect.as_ref())
+                    .is_some_and(|f| f.has_cluster(m3u_pli.item_type));
+            let should_rewrite_urls = if is_redirect { self.mask_redirect_url } else { true };
 
-            m3u_pli.t_stream_url.clone_from(&stream_url);
-            m3u_pli.t_resource_url.clone_from(&resource_url);
+            if should_rewrite_urls {
+                let stream_url = self.get_stream_url(&m3u_pli, self.include_type_in_url);
+                let resource_url = if self.rewrite_resource {
+                    Some(self.get_resource_url(&m3u_pli))
+                } else {
+                    None
+                };
+                m3u_pli.t_stream_url = stream_url.intern();
+                m3u_pli.t_resource_url = resource_url;
+            } else {
+                // Keep original URL (clone required because target field is distinct)
+                m3u_pli.t_stream_url = m3u_pli.url.clone();
+                m3u_pli.t_resource_url = None;
+            }
+
             (m3u_pli, has_next)
         })
     }

@@ -1,9 +1,46 @@
+@use "../../../size" as size;
+$movie-card-height: 24rem;
+$movie-card-width: 16rem;
+$live-card-width: 17.5rem;
+$episode-card-height: 13rem;
+$episode-card-width: 18rem;
+$series-backdrop-height: 300px;
+$series-backdrop-mobile-height: 150px;
+
+@mixin card-base($height, $width) {
+  position: relative;
+  padding: 0;
+  max-height: $height;
+  min-height: $height;
+  max-width: $width;
+  min-width: $width;
+}
+
+@mixin channel-logo($height, $width, $border-radius) {
+  .tp__playlist-explorer__channel-logo {
+    box-sizing: border-box;
+    overflow: hidden;
+    height: $height;
+    width: $width;
+
+    img {
+      height: $height;
+      width: $width;
+      box-sizing: border-box;
+      object-fit: cover;
+      object-position: center;
+      overflow: hidden;
+      border-radius: $border-radius;
+    }
+  }
+}
+
 .tp__playlist-explorer {
   display: flex;
   flex-flow: column;
   gap: var(--gap-default);
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: auto;
   background-color: var(--card-background-color);
   color: var(--card-color);
   border: 1px solid var(--border-color);
@@ -17,6 +54,8 @@
   &__header {
     display: flex;
     flex-flow: column;
+    width: 100%;
+
     &-toolbar {
       display: flex;
       flex-flow: row;
@@ -24,12 +63,20 @@
       width: 100%;
       justify-content: space-between;
 
-      .tp__icon-button {
-        width: 2.5rem;
-        height: 2.5rem;
-        .svg-icon {
-          height: 100%;
-          width: 100%;
+      &-actions {
+        display: flex;
+        flex-flow: row;
+        gap: var(--gap-default);
+        align-items: center;
+
+        .tp__icon-button {
+          width: 2.5rem;
+          height: 2.5rem;
+
+          .svg-icon {
+            height: 100%;
+            width: 100%;
+          }
         }
       }
 
@@ -47,8 +94,8 @@
     flex-flow: column;
     gap: var(--gap-default);
     box-sizing: border-box;
-    overflow: hidden;
   }
+
   &__group,
   &__categories {
     display: flex;
@@ -57,15 +104,56 @@
     box-sizing: border-box;
     overflow: hidden;
 
-    &-list {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    &-sidebar {
+      .tp__icon-button.active {
+        color: var(--tag-active-color);
+        fill: currentColor;
+      }
+    }
+
+    &-content {
+      display: flex;
+      flex-flow: row;
+      width: 100%;
       gap: var(--gap-default);
       box-sizing: border-box;
       overflow-y: auto;
+    }
+
+    &-list {
+      display: grid;
+      gap: var(--gap-default);
+      box-sizing: border-box;
       width: 100%;
+      overflow: auto;
+
+      &-live {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax($live-card-width, 1fr));
+        gap: var(--gap-default);
+        box-sizing: border-box;
+        width: 100%;
+      }
+
+      &-video,
+      &-series {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax($movie-card-width, 1fr));
+        gap: var(--gap-default);
+        box-sizing: border-box;
+        width: 100%;
+      }
+
+      &-episodes {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax($episode-card-width, 1fr));
+        gap: var(--gap-default);
+        box-sizing: border-box;
+        width: 100%;
+      }
     }
   }
+
   &__item {
     display: flex;
     justify-content: flex-start;
@@ -77,18 +165,27 @@
     border-radius: var(--border-radius);
     cursor: pointer;
     box-sizing: border-box;
-    max-height: 3rem;
-    min-height: 2.5rem;
     gap: var(--gap-default);
     padding: 0 var(--padding-default);
     overflow: hidden;
     text-overflow: ellipsis;
 
-    img,
     .svg-icon {
       box-sizing: border-box;
       height: 100%;
       aspect-ratio: 1 / 1;
+    }
+
+    &-label {
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      cursor: pointer;
+      box-sizing: border-box;
+      gap: var(--gap-default);
+      padding: 0 var(--padding-default);
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     &:hover {
@@ -96,21 +193,17 @@
       color: var(--text-button-hover-color);
     }
 
-    &-live:before {
-      content: "L";
-      background-color: var(--tag-live-background-color);
-      border: 1px solid var(--tag-live-border-color);
+    &-live {
+      max-height: 3rem;
+      min-height: 3rem;
     }
-    &-video:before {
-      content: "V";
-      background-color: var(--tag-video-background-color);
-      border: 1px solid var(--tag-video-border-color);
+
+    &-video,
+    &-series {
+      max-height: 3rem;
+      min-height: 3rem;
     }
-    &-series:before {
-      content: "S";
-      background-color: var(--tag-series-background-color);
-      border: 1px solid var(--tag-series-border-color);
-    }
+
     &-live:before,
     &-video:before,
     &-series:before {
@@ -123,8 +216,190 @@
     }
   }
 
-  &__channel {
-    padding-left: var(--padding-micro);
+  &__series-info {
+    display: flex;
+    flex-flow: column;
+    gap: var(--gap-default);
+    box-sizing: border-box;
+    overflow: hidden;
+    align-items: center;
+
+    &__header {
+      display: flex;
+      flex-flow: row;
+      width: 100%;
+    }
+
+    &__rating {
+      color: var(--playlist-rating-color) !important;
+      background-color: var(--playlist-rating-background-color) !important;
+      font-weight: bold;
+    }
+
+    &__nowrap {
+      white-space: nowrap;
+    }
+
+    &__body {
+      position: relative;
+      display: flex;
+      flex-flow: column;
+      flex: 1 1 auto;
+      gap: var(--gap-default);
+      box-sizing: border-box;
+      width: 100%;
+      overflow: auto;
+
+      .tp__playlist-explorer__group-list {
+        overflow: unset;
+      }
+
+      &-top {
+        position: relative;
+        display: flex;
+        flex-flow: column;
+        gap: var(--gap-default);
+        min-height: $series-backdrop-height;
+        max-height: $series-backdrop-height;
+        height: $series-backdrop-height;
+        background-repeat: no-repeat;
+        background-size: 70%;
+        background-position: right top;
+        border-radius: var(--border-radius);
+        font-size: 1.2rem;
+        box-sizing: border-box;
+        width: 100%;
+        overflow: hidden;
+        @media (max-width: size.$mobile-breakpoint) {
+          min-height: $series-backdrop-mobile-height;
+          max-height: $series-backdrop-mobile-height;
+          height: $series-backdrop-mobile-height;
+          font-size: 1rem;
+        }
+
+        &-backdrop {
+          position: absolute;
+          width: 100%;
+          height: 100%;
+          overflow: hidden;
+          pointer-events: none;
+          background-image: linear-gradient(to right, rgba(0, 0, 0, 1.0) 30%, rgba(0, 0, 0, 0.85) 50%, rgba(0, 0, 0, 0.75) 60%, rgba(0, 0, 0, 0.35) 70%, rgba(0, 0, 0, 0.0) 85%);
+        }
+
+        &-content {
+          display: flex;
+          flex-flow: column;
+          padding: var(--padding-default);
+          gap: var(--gap-default);
+          max-width: 60%;
+          background-size: cover;
+          background-position: center;
+          font-size: 1.2rem;
+          color: var(--text-color);
+          z-index: 1;
+        }
+      }
+
+    }
+
+    &__title {
+      font-weight: bold;
+      font-size: 2.5rem;
+      @media (max-width: size.$mobile-breakpoint) {
+        font-size: 1.1rem;
+      }
+      color: var(--series-info-title-color, white);
+    }
+
+    &__infos {
+      display: flex;
+      flex-flow: row;
+      gap: var(--gap-larger);
+    }
+
+    &__season {
+      color: var(--series-info-title-color, white);
+      display: flex;
+      flex-flow: column;
+      gap: var(--gap-default);
+
+      &-title {
+        font-weight: bold;
+        font-size: 2rem;
+      }
+    }
   }
 
+  &__channel {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    fill: var(--menu-icon-color);
+    background-color: var(--text-button-background-color);
+    color: var(--text-button-color);
+    border: 1px solid var(--text-button-border-color);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    box-sizing: border-box;
+    gap: var(--gap-default);
+    padding-left: var(--padding-micro);
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+
+    &-live {
+      display: flex;
+      flex-flow: row;
+      box-sizing: border-box;
+      position: relative;
+      max-height: 4rem;
+      min-height: 4rem;
+      align-items: center;
+
+      @include channel-logo(3rem, 3rem, var(--border-radius));
+
+    }
+
+    &-episode {
+      @include card-base($episode-card-height, $episode-card-width);
+    }
+
+    &-series,
+    &-video {
+      @include card-base($movie-card-height, $movie-card-width);
+    }
+
+    &-episode,
+    &-series,
+    &-video {
+      display: flex;
+      flex-flow: column;
+      box-sizing: border-box;
+
+      @include channel-logo(100%, 100%, 0);
+
+      &-rating {
+        position: absolute;
+        top: 0.5rem;
+        left: 0.5rem;
+        color: var(--card-color) !important;
+        background-color: rgb(from var(--card-background-color) r g b / 1) !important;
+        font-weight: bold;
+      }
+
+      &-info {
+        display: flex;
+        flex-flow: row;
+        align-items: center;
+        height: 3rem;
+        width: 100%;
+      }
+
+      &-title {
+        display: flex;
+        flex-flow: row;
+        align-items: center;
+      }
+    }
+  }
 }

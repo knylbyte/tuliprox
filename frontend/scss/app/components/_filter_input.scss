@@ -1,0 +1,28 @@
+.tp__filter-input {
+  display: flex;
+  cursor: pointer;
+  fill: var(--modest-text-color);
+
+  .tp__input-wrapper {
+    height: 2.5rem;
+    padding: 0 var(--padding-mini);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &:hover {
+    fill: var(--text-color);
+    filter: brightness(1.2);
+  }
+
+  &__preview {
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    max-height: 2rem;
+    pointer-events: none;
+  }
+
+}

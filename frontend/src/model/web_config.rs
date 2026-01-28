@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 
+pub fn default_documentation_url() -> String { String::from("https://euzu.github.io/tuliprox-docs/") }
+
+
 #[derive(PartialEq, Eq, Clone, Serialize, Deserialize, Debug, Default)]
 pub struct ApiConfig {
     #[serde(alias = "apiUrl")]
@@ -24,7 +27,7 @@ pub struct WebConfig {
     pub discord: String,
     #[serde(default)]
     pub github: String,
-    #[serde(default)]
+    #[serde(default = "default_documentation_url")]
     pub documentation: String,
     #[serde(alias = "wsUrl")]
     pub ws_url: String,

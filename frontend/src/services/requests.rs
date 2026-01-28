@@ -4,12 +4,8 @@ use log::error;
 use reqwasm::http::Request;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
-use shared::utils::bin_deserialize;
+use shared::utils::{bin_deserialize, CONTENT_TYPE_CBOR, CONTENT_TYPE_JSON};
 use web_sys::window;
-
-const CONTENT_TYPE_BIN: &str = "application/cbor";
-const CONTENT_TYPE_JSON: &str = "application/json";
-pub const ACCEPT_PREFER_BIN: &str = "application/cbor, application/json;q=0.9";
 
 enum RequestMethod {
     Get,
@@ -35,7 +31,7 @@ pub fn set_token(token: Option<&str>) {
 const DUMMY_TOKEN: &str = "eyJraWQiOiJkZWZhdWx0IiwiYWxnIjoiUlMyNTYifQ.eyJsb2dpbiI6ImR1bW15In0.WWzZP0hICmJeIgMLVYNOpayriEC08J_lYssk9z8GglHXfZ6oJUDv3svlJDA8sQG025VA_LR5UzyyiWeQDCdpWyrCI_nI2Xd-3ga3JwWtxHE9NWFalgq0Q9jjxoB4LYWCXsAkqoZqk6s7b3F5Fi_h5oYHfwM4h8hXEbrgnJ_Z1wpSc7HNh6SUnOllxcaJOxYlRrlUn3XulSSf2NhHe3XotvFguiIV1-RIns3cSIL29bvMUEFw84w7BfJn-joynZsWlfJBvzyOiuDqduXa0deH7b962unM2wPpbvTgliJhFFOUBHClRhBOmoo0cijuMZB4K7NjgjGmU5eVfHG6pVWs_b0ikS4V_P6RJcNS6Alcc_HB_YXv0yCD3pjcBbuRXAskivEhgXuecdRMGQgohAhXplLuu5SR0K6Bcrt7UFFnBi2qN6fbw1i4s8PDXqiTu4rIg9agCkVNfplRvj8Szl6egF0Vd1TN1WGEarkdINEUyfNQkAihFY5BKxfaPun1-a0VydRMZElu6VzrrUMxXt4T7zybuJZI63C3mKLEHZixdSC76c9AE-zGom5LZYE4mqwd4dW3QHtWFZgGZiL9C_VBIf63WzjTYhWVuO2U8O9bsKkSEl5L-Ww9j8ccDHp5nc7y6yUgSYd600TBRI7WblFovLsl2tjElvUqfJZhj6JmX_Q";
 
 // The Authorization header is for the Backend Authenticator mandatory.
-// If we don't set a dummy token the backend api cant be called.
+// If we don't set a dummy token the backend api can't be called.
 pub fn check_dummy_token() {
     if get_token().is_none() {
         set_token(Some(DUMMY_TOKEN));
@@ -68,9 +64,10 @@ where
         request = request.header("Authorization", format!("Bearer {token}").as_str());
     }
 
-    if r_type.contains(CONTENT_TYPE_BIN) {
-        request = request.header("Accept", CONTENT_TYPE_BIN);
+    if r_type.contains(CONTENT_TYPE_CBOR) {
+        request = request.header("Accept", CONTENT_TYPE_CBOR);
     }
+
     match request.send().await {
         Ok(response) => {
             match response.status() {
@@ -80,7 +77,7 @@ where
                         .get("content-type")
                         .unwrap_or(r_type.to_string());
                     let is_json = content_type.contains(CONTENT_TYPE_JSON);
-                    let is_bin = !is_json && content_type.contains(CONTENT_TYPE_BIN);
+                    let is_bin = !is_json && content_type.contains(CONTENT_TYPE_CBOR);
                     if (is_json || is_bin) && std::any::TypeId::of::<T>() == std::any::TypeId::of::<()>() {
                         // `T = ()` valid
                         let _ = response.binary().await;
@@ -126,7 +123,7 @@ where
                 400 => {
                     let ct = response.headers().get("content-type").unwrap_or_default();
                     let is_json = ct.contains(CONTENT_TYPE_JSON);
-                    let is_bin = !is_json && ct.contains(CONTENT_TYPE_BIN);
+                    let is_bin = !is_json && ct.contains(CONTENT_TYPE_CBOR);
                     let data: Result<ErrorInfo, _> = if is_bin {
                         match response.binary().await {
                             Ok(bytes) => bin_deserialize::<ErrorInfo>(&bytes).map_err(|_| Error::DeserializeError),
@@ -149,7 +146,7 @@ where
                 422 => {
                     let ct = response.headers().get("content-type").unwrap_or_default();
                     let is_json = ct.contains(CONTENT_TYPE_JSON);
-                    let is_bin = !is_json && ct.contains(CONTENT_TYPE_BIN);
+                    let is_bin = !is_json && ct.contains(CONTENT_TYPE_CBOR);
                     let data: Result<ErrorSetInfo, _> = if is_bin {
                         match response.binary().await {
                             Ok(bytes) => bin_deserialize::<ErrorSetInfo>(&bytes).map_err(|_| Error::DeserializeError),

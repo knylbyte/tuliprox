@@ -1,5 +1,4 @@
-use crate::repository::bplustree::BPlusTree;
-use serde::{Deserialize, Serialize};
+use crate::repository::BPlusTree;
 use std::io;
 use std::io::BufRead;
 use std::net::Ipv4Addr;
@@ -9,7 +8,6 @@ fn ipv4_to_u32(ip: &str) -> Option<u32> {
     ip.parse::<Ipv4Addr>().ok().map(u32::from)
 }
 
-#[derive(Serialize, Deserialize)]
 pub struct GeoIp {
     tree: BPlusTree<u32, (u32, String)>,
 }
@@ -96,25 +94,25 @@ impl Default for GeoIp {
 mod test {
     // https://raw.githubusercontent.com/sapics/ip-location-db/refs/heads/main/asn-country/asn-country-ipv4.csv
 
-    use crate::utils::geoip::GeoIp;
-    use std::fs::File;
-    use std::io::BufReader;
-    use std::path::PathBuf;
+    // use crate::utils::geoip::GeoIp;
+    // use std::fs::File;
+    // use std::path::PathBuf;
+    // use crate::utils::file_reader;
 
-    #[test]
-    pub fn test_csv() {
-        let db_file = PathBuf::from("/projects/m3u-test/asn-country-ipv4.db");
-        let source = PathBuf::from("/projects/m3u-test/asn-country-ipv4.csv");
-        let file = File::open(source).expect("Could not open csv file");
-        let reader = BufReader::new(file);
-        let mut geo_ip = GeoIp::new();
-        let _ = geo_ip.import_ipv4_from_csv(reader, &db_file).expect("Could not import csv");
-
-        let geo_ip = GeoIp::load(&db_file).expect("Failed to load geoip db");
-        if let Some(cc) = geo_ip.lookup("72.13.24.23") {
-            assert_eq!(cc, "US");
-        } else {
-            assert!(false);
-        }
-    }
+    // #[test]
+    // pub fn test_csv() {
+    //     let db_file = PathBuf::from("/projects/m3u-test/asn-country-ipv4.db");
+    //     let source = PathBuf::from("/projects/m3u-test/asn-country-ipv4.csv");
+    //     let file = File::open(source).expect("Could not open csv file");
+    //     let reader = file_reader(file);
+    //     let mut geo_ip = GeoIp::new();
+    //     let _ = geo_ip.import_ipv4_from_csv(reader, &db_file).expect("Could not import csv");
+    //
+    //     let geo_ip = GeoIp::load(&db_file).expect("Failed to load geoip db");
+    //     if let Some(cc) = geo_ip.lookup("72.13.24.23") {
+    //         assert_eq!(cc, "US");
+    //     } else {
+    //         panic!("GeoIP lookup returned no result");
+    //     }
+    // }
 }

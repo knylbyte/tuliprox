@@ -1,11 +1,11 @@
-use crate::api::api_utils::try_unwrap_body;
+use crate::api::api_utils::{try_unwrap_body, internal_server_error};
 use crate::api::model::HdHomerunAppState;
 use crate::auth::AuthBasic;
 use crate::model::{AppConfig, ConfigTarget, ProxyUserCredentials};
+use crate::utils::arc_str_serde;
 use crate::processing::parser::xtream::get_xtream_url;
-use crate::repository::m3u_playlist_iterator::M3uPlaylistIterator;
-use crate::repository::m3u_repository;
-use crate::repository::xtream_playlist_iterator::XtreamPlaylistIterator;
+use crate::repository::{iter_raw_m3u_target_playlist, M3uPlaylistIterator};
+use crate::repository::XtreamPlaylistIterator;
 use axum::response::IntoResponse;
 use bytes::Bytes;
 use futures::{stream, Stream, StreamExt};
@@ -15,17 +15,17 @@ use serde_json::json;
 use shared::model::{
     M3uPlaylistItem, PlaylistItemType, TargetType, XtreamCluster, XtreamPlaylistItem,
 };
-use shared::utils::{concat_path, get_string_from_serde_value};
+use shared::utils::{concat_path};
 use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Lineup {
-    #[serde(rename = "GuideNumber")]
-    guide_number: String,
-    #[serde(rename = "GuideName")]
-    guide_name: String,
-    #[serde(rename = "URL")]
-    url: String,
+    #[serde(with = "arc_str_serde", rename = "GuideNumber")]
+    guide_number: Arc<str>,
+    #[serde(with = "arc_str_serde", rename = "GuideName")]
+    guide_name: Arc<str>,
+    #[serde(with = "arc_str_serde", rename = "URL")]
+    url: Arc<str>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -112,9 +112,7 @@ where
                             o.xtream_live_stream_without_extension,
                         )
                     });
-                let container_extension = item
-                    .get_additional_property("container_extension")
-                    .map(|v| get_string_from_serde_value(&v).unwrap_or_default());
+                let container_extension = item.get_container_extension();
                 let stream_url = match &base_url {
                     None => item.url.clone(),
                     Some(url) => get_xtream_url(
@@ -123,23 +121,24 @@ where
                         &credentials.username,
                         &credentials.password,
                         item.virtual_id,
-                        container_extension.as_ref(),
+                        container_extension.as_deref(),
                         live_stream_use_prefix,
                         live_stream_without_extension,
-                    ),
+                    ).into(),
                 };
 
                 let lineup = Lineup {
-                    guide_number: item.epg_channel_id.unwrap_or(item.name).clone(),
+                    guide_number: item.epg_channel_id.unwrap_or(item.name.clone()),
                     guide_name: item.title.clone(),
-                    url: stream_url,
+                    url: stream_url.clone(),
                 };
                 match serde_json::to_string(&lineup) {
-                    Ok(content) => Ok(Bytes::from(if has_next {
-                        format!("{content},")
-                    } else {
-                        content
-                    })),
+                    Ok(mut content) => {
+                        if has_next {
+                            content.push(',');
+                        }
+                        Ok(Bytes::from(content))
+                    },
                     Err(_) => Ok(Bytes::from("")),
                 }
             });
@@ -157,21 +156,21 @@ where
         Some(chans) => {
             let mapped = chans.map(move |(item, has_next)| {
                 let lineup = Lineup {
-                    guide_number: item.epg_channel_id.unwrap_or(item.name).clone(),
+                    guide_number: item.epg_channel_id.clone().unwrap_or(item.name.clone()),
                     guide_name: item.title.clone(),
-                    url: (if item.t_stream_url.is_empty() {
-                        &item.url
+                    url: if item.t_stream_url.is_empty() {
+                        item.url.clone()
                     } else {
-                        &item.t_stream_url
-                    })
-                        .clone(),
+                        item.t_stream_url.clone()
+                    }
                 };
                 match serde_json::to_string(&lineup) {
-                    Ok(content) => Ok(Bytes::from(if has_next {
-                        format!("{content},")
-                    } else {
-                        content
-                    })),
+                    Ok(mut content) => {
+                        if has_next {
+                            content.push(',');
+                        }
+                        Ok(Bytes::from(content))
+                    },
                     Err(_) => Ok(Bytes::from("")),
                 }
             });
@@ -230,7 +229,7 @@ async fn device_xml(
             .header(axum::http::header::CONTENT_TYPE, "application/xml")
             .body(axum::body::Body::from(device.as_xml())))
     } else {
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        internal_server_error!()
     }
 }
 
@@ -240,7 +239,7 @@ async fn device_json(
     if let Some(device) = create_device(&app_state) {
         axum::Json(device).into_response()
     } else {
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        internal_server_error!()
     }
 }
 
@@ -250,7 +249,7 @@ async fn discover_json(
     if let Some(device) = create_device(&app_state) {
         axum::Json(device).into_response()
     } else {
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        internal_server_error!()
     }
 }
 
@@ -259,7 +258,7 @@ async fn lineup_status(
 ) -> impl IntoResponse {
     let current_state = app_state
         .hd_scan_state
-        .load(std::sync::atomic::Ordering::SeqCst);
+        .load(std::sync::atomic::Ordering::Acquire);
     if current_state < 0 {
         axum::Json(json!({
             "ScanInProgress": 0,
@@ -277,8 +276,7 @@ async fn lineup_status(
             cfg.get_target_for_username(&app_state.device.t_username)
         {
             if target.has_output(TargetType::M3u) {
-                if let Some((_guard, iter)) =
-                    m3u_repository::iter_raw_m3u_playlist(&cfg, &target).await
+                if let Some((_guard, iter)) = iter_raw_m3u_target_playlist(&cfg, &target, None).await
                 {
                     iter.count()
                 } else {
@@ -286,10 +284,8 @@ async fn lineup_status(
                 }
             } else if target.has_output(TargetType::Xtream) {
                 let credentials = Arc::new(user);
-                let live =
-                    XtreamPlaylistIterator::new(XtreamCluster::Live, &cfg, &target, None, &credentials).await.map_or(0, std::iter::Iterator::count);
-                let vod =
-                    XtreamPlaylistIterator::new(XtreamCluster::Video, &cfg, &target, None, &credentials).await.map_or(0, std::iter::Iterator::count);
+                let live = XtreamPlaylistIterator::new(XtreamCluster::Live, &cfg, &target, None, &credentials).await.map_or(0, std::iter::Iterator::count);
+                let vod = XtreamPlaylistIterator::new(XtreamCluster::Video, &cfg, &target, None, &credentials).await.map_or(0, std::iter::Iterator::count);
                 live + vod
             } else {
                 0
@@ -301,11 +297,11 @@ async fn lineup_status(
         if final_state >= 100 {
             app_state
                 .hd_scan_state
-                .store(-1, std::sync::atomic::Ordering::SeqCst);
+                .store(-1, std::sync::atomic::Ordering::Release);
         } else {
             app_state
                 .hd_scan_state
-                .store(final_state, std::sync::atomic::Ordering::SeqCst);
+                .store(final_state, std::sync::atomic::Ordering::Release);
         }
         let found = (num_of_channels * usize::try_from(final_state).unwrap_or(1)) / 100;
         axum::Json(json!({
@@ -330,13 +326,13 @@ async fn lineup_post(
         "start" => {
             app_state
                 .hd_scan_state
-                .store(0, std::sync::atomic::Ordering::SeqCst);
+                .store(0, std::sync::atomic::Ordering::Release);
             axum::http::StatusCode::OK.into_response()
         }
         "abort" => {
             app_state
                 .hd_scan_state
-                .store(-1, std::sync::atomic::Ordering::SeqCst);
+                .store(-1, std::sync::atomic::Ordering::Release);
             axum::http::StatusCode::OK.into_response()
         }
         _ => axum::http::StatusCode::BAD_REQUEST.into_response(),

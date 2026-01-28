@@ -1,15 +1,15 @@
+use crate::api::model::BoxedProviderStream;
+use crate::api::model::StreamError;
+use crate::tools::atomic_once_flag::AtomicOnceFlag;
+use crate::utils::trace_if_enabled;
 use bytes::Bytes;
+use futures::Stream;
+use log::trace;
+use shared::utils::sanitize_sensitive_info;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::task::{Poll};
-use futures::{Stream};
-use log::trace;
-use shared::utils::sanitize_sensitive_info;
-use crate::api::model::BoxedProviderStream;
-use crate::api::model::StreamError;
-use crate::utils::trace_if_enabled;
-use crate::tools::atomic_once_flag::AtomicOnceFlag;
+use std::task::Poll;
 
 /// This stream counts the send bytes for reconnecting to the actual position and
 /// sets the `close_signal`  if the client drops the connection.
@@ -34,28 +34,27 @@ impl Stream for ClientStream {
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         if self.close_signal.is_active() {
-            loop {
-                match Pin::as_mut(&mut self.inner).poll_next(cx) {
-                    Poll::Ready(Some(Ok(bytes))) => {
-                        if bytes.is_empty() {
-                            trace!("client stream empty bytes");
-                            continue;
-                        }
-
-                        if let Some(counter) = self.total_bytes.as_ref() {
-                            counter.fetch_add(bytes.len(), Ordering::SeqCst);
-                        }
-
-                        return Poll::Ready(Some(Ok(bytes)));
-                    }
-                    Poll::Ready(None) => {
+            match Pin::as_mut(&mut self.inner).poll_next(cx) {
+                Poll::Ready(Some(Ok(bytes))) => {
+                    if bytes.is_empty() {
+                        trace!("client stream empty bytes");
+                        // Empty payload signals upstream closure; notify and let consumer see final chunk
                         self.close_signal.notify();
-                        return Poll::Ready(None);
+                    } else if let Some(counter) = self.total_bytes.as_ref() {
+                      counter.fetch_add(bytes.len(), Ordering::AcqRel);
                     }
-                    Poll::Pending => return Poll::Pending,
-                    Poll::Ready(Some(Err(err))) => {
-                        trace!("client stream error: {err}");
-                    }
+
+                    Poll::Ready(Some(Ok(bytes)))
+                }
+                Poll::Ready(None) => {
+                    self.close_signal.notify();
+                    Poll::Ready(None)
+                }
+                Poll::Pending => Poll::Pending,
+                Poll::Ready(Some(Err(err))) => {
+                    trace!("client stream error: {err}");
+                    self.close_signal.notify();
+                    Poll::Ready(Some(Err(err)))
                 }
             }
         } else {

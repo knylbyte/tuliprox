@@ -2,9 +2,11 @@ use crate::app::components::{AppIcon, DashboardView, EpgView, IconButton, InputR
 use crate::app::context::{ConfigContext, PlaylistContext, StatusContext};
 use crate::hooks::{use_server_status, use_service_context};
 use crate::model::{EventMessage, ViewType};
-use shared::model::{AppConfigDto, PlaylistUpdateState, StatusCheck};
+use shared::model::{AppConfigDto, ConfigInputDto, LibraryScanSummaryStatus, PlaylistUpdateState, StatusCheck, SystemInfo};
+use std::collections::HashMap;
 use std::future;
 use std::rc::Rc;
+use std::sync::Arc;
 use yew::prelude::*;
 use yew::suspense::use_future;
 use yew_i18n::use_translation;
@@ -20,6 +22,7 @@ pub fn Home() -> Html {
     let translate = use_translation();
     let config = use_state(|| None::<Rc<AppConfigDto>>);
     let status = use_state(|| None::<Rc<StatusCheck>>);
+    let system_info = use_state(|| None::<Rc<SystemInfo>>);
     let view_visible = use_state(|| ViewType::Dashboard);
     let theme = use_state(Theme::get_current_theme);
 
@@ -63,6 +66,12 @@ pub fn Home() -> Html {
                           PlaylistUpdateState::Failure => services_ctx_clone.toastr.error(translate_clone.t("MESSAGES.PLAYLIST_UPDATE.FAIL_FINISH")),
                         }
                     },
+                    EventMessage::LibraryScanProgress(summary) => {
+                        match summary.status {
+                            LibraryScanSummaryStatus::Success => services_ctx_clone.toastr.success(summary.message),
+                            LibraryScanSummaryStatus::Error => services_ctx_clone.toastr.error(summary.message),
+                        }
+                    },
                     _=> {}
                 }
             });
@@ -70,12 +79,7 @@ pub fn Home() -> Html {
         });
     }
 
-    let handle_view_change = {
-        let view_vis = view_visible.clone();
-        Callback::from(move |view| view_vis.set(view))
-    };
-
-    let _ = use_server_status(status.clone());
+    let _ = use_server_status(status.clone(), system_info.clone());
 
     {
         // first register for config update
@@ -101,15 +105,22 @@ pub fn Home() -> Html {
     let sources = use_memo(config.clone(), |config_ctx| {
         if let Some(cfg) = config_ctx.as_ref() {
             let mut sources = vec![];
+            // Create a map for a faster lookup of global inputs by name
+            let inputs_map: HashMap<Arc<str>, &ConfigInputDto> = cfg.sources.inputs.iter().map(|i| (i.name.clone(), i)).collect();
+
             for source in &cfg.sources.sources {
                 let mut inputs = vec![];
-                for input_cfg in &source.inputs {
-                    let input = Rc::new(input_cfg.clone());
-                    inputs.push(Rc::new(InputRow::Input(Rc::clone(&input))));
-                    if let Some(aliases) = input_cfg.aliases.as_ref() {
-                        for alias in aliases {
-                            inputs.push(Rc::new(InputRow::Alias(Rc::new(alias.clone()), Rc::clone(&input))));
+                for input_name in &source.inputs {
+                    if let Some(input_cfg) = inputs_map.get(input_name) {
+                        let input = Rc::new((*input_cfg).clone());
+                        inputs.push(Rc::new(InputRow::Input(Rc::clone(&input))));
+                        if let Some(aliases) = input_cfg.aliases.as_ref() {
+                            for alias in aliases {
+                                inputs.push(Rc::new(InputRow::Alias(Rc::new(alias.clone()), Rc::clone(&input))));
+                            }
                         }
+                    } else {
+                        log::error!("Input '{}' not found in global inputs", input_name);
                     }
                 }
                 let mut targets = vec![];
@@ -130,11 +141,16 @@ pub fn Home() -> Html {
 
     let status_context = StatusContext {
         status: (*status).clone(),
+        system_info: (*system_info).clone(),
     };
     let playlist_context = PlaylistContext {
         sources: sources.clone(),
     };
 
+    let handle_view_change = {
+        let view_vis = view_visible.clone();
+        Callback::from(move |view| view_vis.set(view))
+    };
 
     //<div class={"app-header__toolbar"}><select onchange={handle_language} defaultValue={i18next.language}>{services.config().getUiConfig().languages.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
 

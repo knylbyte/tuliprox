@@ -1,6 +1,6 @@
 # =================================================================
 #
-# Dockerfile für LOKALE Builds (nativ, ohne Cross-Compilation)
+# Dockerfile for local build (nativ, without Cross-Compilation)
 #
 # =================================================================
 
@@ -93,22 +93,14 @@ WORKDIR /src
 COPY resources ./resources
 
 # Combine ffmpeg commands into a single layer to reduce image size
-RUN ffmpeg -loop 1 -i ./resources/channel_unavailable.jpg -t 10 -r 1 -an \
-    -vf "scale=1920:1080" \
-    -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
-    ./resources/channel_unavailable.ts && \
-  ffmpeg -loop 1 -i ./resources/user_connections_exhausted.jpg -t 10 -r 1 -an \
-    -vf "scale=1920:1080" \
-    -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
-    ./resources/user_connections_exhausted.ts && \
-  ffmpeg -loop 1 -i ./resources/provider_connections_exhausted.jpg -t 10 -r 1 -an \
-    -vf "scale=1920:1080" \
-    -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
-    ./resources/provider_connections_exhausted.ts && \
-   ffmpeg -loop 1 -i ./resources/user_account_expired.jpg -t 10 -r 1 -an \
-     -vf "scale=1920:1080" \
-     -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
-     ./resources/user_account_expired.ts
+RUN for img in channel_unavailable user_connections_exhausted provider_connections_exhausted user_account_expired panel_api_provisioning; do \
+      ffmpeg -y -nostdin -loop 1 -i ./resources/${img}.jpg \
+        -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 \
+        -c:v libx264 -r 30 -g 30 -keyint_min 30 -sc_threshold 0 -pix_fmt yuv420p -preset veryfast -crf 23 \
+        -c:a aac -b:a 128k -ac 2 \
+        -t 10 -muxrate 2000k \
+        -f mpegts ./resources/${img}.ts || exit 1; \
+    done
 
 # -----------------------------------------------------------------
 # Stage 4: Prepare timezone data

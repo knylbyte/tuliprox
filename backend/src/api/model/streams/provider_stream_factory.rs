@@ -1,7 +1,6 @@
 use crate::api::api_utils::{get_headers_from_request, StreamOptions};
 use crate::api::model::{get_response_headers, AppState, CustomVideoStreamType};
 use crate::api::model::StreamError;
-use crate::api::model::TimedClientStream;
 use crate::api::model::{create_channel_unavailable_stream, get_header_filter_for_item_type};
 use crate::api::model::{BoxedProviderStream, ProviderStreamFactoryResponse};
 use crate::model::{ReverseProxyDisabledHeaderConfig};
@@ -33,14 +32,15 @@ pub struct ProviderStreamFactoryOptions {
     addr: SocketAddr,
     // item_type: PlaylistItemType,
     reconnect_enabled: bool,
-    force_reconnect_secs: u32,
     buffer_enabled: bool,
     buffer_size: usize,
     share_stream: bool,
     pipe_stream: bool,
     url: Url,
     headers: HeaderMap,
+    default_user_agent: Option<axum::http::header::HeaderValue>,
     range_bytes: Arc<Option<AtomicUsize>>,
+    range_requested: bool,
     reconnect_flag: Arc<AtomicOnceFlag>,
 }
 
@@ -55,6 +55,7 @@ impl ProviderStreamFactoryOptions {
         req_headers: &HeaderMap,
         input_headers: Option<&HashMap<String, String>>,
         disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
+        default_user_agent: Option<&str>,
     ) -> Self {
         let buffer_size = if stream_options.buffer_enabled {
             stream_options.buffer_size
@@ -63,21 +64,35 @@ impl ProviderStreamFactoryOptions {
         };
         let filter_header = get_header_filter_for_item_type(item_type);
         let mut req_headers = get_headers_from_request(req_headers, &filter_header);
-        // we need the range bytes from client request for seek ing to the right position
-        let range_start_bytes = get_request_range_start_bytes(&req_headers);
+        let requested_range = get_request_range_start_bytes(&req_headers);
         req_headers.remove("range");
 
         // We merge configured input headers with the headers from the request.
-        let headers = get_request_headers(input_headers, Some(&req_headers), disabled_headers);
+        let headers = get_request_headers(
+            input_headers,
+            Some(&req_headers),
+            disabled_headers,
+            default_user_agent,
+        );
+
+        let default_user_agent = default_user_agent
+            .and_then(|ua| {
+                let trimmed = ua.trim();
+                (!trimmed.is_empty()).then_some(trimmed)
+            })
+            .and_then(|ua| axum::http::header::HeaderValue::from_str(ua).ok());
 
         let url = stream_url.clone();
-        let range_bytes = Arc::new(range_start_bytes.map(AtomicUsize::new));
+        let range_bytes = if matches!(item_type, PlaylistItemType::Live | PlaylistItemType::LiveUnknown) {
+            Arc::new(requested_range.map(AtomicUsize::new))
+        } else {
+            Arc::new(Some(AtomicUsize::new(requested_range.unwrap_or(0))))
+        };
 
         Self {
             // item_type,
             addr,
             reconnect_enabled: stream_options.stream_retry,
-            force_reconnect_secs: stream_options.stream_force_retry_secs,
             pipe_stream: stream_options.pipe_provider_stream,
             buffer_enabled: stream_options.buffer_enabled,
             buffer_size,
@@ -85,7 +100,9 @@ impl ProviderStreamFactoryOptions {
             reconnect_flag: Arc::new(AtomicOnceFlag::new()),
             url,
             headers,
+            default_user_agent,
             range_bytes,
+            range_requested: requested_range.is_some(),
         }
     }
 
@@ -144,7 +161,7 @@ impl ProviderStreamFactoryOptions {
         self.range_bytes
             .as_ref()
             .as_ref()
-            .map(|atomic| atomic.load(Ordering::SeqCst))
+            .map(|atomic| atomic.load(Ordering::Acquire))
     }
 
     // pub fn get_range_bytes(&self) -> &Arc<Option<AtomicUsize>> {
@@ -162,9 +179,10 @@ impl ProviderStreamFactoryOptions {
     }
 
     #[inline]
-    pub fn get_reconnect_force_secs(&self) -> u32 {
-        self.force_reconnect_secs
+    pub fn was_range_requested(&self) -> bool {
+        self.range_requested
     }
+
 }
 
 fn get_request_range_start_bytes(req_headers: &HashMap<String, Vec<u8>>) -> Option<usize> {
@@ -193,7 +211,7 @@ fn get_request_range_start_bytes(req_headers: &HashMap<String, Vec<u8>>) -> Opti
 // }
 
 fn prepare_client(
-    request_client: &Arc<reqwest::Client>,
+    request_client: &reqwest::Client,
     stream_options: &ProviderStreamFactoryOptions,
 ) -> (reqwest::RequestBuilder, bool) {
     let url = stream_options.get_url();
@@ -213,34 +231,33 @@ fn prepare_client(
         }
     }
 
-    // if !headers.contains_key(axum::http::header::HOST) {
-    //     if let Some(host_header) = get_host_and_optional_port(url) {
-    //         if let Ok(header_value) = axum::http::header::HeaderValue::from_str(&host_header) {
-    //             headers.insert(axum::http::header::HOST, header_value);
-    //         }
-    //     }
-    // }
-
-    if !headers.contains_key(axum::http::header::CONNECTION) {
-        headers.insert(
-            axum::http::header::CONNECTION,
-            axum::http::header::HeaderValue::from_static("keep-alive"),
-        );
-    }
+    // Force Connection: close so the provider releases its slot immediately when the stream ends.
+    // This prevents 509 errors from providers counting idle pooled connections against limits.
+    headers.insert(
+        axum::http::header::CONNECTION,
+        axum::http::header::HeaderValue::from_static("close"),
+    );
 
     if !headers.contains_key(axum::http::header::USER_AGENT) {
         headers.insert(
             axum::http::header::USER_AGENT,
-            axum::http::header::HeaderValue::from_static(DEFAULT_USER_AGENT),
+            stream_options
+                .default_user_agent
+                .clone()
+                .unwrap_or_else(|| axum::http::header::HeaderValue::from_static(DEFAULT_USER_AGENT)),
         );
     }
 
     let partial = if let Some(range) = range_start {
-        let range_header = format!("bytes={range}-");
-        if let Ok(header_value) = axum::http::header::HeaderValue::from_str(&range_header) {
-            headers.insert(RANGE, header_value);
+        if range > 0 || stream_options.was_range_requested() {
+            let range_header = format!("bytes={range}-");
+            if let Ok(header_value) = axum::http::header::HeaderValue::from_str(&range_header) {
+                headers.insert(RANGE, header_value);
+            }
+            true
+        } else {
+            false
         }
-        true
     } else {
         false
     };
@@ -263,7 +280,7 @@ fn prepare_client(
 
 async fn provider_stream_request(
     app_state: &Arc<AppState>,
-    request_client: &Arc<reqwest::Client>,
+    request_client: &reqwest::Client,
     stream_options: &ProviderStreamFactoryOptions,
 ) -> Result<Option<ProviderStreamFactoryResponse>, StatusCode> {
     let (client, _partial_content) = prepare_client(request_client, stream_options);
@@ -302,16 +319,7 @@ async fn provider_stream_request(
                         StreamError::reqwest(&err)
                     })
                     .boxed();
-                let boxed_provider_stream = if stream_options.get_reconnect_force_secs() > 0 {
-                    TimedClientStream::new(
-                        provider_stream,
-                        stream_options.get_reconnect_force_secs(),
-                    )
-                    .boxed()
-                } else {
-                    provider_stream
-                };
-                return Ok(Some((boxed_provider_stream, response_info)));
+                return Ok(Some((provider_stream, response_info)));
             }
 
             if status.is_client_error() {
@@ -354,11 +362,8 @@ async fn handle_channel_unavailable_stream(app_state: &Arc<AppState>,
     app_state.connection_manager.release_provider_connection(&stream_options.addr).await;
 
     if let (Some(boxed_provider_stream), response_info) =
-        create_channel_unavailable_stream(
-            &app_state.app_config,
-            &get_response_headers(stream_options.get_headers()),
-            StatusCode::SERVICE_UNAVAILABLE,
-        )
+        create_channel_unavailable_stream(&app_state.app_config,&get_response_headers(stream_options.get_headers()),
+                                          StatusCode::SERVICE_UNAVAILABLE)
     {
         Ok(Some((boxed_provider_stream, response_info)))
     } else {
@@ -368,7 +373,7 @@ async fn handle_channel_unavailable_stream(app_state: &Arc<AppState>,
 
 async fn get_provider_stream(
     app_state: &Arc<AppState>,
-    client: &Arc<reqwest::Client>,
+    client: &reqwest::Client,
     stream_options: &ProviderStreamFactoryOptions,
 ) -> Result<Option<ProviderStreamFactoryResponse>, StatusCode> {
     let url = stream_options.get_url();
@@ -383,37 +388,23 @@ async fn get_provider_stream(
             }
             Ok(None) => {
                 if connect_err > ERR_MAX_RETRY_COUNT {
-                    warn!(
-                        "The stream could be unavailable. {}",
-                        sanitize_sensitive_info(stream_options.get_url().as_str())
-                    );
+                    warn!("The stream could be unavailable. {}", sanitize_sensitive_info(stream_options.get_url().as_str()));
+                    break;
                 }
             }
             Err(status) => {
                 debug!("Provider stream response error status response : {status}");
-                if status == StatusCode::FORBIDDEN
-                    || status == StatusCode::SERVICE_UNAVAILABLE
-                    || status == StatusCode::UNAUTHORIZED
-                {
-                    warn!(
-                        "The stream could be unavailable. ({status}) {}",
-                        sanitize_sensitive_info(stream_options.get_url().as_str())
-                    );
-                    stream_options.cancel_reconnect();
-                    return Err(status);
+                if matches!(status, StatusCode::FORBIDDEN | StatusCode::SERVICE_UNAVAILABLE | StatusCode::UNAUTHORIZED | StatusCode::RANGE_NOT_SATISFIABLE) {
+                    warn!("The stream could be unavailable. ({status}) {}",sanitize_sensitive_info(stream_options.get_url().as_str()));
+                    break;
                 }
                 if connect_err > ERR_MAX_RETRY_COUNT {
-                    warn!(
-                        "The stream could be unavailable. ({status}) {}",
-                        sanitize_sensitive_info(stream_options.get_url().as_str())
-                    );
+                    warn!("The stream could be unavailable. ({status}) {}",sanitize_sensitive_info(stream_options.get_url().as_str()));
+                    break;
                 }
             }
         }
-        if !stream_options.should_continue() {
-            return Err(StatusCode::SERVICE_UNAVAILABLE);
-        }
-        if connect_err > ERR_MAX_RETRY_COUNT {
+        if !stream_options.should_continue() || connect_err > ERR_MAX_RETRY_COUNT {
             break;
         }
         if start.elapsed().as_secs() > RETRY_SECONDS {
@@ -425,23 +416,18 @@ async fn get_provider_stream(
         }
         connect_err += 1;
         tokio::time::sleep(Duration::from_millis(50)).await;
-        debug_if_enabled!(
-            "Reconnecting stream {}",
-            sanitize_sensitive_info(url.as_str())
-        );
+        debug_if_enabled!("Reconnecting stream {}", sanitize_sensitive_info(url.as_str()));
     }
-    debug_if_enabled!(
-        "Stopped reconnecting stream {}",
-        sanitize_sensitive_info(url.as_str())
-    );
+    debug_if_enabled!("Stopped reconnecting stream {}", sanitize_sensitive_info(url.as_str()));
     stream_options.cancel_reconnect();
+    app_state.connection_manager.release_provider_connection(&stream_options.addr).await;
     Err(StatusCode::SERVICE_UNAVAILABLE)
 }
 
 #[allow(clippy::too_many_lines)]
 pub async fn create_provider_stream(
     app_state: &Arc<AppState>,
-    client: &Arc<reqwest::Client>,
+    client: &reqwest::Client,
     stream_options: ProviderStreamFactoryOptions,
 ) -> Option<ProviderStreamFactoryResponse> {
     let client_stream_factory = |stream, reconnect_flag, range_cnt| {
@@ -483,9 +469,9 @@ pub async fn create_provider_stream(
                 let continue_streaming_signal = continue_client_signal.clone();
                 let stream_options_provider = stream_options.clone();
                 let app_state_clone = Arc::clone(app_state);
-                let client = Arc::clone(client);
+                let client = client.clone();
                 let unfold: BoxedProviderStream = stream::unfold((), move |()| {
-                    let client = Arc::clone(&client);
+                    let client = client.clone();
                     let stream_opts = stream_options_provider.clone();
                     let continue_streaming = continue_streaming_signal.clone();
                     let app_state_clone = Arc::clone(&app_state_clone);
@@ -493,7 +479,20 @@ pub async fn create_provider_stream(
                         if continue_streaming.is_active() {
                             match get_provider_stream(&app_state_clone, &client, &stream_opts).await {
                                 Ok(Some((stream, _info))) => Some((stream, ())),
-                                Ok(None) => None,
+                                Ok(None) => {
+                                    app_state_clone.connection_manager.release_provider_connection(&stream_opts.addr).await;
+                                    continue_streaming.notify();
+                                    if let (Some(boxed_provider_stream), _response_info) =
+                                        create_channel_unavailable_stream(
+                                            &app_state_clone.app_config,
+                                            &get_response_headers(stream_opts.get_headers()),
+                                            StatusCode::SERVICE_UNAVAILABLE,
+                                        )
+                                    {
+                                        return Some((boxed_provider_stream, ()));
+                                    }
+                                    None
+                                }
                                 Err(status) => {
                                     app_state_clone.connection_manager.release_provider_connection(&stream_opts.addr).await;
                                     continue_streaming.notify();
@@ -510,6 +509,7 @@ pub async fn create_provider_stream(
                                 }
                             }
                         } else {
+                            app_state_clone.connection_manager.release_provider_connection(&stream_opts.addr).await;
                             None
                         }
                     }
@@ -552,56 +552,87 @@ pub async fn create_provider_stream(
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::api::model::streams::provider_stream_factory::PlaylistItemType;
-//     use crate::api::model::streams::provider_stream_factory::{create_provider_stream, BufferStreamOptions};
-//     use actix_web::test;
-//     use actix_web::test::TestRequest;
-//     use actix_web::web;
-//     use actix_web::App;
-//     use actix_web::{HttpRequest, HttpResponse};
-//     use futures::StreamExt;
-//     use std::sync::Arc;
-//     use crate::model::Config;
-//
-//     #[tokio::test]
-//     async fn test_stream() {
-//         let app = App::new().route("/test", web::get().to(test_stream_handler));
-//         let server = test::init_service(app).await;
-//         let req = TestRequest::get().uri("/test").to_request();
-//         let _response = test::call_service(&server, req).await;
-//     }
-//     async fn test_stream_handler(req: axum::http::Request<axum::body::Body>) ->  impl axum::response::IntoResponse + Send {
-//         let cfg = Config::default();
-//         let mut counter = 5;
-//         let client = Arc::new(reqwest::Client::new());
-//         let url = url::Url::parse("https://info.cern.ch/hypertext/WWW/TheProject.html").unwrap();
-//         let input = None;
-//
-//         let options = BufferStreamOptions::new(PlaylistItemType::Live, true, true, 0, false);
-//         let value = create_provider_stream(&cfg, Arc::clone(&client), &url, &req, input, options);
-//         let mut values = value.await;
-//         'outer: while let Some((ref mut stream, info)) = values.as_mut() {
-//             if info.is_some() {
-//                 println!("{:?}", info.as_ref().unwrap());
-//             }
-//             while let Some(result) = stream.next().await {
-//                 match result {
-//                     Ok(bytes) => {
-//                         println!("Received {} bytes  {bytes:?}", bytes.len());
-//                         counter -= 1;
-//                         if counter < 0 {
-//                             break 'outer;
-//                         }
-//                     }
-//                     Err(err) => {
-//                         eprintln!("Error occurred: {}", err);
-//                         break 'outer;
-//                     }
-//                 }
-//             }
-//         }
-//         HttpResponse::Ok().finish()
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shared::model::PlaylistItemType;
+    use axum::http::HeaderMap;
+
+    #[test]
+    fn test_provider_stream_factory_options_range_logic() {
+        let addr = "127.0.0.1:8080".parse().unwrap();
+        let stream_url = Url::parse("http://example.com/stream").unwrap();
+        let stream_options = StreamOptions {
+            stream_retry: true,
+            buffer_enabled: true,
+            buffer_size: 1024,
+            pipe_provider_stream: false,
+        };
+        let disabled_headers = None;
+
+        // Case 1: VOD, no initial range requested
+        let mut req_headers = HeaderMap::new();
+        let options = ProviderStreamFactoryOptions::new(
+            addr,
+            PlaylistItemType::Video,
+            false,
+            &stream_options,
+            &stream_url,
+            &req_headers,
+            None,
+            disabled_headers,
+            None,
+        );
+        assert!(!options.was_range_requested());
+        assert_eq!(options.get_total_bytes_send(), Some(0)); // Should track even if not requested
+
+        // Case 2: VOD, range requested
+        req_headers.insert("Range", "bytes=100-".parse().unwrap());
+        let options = ProviderStreamFactoryOptions::new(
+            addr,
+            PlaylistItemType::Video,
+            false,
+            &stream_options,
+            &stream_url,
+            &req_headers,
+            None,
+            disabled_headers,
+            None,
+        );
+        assert!(options.was_range_requested());
+        assert_eq!(options.get_total_bytes_send(), Some(100));
+
+        // Case 3: Live, no initial range requested
+        let req_headers = HeaderMap::new();
+        let options = ProviderStreamFactoryOptions::new(
+            addr,
+            PlaylistItemType::Live,
+            false,
+            &stream_options,
+            &stream_url,
+            &req_headers,
+            None,
+            disabled_headers,
+            None,
+        );
+        assert!(!options.was_range_requested());
+        assert_eq!(options.get_total_bytes_send(), None); // Should NOT track
+
+        // Case 4: Live, range requested (should be stripped)
+        let mut req_headers = HeaderMap::new();
+        req_headers.insert("Range", "bytes=100-".parse().unwrap());
+        let options = ProviderStreamFactoryOptions::new(
+            addr,
+            PlaylistItemType::Live,
+            false,
+            &stream_options,
+            &stream_url,
+            &req_headers,
+            None,
+            disabled_headers,
+            None,
+        );
+        assert!(!options.was_range_requested()); // Stripped by filter
+        assert_eq!(options.get_total_bytes_send(), None); 
+    }
+}

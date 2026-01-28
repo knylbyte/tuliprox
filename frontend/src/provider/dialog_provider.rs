@@ -69,6 +69,7 @@ pub fn DialogProvider(props: &ConfirmProviderProps) -> Html {
                               <ContentDialog
                                     content={content.content.clone()}
                                     actions={content.actions.clone()}
+                                    close_on_backdrop_click={content.close_on_backdrop_click}
                                     on_confirm={on_confirm.clone()}
                                 />
                             }

@@ -7,7 +7,7 @@ use axum::{extract::ws::{Message, WebSocket, WebSocketUpgrade},response::IntoRes
 use log::{error, trace};
 use shared::model::{ProtocolHandler, ProtocolHandlerMemory, ProtocolMessage, UserCommand, UserRole, WsCloseCode, PROTOCOL_VERSION};
 use std::sync::Arc;
-use shared::utils::{concat_path_leading_slash};
+use shared::utils::{concat_path_leading_slash, default_kick_secs};
 
 // WebSocket upgrade handler
 async fn websocket_handler(
@@ -136,7 +136,7 @@ async fn handle_protocol_message(
             Ok(ProtocolMessage::UserAction(cmd)) => {
                 if let Some(token) = mem.token.as_ref() {
                     if !auth_required || verify_auth_admin_token(token, secret_key) {
-                        Some(ProtocolMessage::UserActionResponse(handle_user_action(app_state, cmd)))
+                        Some(ProtocolMessage::UserActionResponse(handle_user_action(app_state, cmd).await))
                     } else {
                         Some(ProtocolMessage::UserActionResponse(false))
                     }
@@ -267,6 +267,24 @@ async fn handle_event_message(socket: &mut WebSocket, event: EventMessage, handl
                             .await
                             .map_err(|e| format!("Playlist update progress event: {e} "))?;
                     }
+                    EventMessage::SystemInfoUpdate(system_info) => {
+                        let msg = ProtocolMessage::SystemInfoResponse(system_info)
+                            .to_bytes()
+                            .map_err(|e| e.to_string())?;
+                        socket
+                            .send(Message::Binary(msg))
+                            .await
+                            .map_err(|e| format!("System info event: {e} "))?;
+                    }
+                    EventMessage::LibraryScanProgress(summary) => {
+                        let msg = ProtocolMessage::LibraryScanProgressResponse(summary)
+                            .to_bytes()
+                            .map_err(|e| e.to_string())?;
+                        socket
+                            .send(Message::Binary(msg))
+                            .await
+                            .map_err(|e| format!("Library scan progress event: {e} "))?;
+                    }
                 }
             }
         }
@@ -287,7 +305,7 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth_req
             maybe_msg = socket.recv() => {
                 if let Some(msg) = maybe_msg {
                     if let Err(e) = handle_incoming_message(msg, &mut socket, &mut handler, &app_state, auth_required, secret_key.as_ref()).await {
-                        error!("WebSocket message handling error: {e}");
+                        trace!("WebSocket message handling error: {e}");
                         break;
                     }
                 } else {
@@ -297,7 +315,7 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth_req
 
             Ok(event) = event_rx.recv() => {
                 if let Err(e) = handle_event_message(&mut socket, event, &handler).await {
-                    error!("Failed to send ws event: {e}");
+                    trace!("Failed to send ws event: {e}");
                     break;
                 }
             }
@@ -305,8 +323,12 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth_req
     }
 }
 
-fn handle_user_action(app_state: &Arc<AppState>, cmd: UserCommand) -> bool {
+async fn handle_user_action(app_state: &Arc<AppState>, cmd: UserCommand) -> bool {
     match cmd {
-        UserCommand::Kick(addr) => app_state.connection_manager.kick_connection(&addr),
+        UserCommand::Kick(addr, virtual_id, _secs) => {
+            // secs could be later used for different kick configurations. Currently, we only have 1.
+            let kick_secs = app_state.app_config.config.load().web_ui.as_ref().map_or_else(default_kick_secs, |wc| wc.kick_secs);
+            app_state.connection_manager.kick_connection(&addr, virtual_id, kick_secs).await
+        }
     }
 }

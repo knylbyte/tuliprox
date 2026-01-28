@@ -1,6 +1,6 @@
 use crate::api::api_utils::{create_session_fingerprint, try_unwrap_body};
 use crate::api::api_utils::{
-    force_provider_stream_response, get_stream_alternative_url, is_seek_request,
+    force_provider_stream_response, get_stream_alternative_url, is_seek_request, local_stream_response,
 };
 use crate::api::api_utils::{get_headers_from_request, try_option_bad_request, HeaderFilter};
 use crate::api::model::AppState;
@@ -12,16 +12,26 @@ use crate::model::{ConfigTarget, ProxyUserCredentials};
 use crate::processing::parser::hls::{
     get_hls_session_token_and_url_from_token, rewrite_hls, RewriteHlsProps,
 };
-use crate::repository::m3u_repository::m3u_get_item_for_stream_id;
-use crate::repository::xtream_repository;
+use crate::repository::{m3u_get_item_for_stream_id, xtream_get_item_for_stream_id};
 use crate::utils::request;
+use crate::utils::debug_if_enabled;
 use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use log::{debug, error};
 use serde::Deserialize;
 use shared::model::{PlaylistItemType, StreamChannel, TargetType, UserConnectionPermission, XtreamCluster};
-use shared::utils::{is_hls_url, replace_url_extension, sanitize_sensitive_info, CUSTOM_VIDEO_PREFIX, HLS_EXT};
+use shared::utils::{is_hls_url, replace_url_extension, sanitize_sensitive_info, Internable, CUSTOM_VIDEO_PREFIX, HLS_EXT};
 use std::sync::Arc;
+use crate::utils::request::is_file_url;
+
+const PLAYLIST_TEMPLATE: &str = r"#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:10
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:10.0,
+{url}
+#EXT-X-ENDLIST
+";
 
 #[derive(Debug, Deserialize)]
 struct HlsApiPathParams {
@@ -51,6 +61,10 @@ pub(in crate::api) async fn handle_hls_stream_request(
     req_headers: &HeaderMap,
     connection_permission: UserConnectionPermission,
 ) -> impl IntoResponse + Send {
+    if app_state.active_users.is_user_blocked_for_stream(&user.username, virtual_id).await {
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
+    }
+
     let url = replace_url_extension(hls_url, HLS_EXT);
     let server_info = app_state.app_config.get_user_server_info(user);
 
@@ -82,7 +96,13 @@ pub(in crate::api) async fn handle_hls_stream_request(
             {
                 Some(provider_cfg) => {
                     let stream_url = get_stream_alternative_url(&url, input, &provider_cfg);
-                    let user_session_token = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
+                    debug_if_enabled!(
+                        "API endpoint [HLS] create_session_fingerprint user={} virtual_id={virtual_id} provider={} stream_url={}",
+                        sanitize_sensitive_info(&user.username),
+                        provider_cfg.name,
+                        sanitize_sensitive_info(&stream_url)
+                    );
+                    let user_session_token = create_session_fingerprint(fingerprint, &user.username, virtual_id);
                     let session_token = app_state.active_users.create_user_session(
                         user,
                         &user_session_token,
@@ -103,19 +123,22 @@ pub(in crate::api) async fn handle_hls_stream_request(
     // Don't forward Range on playlist fetch; segments use original headers in provider path
     let filter_header: HeaderFilter = Some(Box::new(|name: &str| !name.eq_ignore_ascii_case("range")));
     let forwarded = get_headers_from_request(req_headers, &filter_header);
-    let config = app_state.app_config.config.load();
-    let disabled_headers = config
-        .reverse_proxy
-        .as_ref()
-        .and_then(|r| r.disabled_header.clone());
-    let headers = request::get_request_headers(None, Some(&forwarded), disabled_headers.as_ref());
+    let disabled_headers = app_state.get_disabled_headers();
+    let default_user_agent = app_state.app_config.config.load().default_user_agent.clone();
+    let headers = request::get_request_headers(
+        None,
+        Some(&forwarded),
+        disabled_headers.as_ref(),
+        default_user_agent.as_deref(),
+    );
     let input_source = InputSource::from(input).with_url(request_url);
     match request::download_text_content(
-        Arc::clone(&app_state.http_client.load()),
-        disabled_headers.as_ref(),
+        &app_state.app_config,
+        &app_state.http_client.load(),
         &input_source,
         Some(&headers),
         None,
+        false,
     )
         .await
     {
@@ -147,15 +170,8 @@ pub(in crate::api) async fn handle_hls_stream_request(
                     user.password,
                     CustomVideoStreamType::ChannelUnavailable);
 
-                let playlist = format!(r"#EXTM3U
-#EXT-X-VERSION:3
-#EXT-X-TARGETDURATION:10
-#EXT-X-MEDIA-SEQUENCE:0
-#EXTINF:10.0,
-{url}
-#EXT-X-ENDLIST
-");
-                hls_response(playlist.clone()).into_response()
+                let playlist = PLAYLIST_TEMPLATE.replace("{url}", &url);
+                hls_response(playlist).into_response()
             } else {
                 axum::http::StatusCode::NOT_FOUND.into_response()
             }
@@ -165,29 +181,35 @@ pub(in crate::api) async fn handle_hls_stream_request(
 
 async fn get_stream_channel(app_state: &Arc<AppState>, target: &Arc<ConfigTarget>, virtual_id: u32) -> Option<StreamChannel> {
     if target.has_output(TargetType::Xtream) {
-        if let Ok((pli, _)) = xtream_repository::xtream_get_item_for_stream_id(virtual_id, app_state, target, None).await {
-            return Some(pli.to_stream_channel());
+        if let Ok(pli) = xtream_get_item_for_stream_id(virtual_id, app_state, target, None).await {
+            return Some(pli.to_stream_channel(target.id));
         }
     }
-    m3u_get_item_for_stream_id(virtual_id, app_state, target).await.ok().map(|pli| pli.to_stream_channel())
+    let target_id = target.id;
+    m3u_get_item_for_stream_id(virtual_id, app_state, target).await.ok().map(|pli| pli.to_stream_channel(target_id))
 }
 
 async fn resolve_stream_channel(
     app_state: &Arc<AppState>,
     target: &Arc<ConfigTarget>,
     virtual_id: u32,
-    hls_url: &str,
+    hls_url: &Arc<str>,
 ) -> StreamChannel {
+    let unknown = "Unknown".intern();
     let mut channel = match get_stream_channel(app_state, target, virtual_id).await {
-        Some(channel) => channel,
+        Some(mut channel) => {
+            channel.url = hls_url.clone();
+            channel
+        },
         None => StreamChannel {
+            target_id: target.id,
             virtual_id,
             provider_id: 0,
             item_type: PlaylistItemType::LiveHls,
             cluster: XtreamCluster::Live,
-            group: "Unknown".to_string(),
-            title: "Unknown".to_string(),
-            url: hls_url.to_string(),
+            group: unknown.clone(),
+            title: unknown,
+            url: hls_url.clone(),
             shared: false,
         },
     };
@@ -224,12 +246,11 @@ async fn hls_api_stream(
     let input = try_option_bad_request!(
         app_state.app_config.get_input_by_id(params.input_id),
         true,
-        format!(
-            "Cant find input for target {target_name}, stream_id {virtual_id}, hls"
-        )
+        format!("Can't find input {} for target {target_name}, stream_id {virtual_id}, hls", params.input_id)
     );
 
-    let user_session_token = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
+    debug_if_enabled!("ID chain for hls endpoint: request_stream_id={} -> virtual_id={virtual_id}", params.stream_id);
+    let user_session_token = create_session_fingerprint(&fingerprint, &user.username, virtual_id);
     let mut user_session = app_state
         .active_users
         .get_and_update_user_session(&user.username, &user_session_token).await;
@@ -261,8 +282,8 @@ async fn hls_api_stream(
             Some((Some(session_token), hls_url)) if session.token.eq(&session_token) => hls_url,
             _ => return axum::http::StatusCode::BAD_REQUEST.into_response(),
         };
-
-        session.stream_url.clone_from(&hls_url);
+        let hls_url = hls_url.intern();
+        session.stream_url = hls_url.clone();
         if session.virtual_id == virtual_id {
             let stream_channel = resolve_stream_channel(&app_state, &target, virtual_id, &hls_url).await;
             if is_seek_request(stream_channel.cluster, &req_headers).await {
@@ -303,8 +324,26 @@ async fn hls_api_stream(
                 &req_headers,
                 connection_permission,
             )
-                .await
-                .into_response();
+            .await
+            .into_response();
+        }
+
+        if is_file_url(&session.stream_url) {
+            let stream_channel =
+                resolve_stream_channel(&app_state, &target, virtual_id, &hls_url).await;
+            return local_stream_response(
+                &fingerprint,
+                &app_state,
+                stream_channel,
+                &req_headers,
+                &input,
+                &target,
+                &user,
+                connection_permission,
+                false,
+            )
+            .await
+            .into_response();
         }
 
         let stream_channel = resolve_stream_channel(&app_state, &target, virtual_id, &hls_url).await;

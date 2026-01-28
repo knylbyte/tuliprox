@@ -1,10 +1,12 @@
-use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::info_err;
-use crate::utils::{default_grace_period_millis, default_grace_period_timeout_secs, parse_to_kbps};
+use crate::error::{TuliproxError, TuliproxErrorKind, info_err_res};
+use crate::utils::{default_grace_period_millis, default_grace_period_timeout_secs,
+                   is_default_grace_period_millis, is_default_grace_period_timeout_secs,
+                   default_shared_burst_buffer_mb, is_default_shared_burst_buffer_mb,
+                   is_blank_optional_string,
+                   parse_to_kbps};
 
 const STREAM_QUEUE_SIZE: usize = 1024; // mpsc channel holding messages. with 8192byte chunks and 2Mbit/s approx 8MB
 const MIN_SHARED_BURST_BUFFER_MB: u64 = 1;
-const fn default_shared_burst_buffer_mb() -> u64 { 12 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -34,17 +36,18 @@ pub struct StreamConfigDto {
     pub retry: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub buffer: Option<StreamBufferConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub throttle: Option<String>,
-    #[serde(default = "default_grace_period_millis")]
+    #[serde(default = "default_grace_period_millis", skip_serializing_if = "is_default_grace_period_millis")]
     pub grace_period_millis: u64,
-    #[serde(default = "default_grace_period_timeout_secs")]
+    #[serde(default = "default_grace_period_timeout_secs", skip_serializing_if = "is_default_grace_period_timeout_secs")]
     pub grace_period_timeout_secs: u64,
+    /// If true, wait for grace period check before streaming. If false (default), start streaming instantly.
     #[serde(default)]
-    pub forced_retry_interval_secs: u32,
+    pub grace_period_hold_stream: bool,
     #[serde(default, skip)]
     pub throttle_kbps: u64,
-    #[serde(default = "default_shared_burst_buffer_mb")]
+    #[serde(default = "default_shared_burst_buffer_mb", skip_serializing_if = "is_default_shared_burst_buffer_mb")]
     pub shared_burst_buffer_mb: u64,
 }
 
@@ -56,9 +59,9 @@ impl Default for StreamConfigDto {
             throttle: None,
             grace_period_millis: default_grace_period_millis(),
             grace_period_timeout_secs: default_grace_period_timeout_secs(),
-            forced_retry_interval_secs: 0,
             throttle_kbps: 0,
             shared_burst_buffer_mb: default_shared_burst_buffer_mb(),
+            grace_period_hold_stream: false,
         }
     }
 }
@@ -71,9 +74,9 @@ impl StreamConfigDto {
         && (self.throttle.is_none() || self.throttle.as_ref().is_some_and(|t| t.is_empty()))
         && self.grace_period_millis == empty.grace_period_millis
         && self.grace_period_timeout_secs == empty.grace_period_timeout_secs
-        && self.forced_retry_interval_secs == empty.forced_retry_interval_secs
         && self.throttle_kbps == empty.throttle_kbps
         && self.shared_burst_buffer_mb == default_shared_burst_buffer_mb()
+        && self.grace_period_hold_stream == empty.grace_period_hold_stream
     }
 
 
@@ -92,17 +95,12 @@ impl StreamConfigDto {
                 let triple_ms = self.grace_period_millis.saturating_mul(3);
                 self.grace_period_timeout_secs = std::cmp::max(1, triple_ms.div_ceil(1000));
             } else if self.grace_period_millis / 1000 > self.grace_period_timeout_secs {
-                return Err(info_err!(format!("Grace time period timeout {} sec should be more than grace time period {} ms", self.grace_period_timeout_secs, self.grace_period_millis)));
+                return info_err_res!("Grace time period timeout {} sec should be more than grace time period {} ms", self.grace_period_timeout_secs, self.grace_period_millis);
             }
         }
 
         if self.shared_burst_buffer_mb < MIN_SHARED_BURST_BUFFER_MB {
-            return Err(TuliproxError::new(
-                TuliproxErrorKind::Info,
-                format!(
-                    "`shared_burst_buffer_mb` must be at least {MIN_SHARED_BURST_BUFFER_MB} MB"
-                ),
-            ));
+            return info_err_res!("`shared_burst_buffer_mb` must be at least {MIN_SHARED_BURST_BUFFER_MB} MB");
         }
 
         Ok(())

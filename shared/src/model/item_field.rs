@@ -2,8 +2,8 @@ use std::fmt::Display;
 use std::str::FromStr;
 use enum_iterator::Sequence;
 use serde::{Deserialize, Deserializer};
-use crate::create_tuliprox_error_result;
-use crate::error::{TuliproxError, TuliproxErrorKind};
+use crate::info_err_res;
+use crate::error::{TuliproxError};
 
 #[derive(Debug, Copy, Clone, serde::Serialize, Sequence, Eq, PartialEq)]
 pub enum ItemField {
@@ -13,6 +13,8 @@ pub enum ItemField {
     Name,
     #[serde(rename = "title")]
     Title,
+    #[serde(rename = "genre")]
+    Genre,
     #[serde(rename = "url")]
     Url,
     #[serde(rename = "input")]
@@ -27,6 +29,7 @@ impl ItemField {
     const GROUP: &'static str = "Group";
     const NAME: &'static str = "Name";
     const TITLE: &'static str = "Title";
+    const GENRE: &'static str = "Genre";
     const URL: &'static str = "Url";
     const INPUT: &'static str = "Input";
     const TYPE: &'static str = "Type";
@@ -37,6 +40,7 @@ impl ItemField {
             Self::Group => Self::GROUP,
             Self::Name => Self::NAME,
             Self::Title => Self::TITLE,
+            Self::Genre => Self::GENRE,
             Self::Url => Self::URL,
             Self::Input => Self::INPUT,
             Self::Type => Self::TYPE,
@@ -51,6 +55,7 @@ impl Display for ItemField {
             Self::Group => Self::GROUP,
             Self::Name => Self::NAME,
             Self::Title => Self::TITLE,
+            Self::Genre => Self::GENRE,
             Self::Url => Self::URL,
             Self::Input => Self::INPUT,
             Self::Type => Self::TYPE,
@@ -69,6 +74,8 @@ impl FromStr for ItemField {
             Ok(Self::Name)
         } else if s.eq_ignore_ascii_case(Self::TITLE) {
             Ok(Self::Title)
+        } else if s.eq_ignore_ascii_case(Self::GENRE) {
+            Ok(Self::Genre)
         } else if s.eq_ignore_ascii_case(Self::CAPTION) {
             Ok(Self::Caption)
         } else if s.eq_ignore_ascii_case(Self::URL) {
@@ -78,7 +85,7 @@ impl FromStr for ItemField {
         } else if s.eq_ignore_ascii_case(Self::TYPE) {
             Ok(Self::Type)
         } else {
-            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown InputType: {}", s)
+            info_err_res!("Unknown ItemField: {}", s)
         }
     }
 }

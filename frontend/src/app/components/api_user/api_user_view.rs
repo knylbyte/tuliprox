@@ -5,7 +5,7 @@ use crate::app::components::theme::Theme;
 use crate::hooks::use_service_context;
 use crate::provider::DialogProvider;
 use yew::use_state;
-
+use crate::app::components::api_user::playlist::ApiUserPlaylist;
 
 #[function_component]
 pub fn ApiUserView() -> Html {
@@ -50,7 +50,7 @@ pub fn ApiUserView() -> Html {
                         </div>
                     </div>
                     <div class="tp__app-main__body">
-                        {" TODO "}
+                        <ApiUserPlaylist />
                     </div>
               </div>
             </div>

@@ -16,6 +16,8 @@ mod config_page;
 mod hdhomerun_device_view;
 mod config_update;
 mod log_config_view;
+mod panel_config_view;
+mod library_config_view;
 
 pub use config_view::*;
 pub use main_config_view::*;
@@ -29,4 +31,6 @@ pub use proxy_config_view::*;
 pub use ipcheck_config_view::*;
 pub use video_config_view::*;
 pub use log_config_view::*;
+pub use panel_config_view::*;
+pub use library_config_view::*;
 pub use macros::*;

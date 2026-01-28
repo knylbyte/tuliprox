@@ -6,16 +6,16 @@ use std::str::FromStr;
 use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
+use shared::error::{info_err_res, TuliproxError};
 use shared::model::{ConfigInputAliasDto, ConfigInputDto, SortOrder};
 use crate::app::components::menu_item::MenuItem;
 use crate::html_if;
 use crate::model::DialogResult;
 use crate::services::{DialogService};
 use shared::model::InputType;
+use shared::utils::unix_ts_to_str;
 
-
-const HEADERS: [&str; 15] = [
+const HEADERS: [&str; 16] = [
 "LABEL.EMPTY",
 "LABEL.ENABLED",
 "LABEL.NAME",
@@ -31,6 +31,7 @@ const HEADERS: [&str; 15] = [
 "LABEL.EPG",
 "LABEL.HEADERS",
 "LABEL.STAGED",
+"LABEL.EXP_DATE",
 ];
 
 #[derive(Clone, PartialEq)]
@@ -43,6 +44,10 @@ pub enum InputRow {
 #[derive(Properties, PartialEq, Clone)]
 pub struct InputTableProps {
     pub inputs: Option<Vec<Rc<InputRow>>>,
+    #[prop_or_default]
+    pub on_edit: Option<Callback<Rc<ConfigInputDto>>>,
+    #[prop_or_default]
+    pub on_delete: Option<Callback<String>>,
 }
 
 #[function_component]
@@ -109,7 +114,7 @@ pub fn InputTable(props: &InputTableProps) -> Html {
                             1 => html! { <Chip class={ convert_bool_to_chip_style(dto.enabled) }
                                  label={if dto.enabled {translator.t("LABEL.ACTIVE")} else { translator.t("LABEL.DISABLED")} }
                                   /> },
-                            2 => html! { dto.name.as_str() },
+                            2 => html! { dto.name.as_ref() },
                             3 => html! { <InputTypeView input_type={dto.input_type}/> },
                             4 => html! { if matches!(dto.input_type, InputType::XtreamBatch | InputType::M3uBatch) {
                                 <RevealContent preview={html!{dto.url.as_str()}}><BatchInputContentView input={ dto.clone() } /></RevealContent>
@@ -139,10 +144,12 @@ pub fn InputTable(props: &InputTableProps) -> Html {
                                  { <RevealContent preview={ html!{ dto.staged.as_ref().map_or_else(String::new, |s| s.url.clone())} }>
                                       <StagedInputView input={ dto.staged.clone() } />
                                    </RevealContent> }),
+                            15 => dto.exp_date.as_ref().and_then(|ts| unix_ts_to_str(*ts))
+                                    .map(|s| html! { { s } }).unwrap_or_else(|| html! { <AppIcon name="Unlimited" /> }),
                             _ => html! {""},
                         }
                     },
-                    InputRow::Alias(alias, dto) => {
+                    InputRow::Alias(alias, _dto) => {
                         match col {
                             0 => {
                                 let popup_onclick = popup_onclick.clone();
@@ -155,21 +162,18 @@ pub fn InputTable(props: &InputTableProps) -> Html {
                                 }
                             }
                             1 => html! {
-                                <Chip class={ format!("{} tp__input-table__alias", convert_bool_to_chip_style(dto.enabled).map_or_else(String::new, |s| if s == "active" { "alias".to_string() } else {s} )) }
-                                 label={translator.t("LABEL.ALIAS")}  />
+                                <Chip class={format!("{} tp__input-table__alias", convert_bool_to_chip_style(alias.enabled).map_or("alias", |s| if s == "active" { "alias" } else {"inactive"} )) }
+                                 label={if alias.enabled {translator.t("LABEL.ALIAS")} else { translator.t("LABEL.DISABLED")} }
+                                  />
                             },
-                            2 => html! { alias.name.as_str() },
-                            3 => html! { },
+                            2 => html! { alias.name.as_ref() },
                             4 => html! { alias.url.as_str() },
                             5 => alias.username.as_ref().map_or_else(|| html!{}, |u| html!{u}),
                             6 => alias.password.as_ref().map_or_else(|| html!{}, |pwd| html! { <HideContent content={pwd.to_string()}></HideContent>}),
-                            7 => html! { },
-                            8 => html! { },
                             9 => html! { alias.priority.to_string() },
                             10 => html! { alias.max_connections.to_string() },
-                            11 => html! { },
-                            12 => html! { },
-                            13 => html! { },
+                            15 => alias.exp_date.as_ref().and_then(|ts| unix_ts_to_str(*ts))
+                                .map(|s| html! { { s } }).unwrap_or_else(|| html! { <AppIcon name="Unlimited" /> }),
                             _ => html! { },
                         }
                     }
@@ -182,19 +186,34 @@ pub fn InputTable(props: &InputTableProps) -> Html {
         let popup_is_open_state = popup_is_open.clone();
         let confirm = dialog.clone();
         let translate = translate.clone();
-        // let selected_dto = selected_dto.clone();
+        let on_edit = props.on_edit.clone();
+        let on_delete = props.on_delete.clone();
+        let selected_dto = selected_dto.clone();
+
         Callback::from(move |(name, _): (String, _)| {
             if let Ok(action) = TableAction::from_str(&name) {
                 match action {
-                    TableAction::Edit => {}
+                    TableAction::Edit => {
+                        if let (Some(on_edit), Some(selected)) = (&on_edit, &*selected_dto) {
+                            if let InputRow::Input(dto) = &**selected {
+                                on_edit.emit(dto.clone());
+                            }
+                        }
+                    }
                     TableAction::Refresh => {}
                     TableAction::Delete => {
                         let confirm = confirm.clone();
                         let translator = translate.clone();
+                        let on_delete = on_delete.clone();
+                        let selected_dto = selected_dto.clone();
                         spawn_local(async move {
                             let result = confirm.confirm(&translator.t("MESSAGES.CONFIRM_DELETE")).await;
                             if result == DialogResult::Ok {
-                                // TODO edit
+                                if let (Some(on_delete), Some(selected)) = (on_delete, &*selected_dto) {
+                                    if let InputRow::Input(dto) = &**selected {
+                                        on_delete.emit(dto.name.to_string());
+                                    }
+                                }
                             }
                         });
                     }
@@ -279,7 +298,7 @@ impl FromStr for TableAction {
         } else if s.eq("delete") {
             Ok(Self::Delete)
         } else {
-            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown InputType: {}", s)
+            info_err_res!("Unknown TableAction: {}", s)
         }
     }
 }

@@ -6,29 +6,11 @@ mod xtream_series;
 pub mod epg;
 mod sort;
 pub mod trakt;
+mod library;
 
-#[macro_export]
-macro_rules! handle_error {
-    ($stmt:expr, $map_err:expr) => {
-        if let Err(err) = $stmt {
-            $map_err(err);
-        }
-    };
-}
-use handle_error;
-
-#[macro_export]
-macro_rules! handle_error_and_return {
-    ($stmt:expr, $map_err:expr) => {
-        if let Err(err) = $stmt {
-            $map_err(err);
-            return Default::default();
-        }
-    };
-}
-use handle_error_and_return;
-
-
+//
+// fn get_resolve_<cluster>_options(target: &ConfigTarget, fpl: &FetchedPlaylist) -> (bool, u16)
+//
 #[macro_export]
 macro_rules! create_resolve_options_function_for_xtream_target {
     ($cluster:ident) => {

@@ -13,6 +13,11 @@ It supports M3U and M3U8 formats, Xtream Codes API, HDHomeRun and STRM, making i
 - **Flexible Proxy Support**: Acts as a reverse/redirect proxy for EXTM3U, Xtream Codes, HDHomeRun, and STRM formats (Kodi, Plex, Emby, Jellyfin) with:
   - app-specific naming conventions
   - flat directory structure option (for compatibility reasons of some media scanners)
+- **Local media library Management**: Scan and serve local video files with automatic metadata resolution:
+  - Recursive directory scanning for movies and TV series
+  - Multi-source metadata (NFO files, TMDB API, filename parsing)
+  - Automatic classification (Movies vs Series)
+  - Integration with Xtream API and M3U playlists
 - **Multi-Source Handling**: Supports multiple input and output sources. Merge various playlists and generate custom outputs.
 - **Scheduled Updates**: Keep playlists fresh with automatic updates in server mode.
 - **Web Delivery**: Run as a CLI tool to create m3u playlist to serve with web servers like Nginx or Apache.
@@ -59,6 +64,11 @@ Options:
   -V, --version                    Print version
   --genpwd                         Generate UI Password
   --healthcheck                    Healtcheck for docker
+  --scan-library                   Scan library directories
+  --force-library-rescan           Force full library rescan
+  --dbx                            Database file type: xtream
+  --dbm                            Database file type: m3u
+  --dbe                            Database file type: epg
 ```
 
 ## 1. `config.yml`
@@ -73,7 +83,8 @@ This means, even disabled inputs and targets are processed when the given target
 Top level entries in the config files are:
 * `api`
 * `working_dir`
-* `threads` _optional_
+* `default_user_agent` _optional_, used as fallback for upstream requests when no `User-Agent` is provided by input headers or the client request (client request overrides it).
+* `process_parallel` _optional_
 * `messaging`  _optional_
 * `video` _optional_
 * `schedules` _optional_
@@ -91,11 +102,11 @@ Top level entries in the config files are:
 * `config_hot_reload` _optional_, default false.
 * `sleep_timer_mins` _optional_, used for closing stream after the given minutes.
 * `accept_unsecure_ssl_certificates` _optional_, default false.
+* `disk_based_processing` _optional_, default false. When set to true, input playlists are processed from disk to save RAM.
+* `library` _optional_, for local media 
 
-### 1.1. `threads`
-If you are running on a cpu which has multiple cores, you can set for example `threads: 2` to run two threads.
-Don't use too many threads, you should consider max of `cpu cores * 2`.
-Default is `0`.
+### 1.1. `process_parallel`
+If you are running on a cpu which has multiple cores, you can set for example `process_parallel: true` to run multiple threads.
 If you process the same provider multiple times each thread uses a connection. Keep in mind that you hit the provider max-connection.
 
 ### 1.2. `api`
@@ -112,7 +123,7 @@ Be aware that different configurations (e.g. user bouquets) along the playlists 
 
 ### 1.4 `messaging`
 `messaging` is an optional configuration for receiving messages.
-Currently `telegram`, `rest` and `pushover.net` is supported.
+Currently `telegram`, `discord`, `rest` and `pushover.net` is supported.
 
 Messaging is Opt-In, you need to set the `notify_on` message types which are
 - `info`
@@ -136,13 +147,75 @@ messaging:
     chat_ids:
       - '<telegram chat id>'
       - '<telegram chat id>:<message thread id>'
+    templates: # templates per message kind
+      stats: 'file:///path/to/stats_telegram.templ'
+  discord:
+    url: '<discord webhook url>'
+    templates:
+      info: '{"content": "{{message}}"}'
   rest:
-    url: '<api url as POST endpoint for json data>'
+    url: '<api url>'
+    method: 'POST' # optional, default POST
+    headers:
+      - 'Content-Type: application/json'
+    templates:
+      error: '{"text": "Error: {{message}}"}'
 
   pushover:
     token: <api_token>
     user: <api_username>
     url: `optional`, default is `https://api.pushover.net/1/messages.json`
+```
+
+### 1.4.1 Messaging Templating
+For `discord`, `telegram` and `rest` messaging, you can use [Handlebars](https://handlebarsjs.com/) templates to format the message body.
+
+**Loading Templates:**
+Templates can be provided in two ways:
+1.  **Raw String**: The template content is written directly in the configuration.
+2.  **URI**: A link to a file (`file://...`) or an external resource (`http(s)://...`).
+> **Note**: When saving through the Web UI, raw template strings are automatically moved to individual files in `/config/messaging_templates/` and referenced via `file://` to keep the configuration file clean.
+
+**Context Variables:**
+- `message`: The text content for `info` and `error` notifications.
+- `kind`: The type of notification (`info`, `stats`, `error`, `watch`).
+- `timestamp`: Current UTC timestamp in RFC3339 format.
+- `stats`: A list of processed source statistics (available for `stats` kind).
+  - Each item contains `inputs` (list of `InputStats`) and `targets` (list of `TargetStats`).
+- `watch`: Change details for groups (available for `watch` kind).
+- `processing`: Detailed internal processing state.
+  - `errors`: Combined error messages from a processing run.
+
+**Example Multi-Source Telegram Template**:
+```handlebars
+*🔄 Playlist Update Report*
+
+{{#each stats}}
+*📥 Source Stats*
+{{#each inputs}}
+• *{{name}}* (`{{type}}`)
+  ⏱️ Took: `{{took}}` | ❌ Errors: `{{errors}}`
+  📊 `{{raw.groups}}`/`{{raw.channels}}` ➔ *`{{processed.groups}}`*/*`{{processed.channels}}`*
+{{/each}}
+{{/each}}
+```
+
+**Example Discord Template (Complex Embed)**:
+```handlebars
+{
+  "content": "Tuliprox Notification",
+  "embeds": [{
+    "title": "Event: {{kind}}",
+    "description": "{{message}}",
+    "color": 3447003,
+    "fields": [
+      {{#each stats}}
+      { "name": "Source {{@index}}", "value": "Processed {{#each inputs}}{{name}} {{/each}}", "inline": false }
+      {{/each}}
+    ],
+    "footer": { "text": "Reported at {{timestamp}}" }
+  }]
+}
 ```
 
 For more information: [Telegram bots](https://core.telegram.org/bots/tutorial)
@@ -218,6 +291,7 @@ Attributes:
 - `throttle` Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`. Default unit is `kbps`
 - `grace_period_millis`  default set to 300 milliseconds.
 - `grace_period_timeout_secs` default set to 2 seconds.
+- `grace_period_hold_stream` if set to `true`, the stream will only start after the grace period check has completed. Default is `false`.
 - `shared_burst_buffer_mb` optional (default `12`). Minimum burst buffer size (in MB) used for shared streams.
 
 ##### 1.6.1.1 `retry`
@@ -269,6 +343,9 @@ If the connection is not throttled, the player will play its buffered content lo
 ##### 1.6.1.4 `grace_period_timeout_secs`
 How long the grace grant will last, until another grace grant can made.
 
+##### 1.6.1.5 `grace_period_hold_stream`
+If set to `true`, tuliprox will wait until the grace period check (defined by `grace_period_millis`) is finished before sending any data to the client. This is useful for players that might time out or error if they receive data and then a "connections exhausted" stream switch occurs. Default is `false`.
+
 #### 1.6.2 `cache`
 LRU-Cache is for resources. If it is `enabled`, the resources/images are persisted in the given `dir`. If the cache size exceeds `size`,
 In an LRU cache, the least recently used items are evicted to make room for new items if the cache `size`is exceeded.
@@ -309,11 +386,18 @@ reverse_proxy:
 #### 1.6.5 `disabled_header`
 Controls which headers are removed before tuliprox forwards a request to the upstream provider when acting as a reverse proxy. Use `referer_header` to drop the Referer header, enable `x_header` to strip every header beginning with `X-`, and list any additional headers to remove under `custom_header`.
 
+has the following attributes:
+- referer_header
+- x_header
+- cloudfare_header
+- custom_header is a list of header names
+
 ```yaml
 reverse_proxy:
   disabled_header:
     referer_header: false
     x_header: false
+    cloudfare_header: false
     custom_header:
       - my-custom-header
 ```
@@ -357,6 +441,29 @@ Example:
 1.0.4.0,1.0.7.255,AU
 ```
 
+#### 1.6.8 `rewrite_secret`
+The `rewrite_secret` field is used to keep generated resource URLs stable across application restarts.
+Some parts of the system generate URLs that include a hashed or signed component based on an internal secret value.
+Normally, this secret would change after every restart, which would invalidate previously generated URLs.
+
+By explicitly setting a `rewrite_secret`, you ensure that the same value is reused on every startup.
+This guarantees that resource URLs remain valid, even if the application restarts or updates.
+
+In short:
+`rewrite_secret` provides a persistent secret used for generating and verifying rewrite URLs, preventing them from breaking after a restart.
+
+It must be a 32-character hexadecimal string (16 bytes), for example:
+```yaml
+reverse_proxy:
+  rewrite_secret: A1B2C3D4E5F60718293A4B5C6D7E8F90 # Example only — generate your own
+```
+You can generate a random secret using:
+```bash
+openssl rand -hex 16
+# or
+node -e "console.log(require('crypto').randomBytes(16).toString('hex').toUpperCase())"
+```
+
 ### 1.7 `backup_dir`
 is the directory where the backup configuration files written, when saved from the ui.
 
@@ -382,11 +489,13 @@ log:
 ```
 
 ### 1.10 `web_ui`
-- enabled: default is true, if set to false the web_ui is disabled
-- user_ui_enabled, true or false,  for user bouquet editor
-- content_security_policy: configure Content-Security-Policy headers. When `enabled` is true, the default directives `default-src 'self'`, `script-src 'self' 'wasm-unsafe-eval' 'nonce-{nonce_b64}'`, and `frame-ancestors 'none'` are applied. Additional directives can be added via `custom-attributes`. Enabling CSP may block external images/logos unless allowed via directives like `img-src`.
-- path is for web_ui path like `/ui` for reverse proxy integration if necessary.
-- auth for authentication settings
+- `enabled`: default is true, if set to false the web_ui is disabled
+- `user_ui_enabled`: true or false, for user group editor
+- `content_security_policy`: configure Content-Security-Policy headers. When `enabled` is true, the default directives `default-src 'self'`, `script-src 'self' 'wasm-unsafe-eval' 'nonce-{nonce_b64}'`, and `frame-ancestors 'none'` are applied. Additional directives can be added via `custom-attributes`. Enabling CSP may block external images/logos unless allowed via directives like `img-src`.
+- `path` is for web_ui path like `/ui` for reverse proxy integration if necessary.
+- `player_server` optional, if set the server setting is used for the web-ui-player.
+- `kick_secs` default 90 seconds, if a user is kicked from the `web_ui`, they can't connect for this duration. This setting is also used for sleep-timed streams.
+- `auth` for authentication settings 
   - `enabled` can be deactivated if `enabled` is set to `false`. If not set default is `true`.
   - `issuer`
   - `secret` is used for jwt token generation.
@@ -470,9 +579,10 @@ Following attributes are available:
 
 - `channel_unavailable`: _optional_
 - `user_connections_exhausted`: _optional_
-- ` provider_connections_exhausted`: _optional_
+- `provider_connections_exhausted`: _optional_
+- `panel_api_provisioning`: _optional_
 
-Video files with name `channel_unavailable.ts`, `user_connections_exhausted`, `provider_connections_exhausted`
+Video files with name `channel_unavailable.ts`, `user_connections_exhausted`, `provider_connections_exhausted`, `panel_api_provisioning` 
 are already available in the docker image.
 
 You can convert an image with `ffmpeg`.
@@ -486,6 +596,7 @@ and add it to the `config.yml`.
 - `provider_connections_exhausted.ts`
 - `user_connections_exhausted.ts`
 - `channel_unavailable.ts`
+- `panel_api_provisioning.ts`
 
 ```yaml
 custom_stream_response_path: /home/tuliprox/resources 
@@ -596,10 +707,100 @@ and you use `/config` in your configuration files, the file watcher will still r
 This means that any file paths returned by the watcher might not match the paths in your configuration.
 You need to account for this difference when handling file events, e.g., by mapping the original path to your configured path.
 
+### 1.20 `library`
+
+The local media file library module enables Tuliprox to scan, classify, and serve local video files with automatic metadata resolution.
+
+**Key Features**:
+- Recursive directory scanning for video files
+- Automatic classification (Movies vs TV Series)
+- Multi-source metadata resolution (NFO → TMDB → filename parsing)
+- JSON-based metadata storage with UUID tracking
+- TMDB API integration with rate limiting
+- NFO file reading and writing (Kodi/Jellyfin/Emby/Plex compatible)
+- Incremental scanning (only processes changed files)
+- Virtual ID management for stable playlist integration
+
+**Configuration Example**:
+```yaml
+library:
+  enabled: true
+  scan_directories:
+    - enabled: true
+      path: "/projects/media"
+      content_type: auto
+      recursive: true
+
+  supported_extensions:
+    - "mp4"
+    - "mkv"
+    - "avi"
+    - "mov"
+    - "ts"
+    - "m4v"
+    - "webm"
+
+  metadata:
+    path: "${env:TULIPROX_HOME}/library_metadata"
+    read_existing:
+      kodi: true
+      jellyfin: false
+      plex: false
+
+    tmdb:
+      enabled: true
+      # api_key: "4219e299c89411838049ab0dab19ebd5" # Get your API key from https://www.themoviedb.org/settings/api
+      rate_limit_ms: 250  # Milliseconds between API calls (default: 250ms)
+
+    fallback_to_filename: true
+
+    formats:
+      - "nfo"  # Optionally write Kodi-compatible NFO files
+
+  playlist:
+    movie_category: "Local Movies"
+    series_category: "Local Series"
+
+```
+
+**CLI Usage**:
+```bash
+# Scan VOD directories
+./tuliprox --scan-library
+
+# Force full rescan (ignores modification timestamps)
+./tuliprox --force-library-rescan
+
+# Show db content
+./tuliprox --dbx /opt/tuliprox/data/all_channels/xtream/video.db
+./tuliprox --dbm /opt/tuliprox/data/all_channels/m3u.db
+./tuliprox --dbe /opt/tuliprox/data/all_channels/xtream/epg.db
+```
+
+**API Endpoints**:
+- `POST /api/v1/library/scan` - Trigger library scan
+  ```json
+  {"force_rescan": false}
+  ```
+- `GET /api/v1/library/status` - Get library status
+
+**Integration with source.yml**:
+```yaml
+inputs:
+- name: local-movies
+  type: library  # New input type
+  enabled: true
+
+sources:
+- inputs:
+  - local-movies
+```
+
 ## 2. `source.yml`
 
 Has the following top level entries:
 * `templates` _optional_
+* `inputs`
 * `sources`
 
 ### 2.1 `templates`
@@ -630,11 +831,15 @@ It can be used inside a sequence
 The template can now be used for sequence
 ```yaml
   sort:
-    groups:
-      order: asc
-    channels:
-      - field: caption
-        group_pattern: "!US_TNT_ENTERTAIN!"
+    match_as_ascii: true
+    rules:
+      - target: group
+        field: group
+        filter: Input ~ "provider_1"
+        order: asc
+      - target: channel  
+        field: caption
+        filter: Group ~ "!US_TNT_ENTERTAIN!"
         order: asc
         sequence:
           - "!CHAN_SEQ!"
@@ -642,15 +847,7 @@ The template can now be used for sequence
           - '(?i)\bSD\b'
 ```
 
-
-
-
-### 2.2. `sources`
-`sources` is a sequence of source definitions, which have two top level entries:
--`inputs`
--`targets`
-
-### 2.2.1 `inputs`
+### 2.2 `inputs`
 `inputs` is a list of sources.
 
 Each input has the following attributes:
@@ -664,7 +861,14 @@ Each input has the following attributes:
 - `headers` is optional
 - `method` can be `GET` or `POST`
 - `username` only mandatory for type `xtream`
-- `pasword`only mandatory for type `xtream`
+- `password` only mandatory for type `xtream`
+- `panel_api` _optional_ for provider panel api operations
+- `cache_duration` (_optional_): Playlist cache duration.  
+  Supported units are `s`, `m`, `h`, and `d` (seconds, minutes, hours, days).  
+  Examples: `12h`, `1d`, `30m`.
+  If `cache_duration` is set, the cached provider playlist stored on disk is reused
+  for subsequent updates instead of downloading it again.
+- `exp_date` optional, is a date as "YYYY-MM-DD HH:MM:SS" format like `2028-11-30 12:34:12` or Unix timestamp (seconds since epoch)
 - `options` is optional,
   + `xtream_skip_live` true or false, live section can be skipped.
   + `xtream_skip_vod` true or false, vod section can be skipped.
@@ -724,7 +928,7 @@ epg:
     fuzzy_matching: true
     match_threshold: 80
     best_match_threshold: 99
-    name_prefix: !suffix "."
+    name_prefix: { suffix: "." }
     name_prefix_separator: [':', '|', '-']
     strip :  ["3840p", "uhd", "fhd", "hd", "sd", "4k", "plus", "raw"]
     normalize_regex: '[^a-zA-Z0-9\-]'
@@ -739,61 +943,62 @@ The fuzzy matching tries to guess the EPG ID for a given channel. Some keys are 
 When looking at playlists, it's common for a country prefix to be included in the name, such as `US:` or `FR|`.
 The `name_prefix_separator` defines the possible separator characters used to identify this part.
 For EPG IDs, the country code is typically added as a suffix, like cnn.us. This is controlled by the name_prefix attribute. 
-The `!suffix '.'` setting means: if a prefix is found, append it to the name using the given separator character (in this case, a dot).
+The `{suffix: '.'}` setting means: if a prefix is found, append it to the name using the given separator character (in this case, a dot).
 
 Example input config for `m3u`
 ```yaml
+inputs:
+  - url: 'http://provder.net/get_php?...'
+    name: test_m3u
+    epg: 'test-epg.xml'
+    enabled: false
+    persist: 'playlist_1_{}.m3u'
+    options: {xtream_skip_series: true}
+  - url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/ad.m3u'
+  - url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/au.m3u'
+  - url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/za.m3u'
 sources:
-- inputs:
-    - url: 'http://provder.net/get_php?...'
-      name: test_m3u
-      epg: 'test-epg.xml'
-      enabled: false
-      persist: 'playlist_1_{}.m3u'
-      options: {xtream_skip_series: true}
-    - url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/ad.m3u'
-    - url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/au.m3u'
-    - url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/za.m3u'
-  targets:
-   - name: test
-     output:
-       - type: m3u
-         filename: test.m3u
+  - inputs:
+    - test_m3u
+    targets:
+    - name: test
+      output:
+      - type: m3u
+        filename: test.m3u
 ```
 
 Example input config for `xtream`
 ```yaml
-sources:
-  inputs:
-    - type: xtream
-      persist: 'playlist_1_1{}.m3u'
-      headers:
-        User-Agent: "Mozilla/5.0 (AppleTV; U; CPU OS 14_2 like Mac OS X; en-us) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.1 Safari/605.1.15"
-        Accept: application/json
-        Accept-Encoding: gzip
-      url: 'http://localhost:8080'
-      username: test
-      password: test
+inputs:
+  - type: xtream
+    persist: 'playlist_1_1{}.m3u'
+    headers:
+      User-Agent: "Mozilla/5.0 (AppleTV; U; CPU OS 14_2 like Mac OS X; en-us) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.1 Safari/605.1.15"
+    url: 'http://localhost:8080'
+    username: test
+    password: test
 ```
 
 Input alias definition for same provider with same content but different credentials.
 `max_connections` default is unlimited
 ```yaml
-- sources:
-- inputs:
+inputs:
   - type: xtream
-    name: my_provider
+    name: my_provider # Mandatory: used for playlist UUID generation
     url: 'http://provider.net'
     username: xyz
     password: secret1
     aliases:
-    - name: my_provider_2 
-      url: 'http://provider.net'
-      username: abcd
-      password: secret2
-      max_connections: 2
-  targets:
-  - name: test
+      - name: my_provider_2
+        url: 'http://provider.net'
+        username: abcd
+        password: secret2
+        max_connections: 2
+sources:
+  - inputs:
+    - my_provider
+    targets:
+    - name: test
 ```
 
 Input aliases can be defined as batches in csv files with `;` separator.
@@ -802,28 +1007,36 @@ There are 2 batch input types  `xtream_batch` and `m3u_batch`.
 ##### `XtreamBatch`
 
 ```yaml
-- sources:
-- inputs:
+
+inputs:
   - type: xtream_batch
+    name: my_provider # Mandatory: used for playlist UUID generation
     url: 'file:///home/tuliprox/config/my_provider_batch.csv'
-  targets:
-  - name: test
+sources:
+  - inputs:
+    - my_provider
+    targets:
+    - name: test
 ```
 
 ```csv
-#name;username;password;url;max_connections;priority
-my_provider_1;user1;password1;http://my_provider_1.com:80;1;0
-my_provider_2;user2;password2;http://my_provider_2.com:8080;1;0
+#name;username;password;url;max_connections;priority;exp_date
+my_provider_1;user1;password1;http://my_provider_1.com:80;1;0;2028-11-23 12:34:23
+my_provider_2;user2;password2;http://my_provider_2.com:8080;1;0;2028-11-23 12:34:23
 ```
+Important: the first alias is renamed with the `name` from input definition. `my_provider_1` gets `my_provider`.
+This is necessary because of playlist uuid generation and assigning same channel numbers on each update.
 
 ##### `M3uBatch`
 ```yaml
-- sources:
-- inputs:
+inputs:
   - type: m3u_batch
     url: 'file:///home/tuliprox/config/my_provider_batch.csv'
-  targets:
-  - name: test
+sources:
+  - inputs:
+      - m3u_batch
+    targets:
+    - name: test
 ```
 
 ```csv
@@ -841,7 +1054,187 @@ A `priority` of `0` is higher than `1`
 Higher numbers mean **lower priority**
 This means tasks or items with smaller (even negative) values will be handled before those with larger values.
 
-### 2.2.2 `targets`
+The `exp_date` field is a date as:
+- "YYYY-MM-DD HH:MM:SS" format like `2028-11-30 12:34:12`
+- or Unix timestamp (seconds since epoch)
+
+#### `panel_api`
+
+Tuliprox can optionally call a provider panel API to:
+- fetch your current credit balance
+- sync `exp_date` with your provider
+- renew expired accounts first (based on `exp_date`)
+- create a new account and persist it
+
+**Important!** Panel api accounts are not considering unlimited provider access!
+
+Optional alias pool controls:
+- `alias_pool.size.min`: `number` or `auto`.
+  - `number`: keep at least this many valid (not expired) accounts beyond the defined offset on boot/update. Must be greater `0` and <= `max` (when `max` is a number). Default `1`.
+  - `auto`: uses the number of enabled tuliprox users (Active/Trial and not expired) for targets in the same source. If below, tuliprox tries to renew expired accounts first and then creates new accounts until the amount of enabled users is met during boot/update + offset. User add/update triggers only when `max` is also `auto`.
+- `alias_pool.size.max`: `number` or `auto`. 
+  - `number`: upper bound for valid accounts when provisioning is triggered by provider exhaustion. When the maximum is reached, provisioning (renew/create) is skipped. Must be greater than `0` and >= `min`. Default `1`.
+  - `auto`: no upper bound; if `min` is also `auto`, alias-pool min checks are triggered when tuliprox users are added/updated.
+- `alias_pool.remove_expired`: `boolean`
+  - `true`: remove expired accounts from `source.yml` or batch CSVs during boot/update. This cleanup runs last in the panel_api routines and only removes aliases/rows (the root input is not removed).
+
+Provisioning settings:
+- `panel_api.provisioning.timeout_sec`: `number`
+  - Maximum wait time (seconds) to probe a newly created/renewed account before forcing a client reconnect or continuing boot/update process.
+  - Default `65`
+- `panel_api.provisioning.method`: `HEAD` | `GET` | `POST`
+  - HTTP method used for probes. 
+  - Default `HEAD`
+- `panel_api.provisioning.probe_interval_sec`: `number`
+  - Probe interval in seconds.
+  - Default `10`
+- `panel_api.provisioning.cooldown_sec`: `number`
+  - Extra wait time (seconds) after a successful probe before continuing boot/update provisioning. If you continue to see a 5XX message during the boot/update process despite a successful probe, gradually increase the cooldown time to give the provider enough time to provision the new root account.
+  - Default `0`
+- `panel_api.provisioning.offset`: e.g.: `15m` | `5h` | `1d`
+  - Optional pre-expiry window for boot/update renewal of input accounts with `exp_date`; if `now + offset > exp_date`, tuliprox tries `client_renew`, and falls back to `client_new` if renew fails. Supports suffixes `s` (seconds), `m` (minutes), `h` (hours), `d` (days), e.g. `30m`, `12h`, `2d` 
+  - Default `None`
+
+
+The API is configured generically via predefined query parameters.
+Optional fields can be deactivated by leaving them blank.
+Use the literal value `auto` to fill sensitive values at runtime:
+- in `account_info`: (_optional_)
+  - `api_key: auto` is replaced by `panel_api.api_key`
+- in `client_info`: (_mandatory_)
+  - `api_key: auto` is replaced by `panel_api.api_key`
+  - `username: auto`: are replaced by the account being queried
+  - `password: auto` are replaced by the account being queried
+- in `client_renew`: (_optional_)
+  - `api_key: auto` is replaced by `panel_api.api_key`
+  - `username: auto` are replaced by the account being renewed
+  - `password: auto` are replaced by the account being renewed
+  - `type: m3u` is the only supported type
+- in `client_new`: (_optional_)
+  - `api_key: auto` is replaced by `panel_api.api_key`
+  - `username: auto` are replaced by the account being renewed
+  - `password: auto` are replaced by the account being renewed
+  - `type: m3u` is the only supported type
+- in `client_adult_content`: (_optional_)
+  - `api_key: auto` is replaced by `panel_api.api_key`
+  - `username: auto` are replaced by the account being queried
+  - `password: auto` are replaced by the account being queried
+
+`account_info`
+ 
+Is executed on boot/update to fetch account credits via the `credits` field. If credentials are required, (username/password=auto), Tuliprox uses the first available ones: the root input if present, otherwise the first alias in config order. If no credentials are required, none are used or if not auto the configured one is used.”
+
+`client_info` 
+
+Is used to fetch the exact `exp_date` (via the `expire` field) and is also executed on boot/update to sync `exp_date` for existing inputs/aliases.
+
+`client_adult_content` 
+
+Optionally executed after `client_new` or `client_renew` to unlock adult content.
+
+
+Response evaluation logic
+Tuliprox evaluates Panel API responses as JSON with the following logic, depending on the operation:
+
+`Common rule (all operations)`
+
+  - Require `status: true`.
+  - If status is missing or not true, the operation is treated as failed.
+
+`account_info (credits)`
+
+  - Require `status: true`.
+  - Extract `credits` and persist it to `panel_api.credits`.
+
+`client_info (sync expiration)`
+
+  -	Require `status: true`.
+  -	Extract the expiration timestamp/date from the JSON field and normalize it to UTC:
+    -	`expire` → used to populate/update exp_date for the corresponding input/alias.
+
+`client_new (create new account)`
+	
+  -	Require `status: true`.
+  -	Attempt to extract credentials directly from the JSON response:
+    - username
+    - password
+  -	If one or both fields are missing, tuliprox attempts a fallback extraction from a URL contained in the JSON:
+    -	If the JSON contains a url field, tuliprox parses it and tries to extract username/password from it (e.g., query string or embedded credentials depending on the provider’s URL format).
+  -	If credentials cannot be derived from either the direct fields or the url fallback, the operation is treated as failed and no alias is persisted.
+
+`client_renew (renew existing account)`
+ 
+  -	Require `status: true`.
+  -	No credentials are extracted or updated as part of renew.
+
+`client_adult_content (toggle adult content)`
+
+  - Require `status: true`.
+```yaml
+- sources:
+- inputs:
+  - type: xtream
+    name: my_provider
+    url: 'http://provider.net'
+    username: xyz
+    password: secret1
+    panel_api:
+      url: 'https://panel.example.tld/api.php'
+      api_key: '1234567890'
+      provisioning:
+        timeout_sec: 65
+        method: GET
+        probe_interval_sec: 10
+        cooldown_sec: 120
+        offset: 12h
+      alias_pool:
+        size:
+          min: auto
+          max: auto
+        remove_expired: true
+      query_parameter:
+        account_info:
+          - { key: action, value: account_info }
+          - { key: api_key, value: auto }
+        client_info:
+          - { key: action, value: client_info }
+          - { key: username, value: auto }
+          - { key: password, value: auto }
+          - { key: api_key, value: auto }
+        client_new:
+          - { key: action, value: new }
+          - { key: type, value: m3u }
+          - { key: sub, value: '1' }
+          - { key: api_key, value: auto }
+        client_renew:
+          - { key: action, value: renew }
+          - { key: type, value: m3u }
+          - { key: username, value: auto }
+          - { key: password, value: auto }
+          - { key: sub, value: '1' }
+          - { key: api_key, value: auto }
+        client_adult_content:
+          - { key: action, value: adult_content }
+          - { key: username, value: auto }
+          - { key: password, value: auto }
+          - { key: api_key, value: auto }
+      credits: "0.0"
+```
+For `client_new`, the Panel API call would look like this in the example shown:
+
+```text
+https://panel.example.tld/api.php?action=new&type=m3u&sub=1&api_key=1234567890
+```
+
+### 2.3. `sources`
+`sources` is a sequence of source definitions, which have two top level entries:
+-`inputs`
+-`targets`
+
+### 2.3.1 `inputs`
+Is a list of input names, from the inputs defined in the inputs section of `source.yml`.
+
+### 2.3.2 `targets`
 Has the following top level entries:
 - `enabled` _optional_ default is `true`, if you disable the processing is skipped
 - `name` _optional_ default is `default`, if not default it has to be unique, for running selective targets
@@ -859,34 +1252,37 @@ Placing playlist into memory causes more RAM usage but reduces disk access.
 ### 2.2.2.1 `sort`
 Has three top level attributes
 - `match_as_ascii` _optional_ default is `false`
-- `groups`
-- `channels`
+- `rules`
 
-#### `groups`
-Used for sorting at the group (category) level.
-It has one top-level attribute `order` which can be set to `asc`or `desc`.
-#### `channels`
-Used for sorting the channels within a group/category.
-This is a list of sort configurations for groups. Each configuration has the following top-level entries:
-- `field` - can be  `title`, `name`, `caption` or `url`.
-- `group_pattern` - a regular expression like `'^TR.:\s?(.*)'` matched against group title.
-- `order` - can be `asc` or `desc`
+#### `rules`
+
+This is a list of sort configurations. Each configuration has the following top-level entries:
+- `target` - can be `group` or `channel`. 
+- `field`:
+  - for target `channel`: `title`, `name`, `caption` or `url`.
+  - for target `group`: `group`.
+- `filter` - a filter expression.
+- `order` - can be `asc`, `desc`, or `none` (which skips sorting for that group_pattern and keeps the playlist order coming from the sources).
 - `sequence` _optional_  - a list of regexp matching field values (based on `field`). These are used to sort based on index. The `order` is ignored for this entries.
 
-The pattern should be selected taking into account the processing sequence.
+The pattern should be selected considering the processing sequence.
 
 ```yaml
-  groups:
-  order: asc
-  sequence:
-    - '^Freetv'
-    - '^Shopping'
-    - '^Entertainment'
-    - '^Sunrise'
-  channels:
-    - field: caption
-      group_pattern: '^Freetv'
+sort:
+  rules:
+    - target: group
       order: asc
+      filter: Group ~ ".*" 
+      field: group
+      sequence:
+        - '^Freetv'
+        - '^Shopping'
+        - '^Entertainment'
+        - '^Sunrise'
+    - target: channel
+      order: asc
+      filter: Group ~ ".*"
+      field: title
       sequence:
         - '(?P<c1>.*?)\bUHD\b'
         - '(?P<c1>.*?)\bFHD\b'
@@ -894,11 +1290,10 @@ The pattern should be selected taking into account the processing sequence.
         - '(?P<c1>.*?)\bSD\b'
 ```
 In the example above, groups are sorted based on the specified sequence.
-Channels within the `Freetv` group are first sorted by `quality` (as matched by the regex sequence), and then by the `captured prefix`.
+Channels within the `Freetv` group are first sorted by `quality` (as matched by the regexp sequence), and then by the `captured prefix`.
 
 To sort by specific parts of the content, use named capture groups such as `c1`, `c2`, `c3`, etc.
 The numeric suffix indicates the priority: `c1` is evaluated first, followed by `c2`, and so on.
-
 
 ### 2.2.2.2 `output`
 
@@ -1048,6 +1443,11 @@ You can define a `Trakt` config like
             resolve_series: false
             resolve_vod: false
             trakt:
+              api:
+                api_key: "your api key"
+                version: "2"
+                url: "https://api.trakt.tv"
+                user_agent: "Mozilla/5.0"
               lists:
                 - user: "linaspurinis"
                   list_slug: "top-watched-movies-of-the-week"
@@ -1066,7 +1466,7 @@ This will create 2 new categories with matched entries.
 The filter is a string with a filter statement.
 The filter can have UnaryExpression `NOT`, BinaryExpression `AND OR`, Regexp Comparison `(Group|Title|Name|Url) ~ "regexp"`
 and Type Comparsison `Type = vod` or `Type = live` or `Type = series`.
-Filter fields are `Group`, `Title`, `Name`, `Caption`, `Url`, `Input` and `Type`.
+Filter fields are `Group`, `Title`, `Name`, `Caption`, `Url`, `Genre`, `Input` and `Type`.
 Example filter:  `((Group ~ "^DE.*") AND (NOT Title ~ ".*Shopping.*")) OR (Group ~ "^AU.*")`
 
 If you use characters like `+ | [ ] ( )` in filters don't forget to escape them!!
@@ -1125,11 +1525,14 @@ templates:
     Group ~ "((?i)FR[:|])?(?i)France.*"
 - name: PROV1_ALL
   value:  "!PROV1_TR! OR !PROV1_DE! OR !PROV1_FR!"
+inputs:
+  - enabled: true
+    name: my_provider_1
+    url: http://myserver.net/playlist.m3u
+    persist: ./playlist_{}.m3u
 sources:
   - inputs:
-      - enabled: true
-        url: http://myserver.net/playlist.m3u
-        persist: ./playlist_{}.m3u
+      - my_provider_1
     targets:
       - name: pl1
         output:
@@ -1167,7 +1570,24 @@ sources:
             new_name: 1. DE$1
 ```
 
-### 2.5.2.8 `watch`
+### 2.2.2.8 `favourites`
+Allows you to explicitly add items to a favorite group based on a filter. This is processed after mapping and resolution.
+
+- `cluster`: can be Series, Movie or Live.
+- `group`: The name of the group to add the favorite items to.
+- `filter`: A filter statement to select the original items.
+- `match_as_ascii`: _optional_ (default `false`). If `true`, the filter matching will be case-insensitive and normalized (e.g., "Cinema" matches "Cinéma").
+
+Example:
+```yaml
+favourites:
+  - cluster: series
+    group: "My Favourites"
+    filter: 'Name ~ "Cinema"'
+    match_as_ascii: true
+```
+
+### 2.2.2.9 `watch`
 For each target with a *unique name*, you can define watched groups.
 It is a list of regular expression matching final group names from this target playlist.
 Final means in this case: the name in the resulting playlist after applying all steps
@@ -1191,7 +1611,7 @@ messaging:
     - watch
 ```
 
-## 2. `mapping.yml`
+## 3. `mapping.yml`
 Has the root item `mappings` which has the following top level entries:
 - `templates` _optional_
 - `mapping` _mandatory_
@@ -1206,7 +1626,7 @@ The filename or path can be given as `-m` argument. (See Mappings section)
 
 Default mapping file is `maping.yml`
 
-### 2.1 `templates`
+### 3.1 `templates`
 If you have a lot of repeats in you regexps, you can use `templates` to make your regexps cleaner.
 You can reference other templates in templates with `!name!`;
 ```yaml
@@ -1224,6 +1644,7 @@ This will replace all occurrences of `!delimiter!` and `!quality!` in the regexp
 Has the following top level entries:
 - `id` _mandatory_
 - `match_as_ascii` _optional_ default is `false`
+- `create_alias` _optional_ default is `false`
 - `mapper` _mandatory_
 - `counter` _optional_
 
@@ -1231,20 +1652,31 @@ Has the following top level entries:
 Is referenced in the `config.yml`, should be a unique identifier
 
 ### 2.3.2 `match_as_ascii`
-If you have non ascii characters in you playlist and want to
-write regexp without considering chars like `é` and use `e` instead, set this option to `true`.
-[unidecode](https://crates.io/crates/unidecode) is used to convert the text.
+If you have non-ASCII characters in your playlist (e.g., `é`, `ö`, `ß`) and want to write filters without considering these accents (e.g., using `e` to match `é`), set this option to `true`.
+The system will automatically deunicode the field values on-the-fly during filtering and mapping operations.
 
-### 2.3.3 `mapper`
+
+Example:
+```yaml
+mapping:
+  - id: favourites_news
+    match_as_ascii: true
+    mapper:
+      - filter: 'Group ~ "(?i)news"'
+        script: |
+          add_favourite("Favourites")
+```
+
+### 2.3.4 `mapper`
 Has the following top level entries:
 - `filter`
 - `script`
 
-#### 2.3.3.1 `filter`
+#### 2.3.4.1 `filter`
 The filter  is a string with a statement (@see filter statements).
 It is optional and allows you to filter the content.
 
-#### 2.3.3.2 `script`
+#### 2.3.4.2 `script`
 Script has a custom DSL syntax. 
 
 This Domain-Specific Language (DSL) supports simple scripting operations including variable assignment, 
@@ -1256,8 +1688,8 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
 - FieldNames: `Playlist Field Names` starting with `@` following compose of ASCII alphanumeric characters and underscores.
 - Strings / Text: Enclosed in double quotes. "example string" 
 - Null value `null`
-- Regex Matching:   `@FieldName ~ "Regex"` like in filter statements. You can match a `FieldName` or a existing `variable`.
-- Access a field in a regex match result:  with `result.capture`. For example, if you have multiple captures you can access them by their name, or their index beginning at `1` like `result.1`, `result.2`.
+- Regexp Matching:   `@FieldName ~ "Regexp"` like in filter statements. You can match a `FieldName` or a existing `variable`.
+- Access a field in a regexp match result:  with `result.capture`. For example, if you have multiple captures you can access them by their name, or their index beginning at `1` like `result.1`, `result.2`.
 - Builtin functions: 
   - concat(a, b, ...)
   - uppercase(a)
@@ -1271,6 +1703,7 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
   - replace(text, match, replacement)
   - pad(text | number, number, char, optional position: "<" | ">" | "^")
   - format(fmt_text, ...args)
+  - add_favourite(group_name)
 Field names are:  `name`, `title"`, `caption"`, `group"`, `id"`, `chno"`, `logo"`, `logo_small"`, `parent_code"`, `audio_track"`, `time_shift" |  "url"`, `epg_channel_id"`, `epg_id`.
 Format is very simple and only supports in text replacement like  `format("Hello {}! Hello {}!", "Bob", "World")`  
 When you use Regular expressions it could be that your match contains multiple results.
@@ -1341,6 +1774,40 @@ Example `if then else` block
   }
 ```
 
+Example `for each` block
+
+Iterates over a `Named` result (a list of key-value tuples).
+The syntax is `variable.for_each( (key, value) => { ... })`.
+The parameters `key` and `value` are variable names you define to access the tuple elements inside the loop.
+
+You can use `_` for parameters you want to ignore (e.g., `(_, value)` or `(key, _)`). However, at least one parameter must be named (you cannot use `(_, _)`).
+
+`Named` variables are created by:
+1. **`split()` function**: keys are indices ("0", "1", ...), values are the split parts.
+2. **Regex with capture groups**: keys are group names (or indices), values are the captured matches.
+
+```dsl
+  # 1. Using split()
+  # Split the genre string into a Named result (index as key, genre as value)
+  genres = split(@Genre, "[,/&]")
+  
+  # Iterate over each genre, ignoring the index
+  genres.for_each((_, genre) => {
+     # 'genre' will contain the split string value
+     add_favourite(concat("Genre - ", genre))
+  })
+
+  # 2. Using Regex with named capture groups
+  # Extract info using regex, creating a Named result like [("Movie", "Inception"), ("Year", "2010")]
+  info = @Title ~ "(?P<Movie>.*?)\s-\s(?P<Year>\d{4})"
+  
+  info.for_each((k, v) => {
+      # k will be "Movie" then "Year"
+      # v will be "Inception" then "2010"
+      print(concat("Found ", k, ": ", v))
+  })
+```
+
 Example of removing prefix
 `@Caption = replace(@Caption, "UK:",  "EN:"`
 
@@ -1396,7 +1863,7 @@ mappings:
             @Caption = concat("!US_TNT_PREFIX!", " ", coast_quality)
             @Group = "!US_TNT_ENTERTAIN_GROUP!"
 ```
-### 2.3.4 counter
+### 2.3.5 counter
 
 Each mapping can have a list of counter.
 
@@ -1650,8 +2117,7 @@ server:
       - {username: x3451, password: secret, token: abcde, proxy: redirect}
 ```
 
-
-## 4. Logging
+## 5. Logging
 Following log levels are supported:
 - `debug`
 - `info` _default_
@@ -1879,24 +2345,24 @@ Now we have to define the sources we want to import. We do this inside `source.y
 templates:
 - name: ALL_CHAN
   value: 'Group ~ ".*"'
+
+inputs:
+- type: xtream
+  name: my_provider
+  url: 'http://fantastic.provider.xyz:8080'
+  epg_url: 'http://fantastic.provider.xyz:8080/xmltv.php?username=tvjunkie&password=junkie.secret'
+  username: tvjunkie
+  password: junkie.secret
+  options: {xtream_info_cache: true}
 sources:
 - inputs:
-    - type: xtream
-      url: 'http://fantastic.provider.xyz:8080'
-      epg_url: 'http://fantastic.provider.xyz:8080/xmltv.php?username=tvjunkie&password=junkie.secret'
-      username: tvjunkie
-      password: junkie.secret
-      options: {xtream_info_cache: true}
+  - my_provider
   targets:
-    - name: all_channels
-      output:
-        - type: xtream
-      filter: "!ALL_CHAN!"
-      options: {ignore_logo: false, skip_live_direct_source: true, skip_video_direct_source: true}
-      sort:
-        match_as_ascii: true
-        groups:
-          order: asc
+  - name: all_channels
+    output:
+      - type: xtream
+    filter: "!ALL_CHAN!"
+    options: {ignore_logo: false, skip_live_direct_source: true, skip_video_direct_source: true}
 ```
 
 What did we do? First, we defined the input source based on the information we received from our provider.
@@ -1959,16 +2425,19 @@ What we have currently is: (for a better overview I have removed some parts and 
 templates:
 - name: ALL_CHAN
   value: 'Group ~ ".*"'
+inputs:
+- type: xtream
+  name: my_provider
+  ...
 sources:
 - inputs:
-    - type: xtream
-      ...
+  - my_provider
   targets:
-    - name: all_channels
-      output:
-        - type: xtream
-      filter: "!ALL_CHAN!"
-      ...
+  - name: all_channels
+    output:
+      - type: xtream
+    filter: "!ALL_CHAN!"
+      
 ```
 
 We use templates to make the filters easier to maintain and read.
@@ -2010,16 +2479,20 @@ templates:
 - name: MY_CHANNELS
   value: '!NO_SHOOPING! AND (!GERMAN_CHANNELS! OR !FRENCH_CHANNELS!)'
 
+inputs:
+- type: xtream
+  name: my_provider
+  ...
 sources:
 - inputs:
-    - type: xtream
-      ...
+  - my_provider
   targets:
-    - name: all_channels
-      output:
-        - type: xtream
-      filter: "!MY_CHANNELS!"
-      ...```
+  - name: all_channels
+    output:
+      - type: xtream
+    filter: "!MY_CHANNELS!"
+    ...
+ ```
 
 The resulting playlist contains all French and German channels except Shopping.
 
@@ -2234,7 +2707,7 @@ The result should look like
     @Group = concat("FR | MOVIES ", year_group)
 ```
 Filter: Matches channels where the Group starts with "FR" and the Caption ends in a 4-digit year (optionally inside parentheses).
-Regex extraction: Pulls the 4-digit year from the caption.
+Regexp extraction: Pulls the 4-digit year from the caption.
 Mapping:
  If the year is ≤ 2019, it maps to " < 2020".
  Otherwise, the group is named by the actual year (e.g., "2021").

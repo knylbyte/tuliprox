@@ -1,24 +1,26 @@
-use std::path::{Path, PathBuf};
-use shared::error::{TuliproxError};
-use crate::model::{Config};
-use shared::error::{notify_err};
+use crate::model::Config;
 use crate::repository::storage_const;
 use crate::utils;
+use shared::error::notify_err;
+use shared::error::TuliproxError;
+use std::path::{Path, PathBuf};
+use shared::{concat_string, notify_err_res};
 
 pub(in crate::repository) fn get_target_id_mapping_file(target_path: &Path) -> PathBuf {
-    target_path.join(PathBuf::from(storage_const::FILE_ID_MAPPING))
+    // Join directly with &str to avoid an intermediate PathBuf allocation
+    target_path.join(storage_const::FILE_ID_MAPPING)
 }
 
 pub fn ensure_target_storage_path(cfg: &Config, target_name: &str) -> Result<PathBuf, TuliproxError> {
     if let Some(path) = get_target_storage_path(cfg, target_name) {
         if std::fs::create_dir_all(&path).is_err() {
             let msg = format!("Failed to save target data, can't create directory {}", path.display());
-            return Err(notify_err!(msg));
+            return notify_err_res!("{msg}");
         }
         Ok(path)
     } else {
         let msg = format!("Failed to save target data, can't create directory for target {target_name}");
-        Err(notify_err!(msg))
+        notify_err_res!("{msg}")
     }
 }
 
@@ -26,13 +28,35 @@ pub fn get_target_storage_path(cfg: &Config, target_name: &str) -> Option<PathBu
     utils::get_file_path(&cfg.working_dir, Some(std::path::PathBuf::from(target_name.replace(' ', "_"))))
 }
 
+pub fn sanitize_name(name: &str) -> String {
+    name.chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect()
+}
+
+pub fn build_input_storage_path(input_name: &str, working_dir: &str) -> PathBuf {
+    let sanitized_name: String = sanitize_name(input_name);
+    let name = concat_string!(cap = 6 + sanitized_name.len(); "input_", &sanitized_name);
+    Path::new(working_dir).join(name)
+}
+
 pub fn get_input_storage_path(input_name: &str, working_dir: &str) -> std::io::Result<PathBuf> {
-    let name =  format!("input_{input_name}");
-    let path = Path::new(working_dir).join(name);
+    let path = build_input_storage_path(input_name, working_dir);
     // Create the directory and return the path or propagate the error
     std::fs::create_dir_all(&path).map(|()| path)
 }
 
+pub fn ensure_input_storage_path(cfg: &Config, input_name: &str) -> Result<PathBuf, TuliproxError> {
+    get_input_storage_path(input_name, &cfg.working_dir)
+        .map_err(|err| {
+            notify_err!("Failed to save input data, can't create directory for input {input_name}: {err}")
+        })
+}
+
 pub fn get_geoip_path(working_dir: &str) -> PathBuf {
     Path::new(working_dir).join("geoip.db")
+}
+
+pub fn get_file_path_for_db_index(db_path: &Path) -> PathBuf {
+    db_path.with_extension(storage_const::FILE_SUFFIX_INDEX)
 }

@@ -3,7 +3,7 @@
   flex-flow: column;
   overflow: hidden;
   box-sizing: border-box;
-  gap: 6px;
+  gap: var(--gap-default);
   .tp__input-wrapper {
     display: flex;
     flex-flow: row nowrap;
@@ -43,6 +43,7 @@
   }
 }
 
+textarea,
 input {
   background-clip: content-box;
   box-sizing: border-box;
