@@ -1,6 +1,6 @@
 use crate::model::{
     user_command::UserCommand, ActiveUserConnectionChange, ConfigType, DownloadsDelta, DownloadsResponse,
-    FileDownloadDto, LibraryScanProgressEvent, PermissionSet, PlaylistUpdateProgressEvent, PlaylistUpdateState,
+    FileDownloadDto, LibraryScanProgressEvent, PermissionSet, PlaylistUpdateProgressEvent, PlaylistUpdateRunStateEvent,
     QueueRevision, StatusCheck, StreamMeterEntry, SystemInfo,
 };
 use bytes::Bytes;
@@ -93,7 +93,7 @@ pub enum ProtocolMessage {
     ActiveProviderCountRequest(String),
     ActiveProviderCountResponse(usize),
     ConfigChangeResponse(ConfigType),
-    PlaylistUpdateResponse(PlaylistUpdateState),
+    PlaylistUpdateResponse(PlaylistUpdateRunStateEvent),
     PlaylistUpdateProgressResponse(PlaylistUpdateProgressEvent),
     UserActionResponse(bool),
     SystemInfoResponse(SystemInfo),
