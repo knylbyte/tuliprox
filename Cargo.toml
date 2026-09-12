@@ -85,15 +85,16 @@ strip = true
 incremental = false
 
 [profile.dev]
-opt-level = 0
-debug = true
-strip = "none"
-lto = "off"
+lto = false
 incremental = true
 codegen-units = 256
 
 [profile.dev-slim]
 inherits = "dev"
+opt-level = 0
+debug = true
+strip = "none"
+lto = "off"
 debug = "line-tables-only"
 
 [profile.dev-slim.package."*"]
