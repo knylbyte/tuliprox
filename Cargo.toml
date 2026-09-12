@@ -92,7 +92,6 @@ codegen-units = 256
 [profile.dev-slim]
 inherits = "dev"
 opt-level = 0
-debug = true
 strip = "none"
 lto = "off"
 debug = "line-tables-only"

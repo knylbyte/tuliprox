@@ -693,6 +693,7 @@ impl LibraryProcessor {
 
     /// Current catalog counts, independent of any scan's file/group counters.
     pub async fn catalog_status(&self) -> io::Result<LibraryStatus> {
+        self.storage.initialize().await?;
         let entries = self.storage.load_all_complete().await?;
         let mut status =
             LibraryStatus { enabled: self.config.enabled, total_items: entries.len(), ..LibraryStatus::default() };
@@ -811,9 +812,11 @@ mod tests {
         let config = LibraryConfig::from(&LibraryConfigDto { enabled: true, ..LibraryConfigDto::default() });
         let processor =
             LibraryProcessor::new(config.clone(), None, reqwest::Client::new(), temp.path().to_str().unwrap());
-        processor.storage.initialize().await.unwrap();
+        let catalog_path = resolve_metadata_storage_path(None, temp.path().to_str().unwrap()).join("library");
+        assert!(!catalog_path.exists(), "status must also work before the first scan");
         let empty = processor.catalog_status().await.unwrap();
         assert_eq!((empty.movies, empty.series, empty.episodes, empty.total_items), (0, 0, 0, 0));
+        assert!(catalog_path.is_dir());
         for metadata in [
             MediaMetadata::Movie(super::super::MovieMetadata::default()),
             MediaMetadata::Series(SeriesMetadata {
@@ -851,6 +854,26 @@ mod tests {
         tokio::fs::write(path, "not json").await.unwrap();
         assert_eq!(processor.catalog_status().await.unwrap_err().kind(), io::ErrorKind::InvalidData);
         assert_eq!(processor.scan_for_target_rebuild().await.unwrap_err().kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[tokio::test]
+    async fn library_catalog_status_reports_storage_initialization_failure() {
+        let temp = tempfile::tempdir().unwrap();
+        let metadata_path = temp.path().join("not-a-directory");
+        tokio::fs::write(&metadata_path, "occupied").await.unwrap();
+        let metadata = MetadataUpdateConfig {
+            cache_path: metadata_path.to_string_lossy().into_owned(),
+            ..MetadataUpdateConfig::default()
+        };
+        let processor = LibraryProcessor::new(
+            LibraryConfig::from(&LibraryConfigDto::default()),
+            Some(&metadata),
+            reqwest::Client::new(),
+            temp.path().to_str().unwrap(),
+        );
+
+        assert!(processor.catalog_status().await.is_err(), "unreadable storage is not a zero-count catalog");
+        assert_eq!(tokio::fs::read(metadata_path).await.unwrap(), b"occupied");
     }
 
     #[test]

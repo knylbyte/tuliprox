@@ -621,15 +621,26 @@ fn resolve_manual_playlist_update_targets(
     })
 }
 
+async fn read_playlist_update_input_status(
+    read: impl FnOnce() -> crate::processing::input_cache::InputStatus + Send + 'static,
+) -> Result<crate::processing::input_cache::InputStatus, axum::http::StatusCode> {
+    tokio::task::spawn_blocking(read).await.map_err(|error| {
+        error!("Playlist update status reader failed: {error}");
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR
+    })
+}
+
 async fn playlist_update_status(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
-) -> axum::Json<PlaylistUpdateStatusDto> {
+) -> Result<axum::Json<PlaylistUpdateStatusDto>, axum::http::StatusCode> {
     let storage_dir = app_state.app_config.config.load().storage_dir.clone();
     let inputs = app_state.app_config.sources.load().inputs.clone();
     let mut statuses = Vec::with_capacity(inputs.len());
     for input in inputs {
         let storage_path = crate::processing::input_cache::resolve_input_storage_path(&storage_dir, &input.name).await;
-        let input_status = crate::processing::input_cache::load_input_status(&storage_path);
+        let input_status =
+            read_playlist_update_input_status(move || crate::processing::input_cache::load_input_status(&storage_path))
+                .await?;
         let cluster_based = input.input_type.is_xtream() || input.input_type.is_stalker();
         let last_update =
             input_status.clusters.values().map(|cluster| cluster.timestamp).filter(|timestamp| *timestamp > 0).max();
@@ -681,7 +692,7 @@ async fn playlist_update_status(
         .into_iter()
         .filter(|event| event.input_id.is_some_and(|id| statuses.iter().any(|status| status.input_id == id)))
         .collect();
-    axum::Json(PlaylistUpdateStatusDto { inputs: statuses, active_updates })
+    Ok(axum::Json(PlaylistUpdateStatusDto { inputs: statuses, active_updates }))
 }
 
 async fn playlist_content(
@@ -2090,6 +2101,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn playlist_update_status_reader_runs_off_the_async_worker() {
+        use crate::processing::input_cache::{
+            load_input_status, save_input_status, ClusterState, ClusterStatus, InputStatus,
+        };
+
+        let temp = tempdir().unwrap();
+        let expected = InputStatus {
+            clusters: HashMap::from([(
+                "live".to_owned(),
+                ClusterStatus { status: ClusterState::Ok, timestamp: 17, last_update: None },
+            )]),
+            ..InputStatus::default()
+        };
+        save_input_status(temp.path(), &expected);
+        let before = std::fs::read(temp.path().join("status.json")).unwrap();
+        let worker = std::thread::current().id();
+        let path = temp.path().to_path_buf();
+        let actual = super::read_playlist_update_input_status(move || {
+            assert_ne!(std::thread::current().id(), worker);
+            load_input_status(&path)
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(actual.clusters, expected.clusters);
+        assert_eq!(std::fs::read(temp.path().join("status.json")).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn playlist_update_status_reader_join_failure_returns_server_error_not_empty_status() {
+        let result = super::read_playlist_update_input_status(|| panic!("simulated status reader failure")).await;
+        assert_eq!(result.unwrap_err(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
     async fn playlist_update_status_reload_returns_active_bus_facts_without_persisting_updating() {
         use shared::model::{EventMessage, PlaylistUpdateProgressEvent, PlaylistUpdateState, PlaylistUpdateSummary};
         let temp = tempdir().unwrap();
@@ -2123,19 +2169,19 @@ mod tests {
         app.event_manager.send_event(EventMessage::PlaylistUpdateProgress(progress.clone()));
         let unknown = PlaylistUpdateProgressEvent::for_run_input("other".into(), 18.into(), 99, "removed", "updating");
         app.event_manager.send_event(EventMessage::PlaylistUpdateProgress(unknown));
-        let Json(status) = super::playlist_update_status(State(app.clone())).await;
+        let Json(status) = super::playlist_update_status(State(app.clone())).await.unwrap();
         assert_eq!(status.active_updates, vec![progress.clone()]);
         assert_eq!(status.inputs[0].last_input_update, persisted.last_input_update);
         progress.state = Some(PlaylistUpdateState::Partial);
         app.event_manager.send_event(EventMessage::PlaylistUpdateProgress(progress.clone()));
-        let Json(status) = super::playlist_update_status(State(app.clone())).await;
+        let Json(status) = super::playlist_update_status(State(app.clone())).await.unwrap();
         assert_eq!(status.active_updates, vec![progress], "completed input still belongs to a running target rebuild");
         app.event_manager.send_event(EventMessage::PlaylistUpdate(PlaylistUpdateSummary::for_run(
             "running".into(),
             17.into(),
             PlaylistUpdateState::Failure,
         )));
-        let Json(status) = super::playlist_update_status(State(app)).await;
+        let Json(status) = super::playlist_update_status(State(app)).await.unwrap();
         assert!(status.active_updates.is_empty());
         assert_eq!(
             std::fs::read(path.join("status.json")).unwrap(),

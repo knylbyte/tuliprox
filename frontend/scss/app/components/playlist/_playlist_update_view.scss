@@ -132,6 +132,7 @@
     color: var(--modest-text-color);
     background-color: transparent;
     font-size: var(--font-size-sm);
+
     // A fixed line box keeps the warning/checkmark glyphs from changing badge height.
     line-height: 1.5;
     font-weight: normal;

@@ -101,6 +101,13 @@ fn stalker_refresh_busy_fetch(input_name: &str, persisted: bool, quality_policy:
     }
 }
 
+fn failed_stalker_acquisition(error: TuliproxError, clusters: &[StalkerCluster]) -> PlaylistFetch {
+    PlaylistFetch {
+        failed_clusters: clusters.iter().copied().map(xtream_cluster).collect(),
+        ..PlaylistFetch::failed(error)
+    }
+}
+
 fn cached_resolved_link(key: RuntimeLinkKey, force_refresh: bool) -> Option<Arc<str>> {
     let mut cache = RUNTIME_STALKER_LINKS.lock();
     let expired = cache.peek(&key).is_some_and(|entry| entry.expires_at <= Instant::now());
@@ -152,27 +159,27 @@ pub async fn download_stalker_playlist(
 
     let portal_url = match resolve_stalker_portal_url(input) {
         Ok(url) => url,
-        Err(err) => return PlaylistFetch::failed(err),
+        Err(err) => return failed_stalker_acquisition(err, &resolved_clusters),
     };
 
     let identity_fingerprint = stalker_identity_fingerprint(&portal_url, &stalker_cfg);
     let api_client = match cached_runtime_stalker_client(client, portal_url, &stalker_cfg) {
         Ok(client) => client,
         Err(err) => {
-            return PlaylistFetch::failed(TuliproxError::ConfigInput(format!(
-                "failed to build Stalker client for input '{}': {err}",
-                input.name
-            )));
+            return failed_stalker_acquisition(
+                TuliproxError::ConfigInput(format!("failed to build Stalker client for input '{}': {err}", input.name)),
+                &resolved_clusters,
+            );
         }
     };
 
     let storage_path = match ensure_stalker_storage_path(app_config, &input.name).await {
         Ok(p) => p,
         Err(err) => {
-            return PlaylistFetch::failed(TuliproxError::Io(format!(
-                "could not prepare Stalker storage for input '{}': {err}",
-                input.name
-            )));
+            return failed_stalker_acquisition(
+                TuliproxError::Io(format!("could not prepare Stalker storage for input '{}': {err}", input.name)),
+                &resolved_clusters,
+            );
         }
     };
     let catalog_storage_path = raw_group_catalog_storage_path(&storage_path);
@@ -181,10 +188,13 @@ pub async fn download_stalker_playlist(
         let handshake = match api_client.handshake().await {
             Ok(handshake) => handshake,
             Err(err) => {
-                return PlaylistFetch::failed(TuliproxError::ProviderConnection(format!(
-                    "Stalker handshake for input '{}' failed: {err}",
-                    input.name
-                )));
+                return failed_stalker_acquisition(
+                    TuliproxError::ProviderConnection(format!(
+                        "Stalker handshake for input '{}' failed: {err}",
+                        input.name
+                    )),
+                    &resolved_clusters,
+                );
             }
         };
         loop {

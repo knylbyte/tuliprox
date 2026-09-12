@@ -745,7 +745,7 @@ async fn download_xtream_from_source<E: EventSink>(
         }
     }
 
-    if use_disk_based_processing && fetch.errors.is_empty() && !disk_cluster_readers.is_empty() {
+    if use_disk_based_processing && !disk_cluster_readers.is_empty() {
         let result = persist_input_xtream_playlist_clusters_to_disk(app_config, input, disk_cluster_readers).await;
         for err in &result.errors {
             error!("persist_input_xtream_playlist_clusters_to_disk failed: {err}");

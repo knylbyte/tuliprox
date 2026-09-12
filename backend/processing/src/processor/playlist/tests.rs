@@ -1794,7 +1794,7 @@ mod quality_rejection_fallback {
     use shared::model::{
         provider_saturation::build_group_lookup, xtream_const::XTREAM_CLUSTER, ConfigInputOptionsDto,
         ConfigInputUpdateQualityDto, ConfigPaths, EventMessage, EventSink, PlaylistUpdateState, ProcessingOrder,
-        SeriesStreamDetailEpisodeProperties, SeriesStreamDetailProperties, SeriesStreamProperties,
+        SeriesStreamDetailEpisodeProperties, SeriesStreamDetailProperties, SeriesStreamProperties, UpdateQualityPolicy,
     };
     use std::{
         io::{ErrorKind, Read, Write},
@@ -1834,6 +1834,13 @@ mod quality_rejection_fallback {
         }
 
         fn start_with_responses(responses: HashMap<String, String>) -> Self {
+            Self::start_with_statuses(responses, HashMap::new())
+        }
+
+        fn start_with_statuses(
+            responses: HashMap<String, String>,
+            statuses: HashMap<String, reqwest::StatusCode>,
+        ) -> Self {
             let listener = TcpListener::bind("127.0.0.1:0").expect("bind Xtream fixture server");
             listener.set_nonblocking(true).expect("configure Xtream fixture listener");
             let address = listener.local_addr().expect("Xtream fixture address");
@@ -1846,7 +1853,7 @@ mod quality_rejection_fallback {
             let worker = thread::spawn(move || {
                 while !worker_stop.load(Ordering::Acquire) {
                     match listener.accept() {
-                        Ok((stream, _)) => match serve_fixture_request(stream, &responses) {
+                        Ok((stream, _)) => match serve_fixture_request(stream, &responses, &statuses) {
                             Ok(action) => worker_requests.lock().expect("request log lock").push(action),
                             Err(err) => worker_errors.lock().expect("server error lock").push(err.to_string()),
                         },
@@ -1935,7 +1942,11 @@ mod quality_rejection_fallback {
         })
     }
 
-    fn serve_fixture_request(mut stream: TcpStream, responses: &HashMap<String, String>) -> std::io::Result<String> {
+    fn serve_fixture_request(
+        mut stream: TcpStream,
+        responses: &HashMap<String, String>,
+        statuses: &HashMap<String, reqwest::StatusCode>,
+    ) -> std::io::Result<String> {
         stream.set_nonblocking(false)?;
         stream.set_read_timeout(Some(Duration::from_secs(1)))?;
         let mut request = Vec::with_capacity(1_024);
@@ -1960,8 +1971,9 @@ mod quality_rejection_fallback {
         let body = responses
             .get(&action)
             .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidInput, format!("unexpected action {action}")))?;
+        let status = statuses.get(&action).copied().unwrap_or(reqwest::StatusCode::OK);
         let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
             body.len()
         );
         stream.write_all(response.as_bytes())?;
@@ -2429,6 +2441,117 @@ mod quality_rejection_fallback {
                 "get_series",
             ],
         );
+    }
+
+    #[tokio::test]
+    async fn coderabbit_stalker_global_failures_mark_only_requested_non_skipped_clusters() {
+        use crate::processor::stalker::{download_stalker_playlist, StalkerCluster};
+
+        #[derive(Clone, Copy, Debug)]
+        enum FailurePoint {
+            Portal,
+            Client,
+            Storage,
+            Handshake,
+        }
+
+        for failure in [FailurePoint::Portal, FailurePoint::Client, FailurePoint::Storage, FailurePoint::Handshake] {
+            for requested in [None, Some(vec![StalkerCluster::Live, StalkerCluster::Series])] {
+                let temp = tempfile::tempdir().unwrap();
+                let ctx = processing_context(temp.path());
+                let server = TestXtreamServer::start_with_responses(HashMap::from([("handshake".into(), "{}".into())]));
+                let mut input =
+                    (*test_input(&server.base_url, ConfigInputUpdateQualityDto::default(), 0, &[XtreamCluster::Live]))
+                        .clone();
+                input.input_type = InputType::Stalker;
+                input.stalker = Some(tuliprox_core::model::StalkerInputConfig::default());
+                match failure {
+                    FailurePoint::Portal => input.url.clear(),
+                    FailurePoint::Client => input.url = "://invalid-url".into(),
+                    FailurePoint::Storage => {
+                        let path = input_storage_path(&ctx, &input).await;
+                        tokio::fs::write(path.join("stalker"), b"not a directory").await.unwrap();
+                    }
+                    FailurePoint::Handshake => {}
+                }
+                let fetch = download_stalker_playlist(
+                    &ctx.config,
+                    &ctx.client,
+                    &input,
+                    requested.as_deref(),
+                    StalkerRefreshMode::Complete,
+                    true,
+                    UpdateQualityPolicy::Enforce,
+                )
+                .await;
+                let expected = if requested.is_some() {
+                    vec![XtreamCluster::Series]
+                } else {
+                    vec![XtreamCluster::Video, XtreamCluster::Series]
+                };
+                assert_eq!(fetch.failed_clusters, expected, "{failure:?}");
+                assert_eq!(fetch.errors.len(), 1, "{failure:?}");
+                assert!(!fetch.is_ok());
+                assert!(fetch.quality_acceptances.is_empty() && fetch.quality_rejections.is_empty());
+                assert!(fetch.force_updates.is_empty());
+                let requests = server.finish();
+                match failure {
+                    FailurePoint::Handshake => assert!(!requests.is_empty()),
+                    FailurePoint::Portal | FailurePoint::Client | FailurePoint::Storage => assert!(requests.is_empty()),
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn coderabbit_xtream_http_failure_preserves_successful_disk_clusters() {
+        for quality in [UpdateQualityPolicy::Enforce, UpdateQualityPolicy::Bypass] {
+            let temp = tempfile::tempdir().unwrap();
+            let server = TestXtreamServer::start_with_statuses(
+                fixture_responses([2, 2, 2]),
+                HashMap::from([("get_vod_streams".to_owned(), reqwest::StatusCode::BAD_REQUEST)]),
+            );
+            let ctx = processing_context(temp.path());
+            let mut config = (**ctx.config.config.load()).clone();
+            config.disk_based_processing = true;
+            ctx.config.config.store(Arc::new(config));
+            let input =
+                test_input(&server.base_url, ConfigInputUpdateQualityDto { live: 100, vod: 100, series: 100 }, 0, &[]);
+            seed_baseline(&ctx, &input).await;
+
+            let fetch = tuliprox_iptv::xtream::download_xtream_playlist(
+                &ctx.config,
+                &ctx.client,
+                &ctx.events,
+                &input,
+                None,
+                quality,
+            )
+            .await;
+            assert_eq!(fetch.failed_clusters, vec![XtreamCluster::Video]);
+            assert!(!fetch.is_ok(), "the failed cluster must remain a technical failure");
+            assert!(fetch.persisted);
+            assert!(fetch.quality_rejections.is_empty());
+            let accepted: Vec<_> = match quality {
+                UpdateQualityPolicy::Enforce => fetch.quality_acceptances.iter().map(|value| value.cluster).collect(),
+                UpdateQualityPolicy::Bypass => fetch.force_updates.iter().map(|value| value.cluster).collect(),
+            };
+            assert_eq!(accepted, vec![XtreamCluster::Live, XtreamCluster::Series]);
+
+            let storage = input_storage_path(&ctx, &input).await;
+            let groups =
+                tuliprox_repository::load_input_xtream_playlist(&ctx.config, &storage, &XTREAM_CLUSTER).await.unwrap();
+            for (cluster, title) in [
+                (XtreamCluster::Live, "candidate-live"),
+                (XtreamCluster::Video, "old-vod"),
+                (XtreamCluster::Series, "candidate-series"),
+            ] {
+                let group = groups.iter().find(|group| group.xtream_cluster == cluster).unwrap();
+                assert_eq!(group.title.as_ref(), title);
+                assert_eq!(group.channels.len(), 2);
+            }
+            assert_eq!(server.finish().len(), 7);
+        }
     }
 
     #[tokio::test]

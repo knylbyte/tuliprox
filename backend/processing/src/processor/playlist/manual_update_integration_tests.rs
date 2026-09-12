@@ -198,6 +198,70 @@ mod manual_update_integration {
     }
 
     #[tokio::test]
+    async fn coderabbit_library_unavailable_is_not_an_authoritative_empty_catalog() {
+        for disabled in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let ctx = library_context(temp.path(), ProcessingOrder::Frm).await;
+            exec_processing(rescan_run(&ctx, UpdateGuard::new())).await;
+            assert_run_state(&ctx, PlaylistUpdateState::Success);
+            let mut input = (*ctx.config.sources.load().inputs[0]).clone();
+            input.cache_duration_seconds = 0;
+            let input = Arc::new(input);
+            let storage = input_storage_path(&ctx, &input).await;
+            let file = tuliprox_repository::get_input_local_library_playlist_file_path(&storage, &input.name);
+            let before = tokio::fs::read(&file).await.unwrap();
+            let output = tokio::fs::read(temp.path().join("selected.m3u")).await.unwrap();
+            let mut config = (**ctx.config.config.load()).clone();
+            if disabled {
+                config.library.as_mut().unwrap().enabled = false;
+            } else {
+                config.library = None;
+            }
+            ctx.config.config.store(Arc::new(config));
+
+            let mut result = download_input(&ctx, &input, false).await;
+            assert_eq!(result.job_state(), InputJobState::Failed);
+            assert_eq!(result.update_state(), PlaylistUpdateState::Failure);
+            assert!(!result.authoritative_library);
+            assert!(!result.errors.is_empty());
+            assert_eq!(tokio::fs::read(&file).await.unwrap(), before);
+            assert_eq!(tokio::fs::read(temp.path().join("selected.m3u")).await.unwrap(), output);
+        }
+    }
+
+    #[tokio::test]
+    async fn coderabbit_library_missing_input_triggers_catalog_recovery_not_empty_success() {
+        for disk in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let ctx = library_context(temp.path(), ProcessingOrder::Frm).await;
+            let mut config = (**ctx.config.config.load()).clone();
+            config.disk_based_processing = disk;
+            ctx.config.config.store(Arc::new(config));
+            exec_processing(rescan_run(&ctx, UpdateGuard::new())).await;
+            assert_run_state(&ctx, PlaylistUpdateState::Success);
+            let input = ctx.config.sources.load().inputs[0].clone();
+            let storage = input_storage_path(&ctx, &input).await;
+            let file = tuliprox_repository::get_input_local_library_playlist_file_path(&storage, &input.name);
+            tokio::fs::remove_file(&file).await.unwrap();
+
+            assert!(load_input_playlist(&ctx.config, &input, None).await.is_err());
+            let mut recovered = download_input(&ctx, &input, false).await;
+            assert_eq!(recovered.job_state(), InputJobState::Ready);
+            assert!(recovered.errors.is_empty() && recovered.storage_error.is_none());
+            assert!(!recovered.source.is_empty(), "missing cache must be repaired from the populated catalog");
+            assert!(file.exists());
+            let mut persisted = load_input_playlist(&ctx.config, &input, None).await.unwrap();
+            assert!(!persisted.is_empty());
+
+            let media_server = ConfigInput { input_type: InputType::Plex, ..(*input).clone() };
+            assert!(
+                load_input_playlist(&ctx.config, &media_server, None).await.is_err(),
+                "the shared loader must not turn a missing Plex cache into a successful empty input"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn manual_update_library_scan_errors_keep_real_result_and_block_rebuild() {
         let temp = tempfile::tempdir().unwrap();
         let ctx = library_context(temp.path(), ProcessingOrder::Frm).await;
