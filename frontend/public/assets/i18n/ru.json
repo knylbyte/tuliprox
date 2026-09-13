@@ -1882,7 +1882,7 @@
     },
     "PLAYLIST_UPDATE": {
       "CONTENT_LIVE": "Live",
-      "CONTENT_SHOWS": "Shows",
+      "CONTENT_SERIES": "Series",
       "CONTENT_MOVIES": "Movies",
       "ACTIVE_POPULATION": "Активный набор",
       "BASELINE": "Предыдущий набор",

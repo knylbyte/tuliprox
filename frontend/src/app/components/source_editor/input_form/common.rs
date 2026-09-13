@@ -458,7 +458,7 @@ mod tests {
             // properties, in exact order. No source-text or set/contains assertion.
             let expected = html! {
                 <TitledCard title={translate(LABEL_UPDATE_QUALITY)}>
-                    {for [("Live", "update_quality_live", 11u8), ("Shows", "update_quality_series", 33u8), ("Movies", "update_quality_vod", 22u8)].into_iter().map(|(label, name, value)| {
+                    {for [("Live", "update_quality_live", 11u8), ("Series", "update_quality_series", 33u8), ("Movies", "update_quality_vod", 22u8)].into_iter().map(|(label, name, value)| {
                         config_field_child!(label, "INPUT_FORM.UPDATE_QUALITY", {
                             html! { <RangeSlider {name} {value} max={100} disabled={!allow_write} on_change={callback.clone()} /> }
                         })

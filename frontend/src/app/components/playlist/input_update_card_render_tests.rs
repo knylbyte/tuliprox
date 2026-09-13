@@ -169,7 +169,7 @@ fn input_update_card_persisted_failed_quality_rejection_keeps_warning_badges() {
 }
 
 #[test]
-fn pipeline_transparency_input_update_card_shows_failed_live_reload_and_followup_priority() {
+fn pipeline_transparency_input_update_card_series_failure_survives_reload_and_followup_priority() {
     use crate::model::{PlaylistUpdateAcceptedScope, PlaylistUpdateCardStatusAction};
     use shared::model::{
         PlaylistUpdateInputTelemetry, PlaylistUpdateProgressEvent, PlaylistUpdateRunStateEvent, PlaylistUpdateState,
@@ -204,7 +204,7 @@ fn pipeline_transparency_input_update_card_shows_failed_live_reload_and_followup
                     && has_attribute(
                         tag,
                         "aria-label",
-                        "MESSAGES.PLAYLIST_UPDATE.CONTENT_SHOWS: LABEL.UPDATE_STATUS_FAILED",
+                        "MESSAGES.PLAYLIST_UPDATE.CONTENT_SERIES: LABEL.UPDATE_STATUS_FAILED",
                     )
             })
             .unwrap();
@@ -274,8 +274,9 @@ fn update_overview_badges_cluster_labels() {
         include_str!("../../../../public/assets/i18n/ru.json"),
     ] {
         let translations: serde_json::Value = serde_json::from_str(locale).unwrap();
+        assert!(translations.pointer("/MESSAGES/PLAYLIST_UPDATE/CONTENT_SHOWS").is_none());
         for (cluster, expected) in
-            [(XtreamCluster::Live, "Live"), (XtreamCluster::Series, "Shows"), (XtreamCluster::Video, "Movies")]
+            [(XtreamCluster::Live, "Live"), (XtreamCluster::Series, "Series"), (XtreamCluster::Video, "Movies")]
         {
             let key = cluster_label_key(cluster).replace('.', "/");
             assert_eq!(translations.pointer(&format!("/{key}")).and_then(serde_json::Value::as_str), Some(expected));
@@ -304,24 +305,24 @@ fn content_badge_labels(card: &InputUpdateCardModel, view: &InputUpdateRunView) 
 }
 
 #[test]
-fn update_overview_badges_content_order_is_live_shows_movies() {
+fn update_overview_badges_content_order_is_live_series_movies() {
     for input_type in [InputType::Xtream, InputType::Stalker, InputType::M3u, InputType::Staged] {
         let (card, mut view) = card_view(input_type);
         view.cluster_results = card_view(InputType::Xtream).1.cluster_results;
-        assert_eq!(content_badge_labels(&card, &view), ["Live", "Shows", "Movies"], "{input_type}");
+        assert_eq!(content_badge_labels(&card, &view), ["Live", "Series", "Movies"], "{input_type}");
         view.cluster_results.reverse();
         assert_eq!(
             content_badge_labels(&card, &view),
-            ["Live", "Shows", "Movies"],
+            ["Live", "Series", "Movies"],
             "incoming telemetry order is not presentation order"
         );
         view.cluster_results.retain(|cluster| cluster.cluster != XtreamCluster::Live);
-        assert_eq!(content_badge_labels(&card, &view), ["Shows", "Movies"], "do not invent missing clusters");
+        assert_eq!(content_badge_labels(&card, &view), ["Series", "Movies"], "do not invent missing clusters");
     }
 }
 
 #[test]
-fn update_overview_badges_library_content_order_is_shows_movies() {
+fn update_overview_badges_library_content_order_is_series_movies() {
     let (card, view) = card_view(InputType::Library);
     let view = view.with_library_catalog(Some(&LibraryStatus {
         enabled: true,
@@ -331,7 +332,7 @@ fn update_overview_badges_library_content_order_is_shows_movies() {
         total_items: 5,
         path: None,
     }));
-    assert_eq!(content_badge_labels(&card, &view), ["Shows", "Movies"]);
+    assert_eq!(content_badge_labels(&card, &view), ["Series", "Movies"]);
 }
 
 #[test]
@@ -361,10 +362,10 @@ fn update_overview_badges_no_mixed_cluster_vocabulary() {
                 .to_owned()
         });
         let closed = visible_text(&node, false);
-        assert!(closed.contains("Shows") && closed.contains("Movies"), "{input_type}: {closed}");
+        assert!(closed.contains("Series") && closed.contains("Movies"), "{input_type}: {closed}");
         assert_eq!(closed.contains("Live"), input_type != InputType::Library);
         let expanded = visible_text(&node, true);
-        assert!(!expanded.contains("Series") && !expanded.contains("VOD") && !closed.contains("Video"), "{expanded}");
+        assert!(!expanded.contains("Shows") && !expanded.contains("VOD") && !closed.contains("Video"), "{expanded}");
     }
 }
 
@@ -415,7 +416,7 @@ fn update_overview_badges_catalog_content_never_invents_live_or_cluster_success(
                 && !closed.contains("CONTENT_MOVIES")
                 && !closed.contains("CLUSTER_ACCEPTED")
         );
-        assert_eq!(closed.contains("CONTENT_SHOWS"), input_type == InputType::Library);
+        assert_eq!(closed.contains("CONTENT_SERIES"), input_type == InputType::Library);
     }
 }
 
@@ -444,7 +445,7 @@ fn pipeline_transparency_input_update_card_library_content_is_compact_and_detail
     assert!(target_position < details_position);
     let closed = visible_text(&rendered, false);
     assert!(
-        closed.contains("CONTENT_SHOWS") && closed.contains("CONTENT_MOVIES"),
+        closed.contains("CONTENT_SERIES") && closed.contains("CONTENT_MOVIES"),
         "catalog content remains compact: {closed}"
     );
     assert!(!closed.contains(view.input_state.label_key()), "aggregate input outcome is not a content type");
@@ -469,7 +470,7 @@ fn pipeline_transparency_input_update_card_library_content_is_compact_and_detail
     ] {
         assert!(details.contains(&format!("LIBRARY_{label}")), "{label} missing from real disclosure: {details}");
     }
-    assert!(details.contains("CONTENT_MOVIES") && details.contains("CONTENT_SHOWS"));
+    assert!(details.contains("CONTENT_MOVIES") && details.contains("CONTENT_SERIES"));
     for forbidden in ["LABEL.SOURCE", "LABEL.CACHE", "LABEL.PROVIDER", "CACHE_NOT_USED", "QUALITY_"] {
         assert!(!details.contains(forbidden), "Library rendered generic details: {details}");
     }

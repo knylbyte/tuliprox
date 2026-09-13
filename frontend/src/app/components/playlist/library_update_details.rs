@@ -103,7 +103,7 @@ mod tests {
             errors: 4,
         });
         let rendered = format!("{:?}", library_details(&view, translate));
-        assert!(rendered.contains("CONTENT_MOVIES") && rendered.contains("CONTENT_SHOWS"));
+        assert!(rendered.contains("CONTENT_MOVIES") && rendered.contains("CONTENT_SERIES"));
         for label in [
             "CATALOG",
             "EPISODES",

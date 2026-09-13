@@ -9,7 +9,7 @@ pub(crate) struct ContentClusterPresentation {
 pub(crate) const fn content_cluster_presentation(cluster: XtreamCluster) -> ContentClusterPresentation {
     let (label_key, rank) = match cluster {
         XtreamCluster::Live => ("MESSAGES.PLAYLIST_UPDATE.CONTENT_LIVE", 0),
-        XtreamCluster::Series => ("MESSAGES.PLAYLIST_UPDATE.CONTENT_SHOWS", 1),
+        XtreamCluster::Series => ("MESSAGES.PLAYLIST_UPDATE.CONTENT_SERIES", 1),
         XtreamCluster::Video => ("MESSAGES.PLAYLIST_UPDATE.CONTENT_MOVIES", 2),
     };
     ContentClusterPresentation { label_key, rank }
