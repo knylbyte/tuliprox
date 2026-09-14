@@ -165,10 +165,10 @@ mod m3u_update_quality {
         assert!(effective.quality_acceptances.is_empty() && effective.quality_rejections.is_empty());
         assert_eq!(
             group_names(&effective.groups),
-            ["obsolete", "movies-a", "live-a", "movies-b", "live-b", "shows-a", "shows-b"]
+            ["movies-a", "live-a", "movies-b", "live-b", "shows-a", "shows-b"]
                 .map(|name| format!("candidate-{name}"))
         );
-        assert_eq!(counts(&effective.groups), [2, 3, 2], "disabled quality processing must preserve the candidate");
+        assert_eq!(counts(&effective.groups), [2, 2, 2], "disabled quality processing must collapse duplicate keys");
     }
 
     #[tokio::test]
@@ -477,6 +477,19 @@ mod m3u_update_quality {
     async fn m3u_update_quality_duplicate_keys_match_the_existing_persisted_population() {
         let temp = tempfile::tempdir().unwrap();
         let (ctx, input) = fixture(temp.path(), Some([1, 1, 0]), [100, 100, 0]).await;
+        let candidate = document("superseded", [1, 1, 0]) + &document("last", [1, 1, 0]);
+        tokio::fs::write(&input.url, candidate).await.unwrap();
+        let mut result = download_input(&ctx, &input, false).await;
+        assert_eq!(result.update_state(), PlaylistUpdateState::Success);
+        assert!(result.source.take_groups().iter().all(|group| group.title.starts_with("last")));
+        let mut saved = load_input_playlist(&ctx.config, &input, None).await.unwrap();
+        assert_eq!(counts(&saved.take_groups()), [1, 1, 0]);
+    }
+
+    #[tokio::test]
+    async fn m3u_update_quality_duplicate_keys_match_the_existing_persisted_population_when_disabled() {
+        let temp = tempfile::tempdir().unwrap();
+        let (ctx, input) = fixture(temp.path(), None, [0, 0, 0]).await;
         let candidate = document("superseded", [1, 1, 0]) + &document("last", [1, 1, 0]);
         tokio::fs::write(&input.url, candidate).await.unwrap();
         let mut result = download_input(&ctx, &input, false).await;
