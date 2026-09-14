@@ -2,7 +2,8 @@ use super::{process_sources, MetadataUpdateSink, PlaylistProcessingContext};
 use shared::{
     error::TuliproxError,
     model::{
-        EventMessage, EventSink, LibraryScanResult, PlaylistUpdateProgressEvent, PlaylistUpdateState, SourceStats,
+        EventMessage, EventSink, LibraryScanResult, PlaylistUpdateProgressDetail, PlaylistUpdateProgressEvent,
+        PlaylistUpdateState, SourceStats,
     },
 };
 use std::{future::Future, io};
@@ -45,16 +46,22 @@ pub(super) async fn process_manual_update<E: EventSink + Clone + 'static, M: Met
     let LibraryUpdateMode::Rescan { input_id } = ctx.library_update_mode else {
         return process_sources(ctx).await;
     };
-    let progress = |message: &str| {
-        ctx.events.emit(EventMessage::PlaylistUpdateProgress(PlaylistUpdateProgressEvent::for_run_input(
-            ctx.run_id.clone(),
-            ctx.execution_order,
-            input_id,
-            "Library rescan",
-            message,
-        )));
+    let progress = |message: &str, detail| {
+        ctx.events.emit(EventMessage::PlaylistUpdateProgress(
+            PlaylistUpdateProgressEvent::for_run_input(
+                ctx.run_id.clone(),
+                ctx.execution_order,
+                input_id,
+                "Library rescan",
+                message,
+            )
+            .with_detail(detail),
+        ));
     };
-    progress("Library rescan started; selected target rebuild is waiting");
+    progress(
+        "Library rescan started; selected target rebuild is waiting",
+        PlaylistUpdateProgressDetail::LibraryRescanStarted,
+    );
     let result = async {
         // The worker already owns the playlist permit. Never wait for a second lock:
         // a concurrent standalone scan makes this request fail, without a lock cycle.
@@ -86,11 +93,15 @@ pub(super) async fn process_manual_update<E: EventSink + Clone + 'static, M: Met
                         "Library rescan",
                         "Library scan result",
                     )
-                    .with_library_scan_result(result),
+                    .with_library_scan_result(result)
+                    .with_detail(PlaylistUpdateProgressDetail::LibraryScanResult),
                 ));
             },
             || {
-                progress("Library rescan completed; loading input data and rebuilding selected targets");
+                progress(
+                    "Library rescan completed; loading input data and rebuilding selected targets",
+                    PlaylistUpdateProgressDetail::LibraryRescanCompleted,
+                );
                 process_sources(ctx)
             },
         )
@@ -107,14 +118,17 @@ pub(super) async fn process_manual_update<E: EventSink + Clone + 'static, M: Met
                 super::input_status::persist_input_completion(ctx, input.id, &input.name, PlaylistUpdateState::Failure)
                     .await;
             }
-            ctx.events.emit(EventMessage::PlaylistUpdateProgress(PlaylistUpdateProgressEvent::input_completed(
-                ctx.run_id.clone(),
-                ctx.execution_order,
-                input_id,
-                PlaylistUpdateState::Failure,
-                "Library rescan",
-                "Library rescan failed; selected targets were not rebuilt",
-            )));
+            ctx.events.emit(EventMessage::PlaylistUpdateProgress(
+                PlaylistUpdateProgressEvent::input_completed(
+                    ctx.run_id.clone(),
+                    ctx.execution_order,
+                    input_id,
+                    PlaylistUpdateState::Failure,
+                    "Library rescan",
+                    "Library rescan failed; selected targets were not rebuilt",
+                )
+                .with_detail(PlaylistUpdateProgressDetail::LibraryRescanFailed),
+            ));
             (Vec::new(), vec![TuliproxError::RepositoryLibrary(format!("Library rescan failed: {error}"))])
         }
     }

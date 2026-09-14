@@ -55,7 +55,7 @@
   &__range::-moz-range-track {
     height: 0.55rem;
     border-radius: var(--border-radius);
-    background: transparent;
+    background: none;
   }
 
   &__value {

@@ -455,13 +455,16 @@ fn report_forced_update_request<E: EventSink + Clone + 'static, M: MetadataUpdat
     let message =
         format!("Input '{}': forced update requested; cache and update-quality bypassed for {clusters}", input.name);
     info!("{message}");
-    ctx.events.emit(EventMessage::PlaylistUpdateProgress(PlaylistUpdateProgressEvent::for_run_input(
-        ctx.run_id.clone(),
-        ctx.execution_order,
-        input.id,
-        input.name.to_string(),
-        message,
-    )));
+    ctx.events.emit(EventMessage::PlaylistUpdateProgress(
+        PlaylistUpdateProgressEvent::for_run_input(
+            ctx.run_id.clone(),
+            ctx.execution_order,
+            input.id,
+            input.name.to_string(),
+            message,
+        )
+        .with_detail(shared::model::PlaylistUpdateProgressDetail::ForcedUpdateRequested),
+    ));
 }
 
 pub(crate) fn filter_skipped_clusters_from_source(source: PlaylistSource, input: &ConfigInput) -> PlaylistSource {

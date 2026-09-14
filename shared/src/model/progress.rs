@@ -21,6 +21,20 @@ pub enum PlaylistUpdateClusterDecision {
     TechnicalError,
 }
 
+/// Stable, presentation-neutral details that clients can localize.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaylistUpdateProgressDetail {
+    InputCompletedSuccessfully,
+    InputCompletedPartially,
+    InputFailed,
+    ForcedUpdateRequested,
+    LibraryRescanStarted,
+    LibraryScanResult,
+    LibraryRescanCompleted,
+    LibraryRescanFailed,
+}
+
 /// Runtime facts proven for one cluster during a playlist-update run.
 ///
 /// Population and quality values remain optional because not every provider
@@ -96,6 +110,8 @@ pub struct PlaylistUpdateProgressEvent {
     /// Actual scanner result for this run/input, including unsuccessful scans.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub library_scan_result: Option<LibraryScanResult>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<PlaylistUpdateProgressDetail>,
     pub target: String,
     pub message: String,
 }
@@ -116,6 +132,7 @@ impl PlaylistUpdateProgressEvent {
             state: None,
             input_telemetry: None,
             library_scan_result: None,
+            detail: None,
             target: target.into(),
             message: message.into(),
         }
@@ -137,6 +154,11 @@ impl PlaylistUpdateProgressEvent {
             state: Some(state),
             input_telemetry: None,
             library_scan_result: None,
+            detail: Some(match state {
+                PlaylistUpdateState::Success => PlaylistUpdateProgressDetail::InputCompletedSuccessfully,
+                PlaylistUpdateState::Partial => PlaylistUpdateProgressDetail::InputCompletedPartially,
+                PlaylistUpdateState::Failure => PlaylistUpdateProgressDetail::InputFailed,
+            }),
             target: target.into(),
             message: message.into(),
         }
@@ -156,6 +178,7 @@ impl PlaylistUpdateProgressEvent {
             state: None,
             input_telemetry: None,
             library_scan_result: None,
+            detail: None,
             target: target.into(),
             message: message.into(),
         }
@@ -170,6 +193,7 @@ impl PlaylistUpdateProgressEvent {
             state: None,
             input_telemetry: None,
             library_scan_result: None,
+            detail: None,
             target: target.into(),
             message: message.into(),
         }
@@ -184,6 +208,7 @@ impl PlaylistUpdateProgressEvent {
             state: None,
             input_telemetry: None,
             library_scan_result: None,
+            detail: None,
             target: target.into(),
             message: message.into(),
         }
@@ -200,6 +225,13 @@ impl PlaylistUpdateProgressEvent {
     #[must_use]
     pub fn with_library_scan_result(mut self, result: LibraryScanResult) -> Self {
         self.library_scan_result = Some(result);
+        self
+    }
+
+    /// Attaches a stable UI detail while retaining the diagnostic log message.
+    #[must_use]
+    pub const fn with_detail(mut self, detail: PlaylistUpdateProgressDetail) -> Self {
+        self.detail = Some(detail);
         self
     }
 }

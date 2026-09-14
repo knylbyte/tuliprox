@@ -268,15 +268,15 @@ fn pipeline_transparency_input_update_card_series_failure_survives_reload_and_fo
 
 #[test]
 fn update_overview_badges_cluster_labels() {
-    for locale in [
-        include_str!("../../../../public/assets/i18n/en.json"),
-        include_str!("../../../../public/assets/i18n/ar.json"),
-        include_str!("../../../../public/assets/i18n/ru.json"),
+    for (locale, expected_labels) in [
+        (include_str!("../../../../public/assets/i18n/en.json"), ["Live", "Series", "Movies"]),
+        (include_str!("../../../../public/assets/i18n/ar.json"), ["مباشر", "مسلسلات", "أفلام"]),
+        (include_str!("../../../../public/assets/i18n/ru.json"), ["Прямой эфир", "Сериалы", "Фильмы"]),
     ] {
         let translations: serde_json::Value = serde_json::from_str(locale).unwrap();
         assert!(translations.pointer("/MESSAGES/PLAYLIST_UPDATE/CONTENT_SHOWS").is_none());
         for (cluster, expected) in
-            [(XtreamCluster::Live, "Live"), (XtreamCluster::Series, "Series"), (XtreamCluster::Video, "Movies")]
+            [XtreamCluster::Live, XtreamCluster::Series, XtreamCluster::Video].into_iter().zip(expected_labels)
         {
             let key = cluster_label_key(cluster).replace('.', "/");
             assert_eq!(translations.pointer(&format!("/{key}")).and_then(serde_json::Value::as_str), Some(expected));

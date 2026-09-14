@@ -245,7 +245,7 @@ specific provider.
 | Parameter                                  | Type     | Default | Technical Impact & Background                                                                                                                                                                                                          |
 |:-------------------------------------------|:---------|:--------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `skip_live` / `skip_vod` / `skip_series`   | Bool     | `false` | Immediately ignores entire categories during Xtream or Stalker ingestion. Saves massive amounts of RAM and runtime if you only want specific clusters from a provider.                                                                 |
-| `update_quality.live` / `.vod` / `.series` | Int      | `0`     | Rejects an independently downloaded Xtream or Stalker cluster when its item count differs too much from the last accepted cluster. Values are percentages from `0` through `100`; `0` disables the guard.                              |
+| `update_quality.live` / `.vod` / `.series` | Int      | `0`     | Rejects an Xtream, Stalker, or parsed M3U cluster when its item count differs too much from the last accepted cluster. Values are percentages from `0` through `100`; `0` disables the guard.                                          |
 | `xtream_live_stream_without_extension`     | Bool     | `false` | Strips `.ts` from generated stream URLs.                                                                                                                                                                                               |
 | `xtream_live_stream_use_prefix`            | Bool     | `true`  | Injects the `/live/` prefix into URLs.                                                                                                                                                                                                 |
 | `disable_hls_streaming`                    | Bool     | `false` | Rewrites live `.m3u8` requests to `.ts` and bypasses Tuliprox HLS handling.                                                                                                                                                            |
@@ -268,10 +268,10 @@ specific provider.
 
 #### Update quality guard
 
-`update_quality` protects independently refreshable Live, VOD, and Series clusters from unexpectedly small or large
-provider responses. It is available for Xtream, expanded Xtream batch inputs, staged Xtream inputs, Stalker, and
-expanded Stalker batch inputs. M3U remains outside this feature because an M3U download is one snapshot rather than
-three independently publishable upstream clusters.
+`update_quality` protects Live, VOD, and Series clusters from unexpectedly small or large provider responses. It is
+available for Xtream, expanded Xtream batch inputs, staged Xtream inputs, Stalker, expanded Stalker batch inputs, and
+M3U inputs. For M3U, the downloaded document is partitioned by the parsed content cluster before the guard is evaluated;
+accepted candidate clusters and retained previous clusters are combined before persistence.
 
 ```yaml
 inputs:

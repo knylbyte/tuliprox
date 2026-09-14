@@ -130,7 +130,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--tag-border-radius);
     color: var(--modest-text-color);
-    background-color: transparent;
+    background: none;
     font-size: var(--font-size-sm);
 
     // A fixed line box keeps the warning/checkmark glyphs from changing badge height.

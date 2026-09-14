@@ -4,8 +4,8 @@ use shared::model::{
     PersistedPlaylistUpdateClusterSnapshot, PersistedPlaylistUpdateClusterState,
     PersistedPlaylistUpdateClusterStatusDto, PersistedPlaylistUpdateQualityDecision,
     PersistedPlaylistUpdateTechnicalState, PlaylistUpdateClusterDecision, PlaylistUpdateDataSource,
-    PlaylistUpdateInputTelemetry, PlaylistUpdateRunId, PlaylistUpdateRunOrder, PlaylistUpdateStatusDto,
-    ProcessingOrder, SourcesConfigDto, XtreamCluster,
+    PlaylistUpdateInputTelemetry, PlaylistUpdateProgressDetail, PlaylistUpdateRunId, PlaylistUpdateRunOrder,
+    PlaylistUpdateStatusDto, ProcessingOrder, SourcesConfigDto, XtreamCluster,
 };
 use std::{collections::HashMap, sync::Arc};
 
@@ -29,6 +29,8 @@ pub struct InputUpdateRunView {
     pub cache_source: Option<InputDataSourceView>,
     pub last_update_at: Option<u64>,
     pub progress_details: Vec<String>,
+    /// Structured details safe for localized presentation.
+    pub localized_progress_details: Vec<PlaylistUpdateProgressDetail>,
     pub cluster_results: Vec<InputClusterRunView>,
     pub target_results: Vec<TargetRunView>,
 }
@@ -174,6 +176,7 @@ pub fn build_input_update_run_views(
                 cache_source: runtime.input_telemetry().and_then(|telemetry| telemetry.source),
                 last_update_at: card.last_update_at,
                 progress_details: runtime.details().to_vec(),
+                localized_progress_details: runtime.localized_details().to_vec(),
                 cluster_results,
                 target_results,
             }

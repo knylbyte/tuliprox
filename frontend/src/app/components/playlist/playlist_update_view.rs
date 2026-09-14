@@ -1042,7 +1042,7 @@ mod tests {
         let styles = include_str!("../../../../scss/app/components/playlist/_playlist_update_view.scss");
         let disclosure = source.split_once("<details class=\"tp__playlist-update-view__update-details\">").unwrap().1;
 
-        assert!(disclosure.contains("if !view.progress_details.is_empty()"));
+        assert!(disclosure.contains("if !view.localized_progress_details.is_empty()"));
         assert!(disclosure.contains("tp__playlist-update-view__progress-details"));
         assert!(!source.contains("tp__playlist-update-view__input-details"));
         assert!(!styles.contains("&__input-details"));

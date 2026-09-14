@@ -1,4 +1,7 @@
-use super::processing::{processing_stages, PlaylistProcessingStage};
+use super::{
+    input_type_label_key,
+    processing::{processing_stages, PlaylistProcessingStage},
+};
 use crate::{
     app::components::{
         popup_menu::{PopupMenuPlacement, PopupMenuWidth},
@@ -20,7 +23,7 @@ use crate::{
 use chrono::{Local, TimeZone};
 use shared::model::{
     InputRefreshPolicy, OperationRunAccepted, PersistedPlaylistUpdateClusterState,
-    PersistedPlaylistUpdateTechnicalState, PlaylistUpdateRunId, XtreamCluster,
+    PersistedPlaylistUpdateTechnicalState, PlaylistUpdateProgressDetail, PlaylistUpdateRunId, XtreamCluster,
 };
 use std::rc::Rc;
 #[cfg(target_arch = "wasm32")]
@@ -277,6 +280,27 @@ fn action_message(template: String, input_name: &str, action: &str) -> String {
 
 fn count_message(template: String, count: impl std::fmt::Display) -> String {
     template.replace("{count}", &count.to_string())
+}
+
+const fn progress_detail_label_key(detail: PlaylistUpdateProgressDetail) -> &'static str {
+    match detail {
+        PlaylistUpdateProgressDetail::InputCompletedSuccessfully => {
+            "MESSAGES.PLAYLIST_UPDATE.DETAIL_INPUT_COMPLETED_SUCCESSFULLY"
+        }
+        PlaylistUpdateProgressDetail::InputCompletedPartially => {
+            "MESSAGES.PLAYLIST_UPDATE.DETAIL_INPUT_COMPLETED_PARTIALLY"
+        }
+        PlaylistUpdateProgressDetail::InputFailed => "MESSAGES.PLAYLIST_UPDATE.DETAIL_INPUT_FAILED",
+        PlaylistUpdateProgressDetail::ForcedUpdateRequested => {
+            "MESSAGES.PLAYLIST_UPDATE.DETAIL_FORCED_UPDATE_REQUESTED"
+        }
+        PlaylistUpdateProgressDetail::LibraryRescanStarted => "MESSAGES.PLAYLIST_UPDATE.DETAIL_LIBRARY_RESCAN_STARTED",
+        PlaylistUpdateProgressDetail::LibraryScanResult => "MESSAGES.PLAYLIST_UPDATE.DETAIL_LIBRARY_SCAN_RESULT",
+        PlaylistUpdateProgressDetail::LibraryRescanCompleted => {
+            "MESSAGES.PLAYLIST_UPDATE.DETAIL_LIBRARY_RESCAN_COMPLETED"
+        }
+        PlaylistUpdateProgressDetail::LibraryRescanFailed => "MESSAGES.PLAYLIST_UPDATE.DETAIL_LIBRARY_RESCAN_FAILED",
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -817,11 +841,13 @@ fn input_content(
                             )
                         })}
                     }
-                    if !view.progress_details.is_empty() {
+                    if !view.localized_progress_details.is_empty() {
                         <section class="tp__playlist-update-view__progress-details">
                             <h4>{translate("MESSAGES.PLAYLIST_UPDATE.RUN_DETAILS")}</h4>
                             <ul>
-                                {for view.progress_details.iter().map(|detail| html! { <li>{detail}</li> })}
+                                {for view.localized_progress_details.iter().map(|detail| {
+                                    html! { <li>{translate(progress_detail_label_key(*detail))}</li> }
+                                })}
                             </ul>
                         </section>
                     }
@@ -860,7 +886,7 @@ pub struct InputUpdateCardProps {
 pub fn InputUpdateCard(props: &InputUpdateCardProps) -> Html {
     let translate = use_translation();
     let services = use_service_context();
-    let dialog = use_context::<DialogService>().expect("Dialog service not found");
+    let dialog = use_context::<DialogService>();
     let model = Rc::clone(&props.model);
     let view = Rc::clone(&props.view);
     let state = use_reducer(|| InputUpdateCardInteractionState::from_model(&model));
@@ -937,6 +963,11 @@ pub fn InputUpdateCard(props: &InputUpdateCardProps) -> Html {
             let on_request_accepted = on_request_accepted.clone();
             spawn_local(async move {
                 let confirmation = if requires_confirmation(request_state.policy) {
+                    let Some(dialog) = dialog else {
+                        log::error!("Dialog service is unavailable");
+                        state.dispatch(InputUpdateCardAction::CancelSubmission(connection_context));
+                        return;
+                    };
                     Some(dialog.confirm(&translate.t("MESSAGES.PLAYLIST_UPDATE.FORCE_CONFIRM")).await)
                 } else {
                     None
@@ -1029,7 +1060,9 @@ pub fn InputUpdateCard(props: &InputUpdateCardProps) -> Html {
                 <header class="tp__playlist-update-view__input-card-header">
                     <div class="tp__playlist-update-view__input-identity">
                         <h2 id={heading_id}>{view.input_name.as_ref()}</h2>
-                        <span class="tp__playlist-update-view__input-type">{view.source_type.to_string()}</span>
+                        <span class="tp__playlist-update-view__input-type">
+                            {translate.t(input_type_label_key(view.source_type))}
+                        </span>
                     </div>
                     {card_status_badge(&view, |key| translate.t(key))}
                 </header>

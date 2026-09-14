@@ -1,8 +1,9 @@
 use crate::{model::InputUpdateCardModel, services::WebSocketConnectionContext};
 use indexmap::{IndexMap, IndexSet};
 use shared::model::{
-    InputRefreshPolicy, LibraryScanResult, PlaylistUpdateInputTelemetry, PlaylistUpdateProgressEvent,
-    PlaylistUpdateRunId, PlaylistUpdateRunOrder, PlaylistUpdateRunStateEvent, PlaylistUpdateState, SourcesConfigDto,
+    InputRefreshPolicy, LibraryScanResult, PlaylistUpdateInputTelemetry, PlaylistUpdateProgressDetail,
+    PlaylistUpdateProgressEvent, PlaylistUpdateRunId, PlaylistUpdateRunOrder, PlaylistUpdateRunStateEvent,
+    PlaylistUpdateState, SourcesConfigDto,
 };
 use std::{collections::HashSet, rc::Rc};
 use yew::Reducible;
@@ -55,6 +56,7 @@ pub struct InputUpdateCardRuntime {
     status: InputUpdateCardStatus,
     action_status: InputUpdateCardStatus,
     details: Vec<String>,
+    localized_details: Vec<PlaylistUpdateProgressDetail>,
     run_id: Option<PlaylistUpdateRunId>,
     execution_order: Option<PlaylistUpdateRunOrder>,
     refresh_policy: Option<InputRefreshPolicy>,
@@ -68,6 +70,7 @@ impl Default for InputUpdateCardRuntime {
             status: InputUpdateCardStatus::Ready,
             action_status: InputUpdateCardStatus::Ready,
             details: Vec::new(),
+            localized_details: Vec::new(),
             run_id: None,
             execution_order: None,
             refresh_policy: None,
@@ -86,6 +89,9 @@ impl InputUpdateCardRuntime {
 
     #[must_use]
     pub fn details(&self) -> &[String] { &self.details }
+
+    #[must_use]
+    pub fn localized_details(&self) -> &[PlaylistUpdateProgressDetail] { &self.localized_details }
 
     /// Stable identity of the run that currently determines this card's status.
     #[must_use]
@@ -130,6 +136,7 @@ struct InputDetails {
     run_id: PlaylistUpdateRunId,
     execution_order: PlaylistUpdateRunOrder,
     lines: Vec<String>,
+    localized_lines: Vec<PlaylistUpdateProgressDetail>,
     input_telemetry: Option<PlaylistUpdateInputTelemetry>,
 }
 
@@ -240,6 +247,7 @@ impl PlaylistUpdateCardStatuses {
             status,
             action_status,
             details: details.map_or_else(Vec::new, |details| details.lines.clone()),
+            localized_details: details.map_or_else(Vec::new, |details| details.localized_lines.clone()),
             run_id,
             execution_order,
             refresh_policy,
@@ -381,6 +389,7 @@ impl PlaylistUpdateCardStatuses {
                     run_id: run_id.clone(),
                     execution_order,
                     lines: Vec::new(),
+                    localized_lines: Vec::new(),
                     input_telemetry: None,
                     library_scan_result: None,
                 };
@@ -393,6 +402,7 @@ impl PlaylistUpdateCardStatuses {
                         run_id: run_id.clone(),
                         execution_order,
                         lines: Vec::new(),
+                        localized_lines: Vec::new(),
                         input_telemetry: None,
                         library_scan_result: None,
                     },
@@ -479,6 +489,7 @@ impl PlaylistUpdateCardStatuses {
             state,
             input_telemetry,
             library_scan_result,
+            detail,
             message,
             ..
         } = progress
@@ -510,6 +521,12 @@ impl PlaylistUpdateCardStatuses {
                 details.lines.push(message);
                 if details.lines.len() > MAX_CARD_DETAIL_LINES {
                     details.lines.remove(0);
+                }
+                if let Some(detail) = detail {
+                    details.localized_lines.push(detail);
+                    if details.localized_lines.len() > MAX_CARD_DETAIL_LINES {
+                        details.localized_lines.remove(0);
+                    }
                 }
                 if let Some(input_telemetry) = input_telemetry {
                     details.input_telemetry = Some(input_telemetry);
@@ -868,6 +885,7 @@ mod tests {
                 status: InputUpdateCardStatus::Success,
                 action_status: InputUpdateCardStatus::Updating,
                 details: vec!["r1 provider acquisition".into(), "r1 input completed".into()],
+                localized_details: vec![PlaylistUpdateProgressDetail::InputCompletedSuccessfully],
                 run_id: Some(run_id("r1")),
                 execution_order: Some(execution_order(1)),
                 refresh_policy: Some(InputRefreshPolicy::FORCE),
@@ -910,6 +928,7 @@ mod tests {
                 status: InputUpdateCardStatus::Updating,
                 action_status: InputUpdateCardStatus::Updating,
                 details: vec!["r2 cache acquisition".into()],
+                localized_details: Vec::new(),
                 run_id: Some(run_id("r2")),
                 execution_order: Some(execution_order(2)),
                 refresh_policy: Some(InputRefreshPolicy::NORMAL),
@@ -919,6 +938,7 @@ mod tests {
             let state = state.apply(input_completed("r2", 2, 7, PlaylistUpdateState::Success, "r2 input completed"));
             r2_runtime.status = InputUpdateCardStatus::Success;
             r2_runtime.details.push("r2 input completed".into());
+            r2_runtime.localized_details.push(PlaylistUpdateProgressDetail::InputCompletedSuccessfully);
             assert_eq!(state.for_input(7), r2_runtime);
             let state = state.apply(accepted_with_policy("r1", &[7], InputRefreshPolicy::FORCE));
             assert_eq!(state.for_input(7), r2_runtime);

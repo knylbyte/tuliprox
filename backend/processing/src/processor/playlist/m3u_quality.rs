@@ -19,6 +19,13 @@ pub(super) async fn effective_m3u_fetch(
     if !fetch.is_ok() {
         return fetch;
     }
+    if policy == UpdateQualityPolicy::Enforce
+        && input.options.as_ref().is_none_or(|options| {
+            PIPELINE_TRANSPARENCY_CLUSTERS.into_iter().all(|cluster| options.update_quality.threshold(cluster) == 0)
+        })
+    {
+        return fetch;
+    }
     // Match the existing M3U writer's last-wins primary key population. This also
     // keeps the target source and raw group catalogs consistent with its BTree.
     let mut winners = HashMap::new();
