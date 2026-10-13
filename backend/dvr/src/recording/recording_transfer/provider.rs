@@ -22,6 +22,8 @@ pub(super) enum ProviderAcquireResult {
     Preempted,
     /// A live capture waited for capacity until its broadcast window closed.
     WindowClosed,
+    /// The input is in maintenance; the recording must not contact its provider.
+    Maintenance,
 }
 
 pub(super) fn background_download_should_wait(
@@ -104,6 +106,7 @@ pub(super) async fn commit_acquired_download(
         active.error = None;
         active.paused = false;
         active.finished = false;
+        active.recording.provider_started = true;
         let notification = mark_recording_metadata_notification(&mut active.recording, LifecycleEvent::Started, None);
         Ok(Some(notification))
     })

@@ -17,6 +17,7 @@ pub enum CustomVideoStreamType {
     UserAccountExpired,
     Provisioning,
     HlsSessionOrLeaseExpired,
+    Maintenance,
 }
 
 impl fmt::Display for CustomVideoStreamType {
@@ -29,6 +30,7 @@ impl fmt::Display for CustomVideoStreamType {
             CustomVideoStreamType::UserAccountExpired => "user_account_expired",
             CustomVideoStreamType::Provisioning => "provisioning",
             CustomVideoStreamType::HlsSessionOrLeaseExpired => "hls_session_or_lease_expired",
+            CustomVideoStreamType::Maintenance => "maintenance",
         };
         write!(f, "{s}")
     }
@@ -46,6 +48,7 @@ impl FromStr for CustomVideoStreamType {
             "user_account_expired" => Ok(Self::UserAccountExpired),
             "provisioning" => Ok(Self::Provisioning),
             "hls_session_or_lease_expired" => Ok(Self::HlsSessionOrLeaseExpired),
+            "maintenance" => Ok(Self::Maintenance),
             _ => Err(TuliproxError::Config(format!("Unknown stream type: {s}"))),
         }
     }
@@ -66,5 +69,18 @@ impl<'de> Deserialize<'de> for CustomVideoStreamType {
     {
         let s = String::deserialize(deserializer)?;
         Self::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CustomVideoStreamType;
+    use std::str::FromStr;
+
+    #[test]
+    fn maintenance_round_trips() {
+        let parsed = CustomVideoStreamType::from_str("maintenance").unwrap();
+        assert_eq!(parsed, CustomVideoStreamType::Maintenance);
+        assert_eq!(parsed.to_string(), "maintenance");
     }
 }

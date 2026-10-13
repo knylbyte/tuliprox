@@ -7,6 +7,7 @@ mod http_load;
 mod http_smoke;
 mod http_soak;
 mod local_files;
+mod maintenance;
 mod network_access;
 mod provider_leases;
 mod provider_urls;

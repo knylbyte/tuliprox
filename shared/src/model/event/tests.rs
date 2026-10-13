@@ -62,3 +62,12 @@ fn groups_changed_alias_resolves_for_kinds() {
     // to the old name keep receiving group changes.
     assert_eq!(EventKind::from_wire_name("playlist.groups.changed"), Some(EventKind::PlaylistWatchChanged));
 }
+
+#[test]
+fn maintenance_changed_requires_maintenance_read() {
+    assert_eq!(
+        EventKind::MaintenanceChanged.required_permission(),
+        crate::model::permission::Permission::MaintenanceRead
+    );
+    assert_eq!(EventKind::MaintenanceChanged.as_wire_name(), "maintenance.changed");
+}

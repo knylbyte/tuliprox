@@ -29,6 +29,7 @@ pub enum EventMessage {
         tasks: Rc<Vec<RecordingTaskDto>>,
     },
     RecordingRulesChanged,
+    MaintenanceChanged(Rc<shared::model::MaintenanceEntries>),
     /// The socket refused to serve recordings for an actionable reason.
     /// Carries the same stable code the REST routes use, so views map
     /// both through one i18n table.

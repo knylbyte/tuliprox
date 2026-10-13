@@ -8,7 +8,7 @@
 
 use shared::model::EventSink;
 use std::sync::Arc;
-use tuliprox_core::model::{AppConfig, HttpClients, UpdateGuard};
+use tuliprox_core::model::{AppConfig, HttpClients, MaintenanceGate, UpdateGuard};
 use tuliprox_repository::PlaylistStorageState;
 use tuliprox_session::{ActiveProviderManager, ConnectionManager, EventManager};
 
@@ -29,6 +29,8 @@ pub struct MetadataUpdateCtx<E: EventSink> {
     pub update_guard: UpdateGuard,
     /// Outbound clients, swapped when the proxy configuration changes.
     pub http_clients: Arc<HttpClients>,
+    /// Inputs in maintenance; their tasks wait instead of contacting the provider.
+    pub maintenance: Arc<dyn MaintenanceGate>,
 }
 
 /// The instantiation the long-lived worker stores.

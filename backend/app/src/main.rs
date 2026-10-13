@@ -548,8 +548,14 @@ async fn start_in_cli_mode(cfg: Arc<AppConfig>, targets: Arc<ProcessTargets>) {
         error!("Failed to build client {err}");
         reqwest::Client::new()
     });
-    // In CLI mode, we don't start background managers for events or providers
-    exec_processing(ProcessingRun::new(client, cfg, targets, shared::model::NoopSink)).await;
+    // In CLI mode, we don't start background managers for events or providers. Maintenance
+    // still applies: an input taken out of service is not fetched by a one-shot run either.
+    // Read-only: a one-shot run may share the storage directory with a running server.
+    let storage_dir = arc_swap::ArcSwapAny::load(cfg.config.as_ref()).storage_dir.clone();
+    let maintenance_path = std::path::PathBuf::from(storage_dir).join(tuliprox_core::model::MAINTENANCE_FILE);
+    let maintenance = Arc::new(tuliprox_core::model::MaintenanceRegistry::load_read_only(maintenance_path).await);
+    exec_processing(ProcessingRun::new(client, cfg, targets, shared::model::NoopSink).with_maintenance(maintenance))
+        .await;
 }
 
 async fn start_in_server_mode(cfg: Arc<AppConfig>, targets: Arc<ProcessTargets>) {

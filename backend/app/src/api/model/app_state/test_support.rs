@@ -63,6 +63,7 @@ pub fn create_test_app_state(config: Config) -> Arc<AppState> {
     let tokens = CancelTokens::default();
     let metadata_manager = Arc::new(MetadataUpdateManager::new(tokens.metadata.clone()));
 
+    let maintenance = super::create_test_maintenance(&app_config.config.load().storage_dir);
     Arc::new(AppState {
         app_config,
         http_clients: Arc::default(),
@@ -75,6 +76,7 @@ pub fn create_test_app_state(config: Config) -> Arc<AppState> {
         recording_capacity: crate::api::model::recording_runtime::ProviderCapacityAdapter::new(
             Arc::clone(&active_provider),
             Arc::clone(&connection_manager),
+            Arc::clone(&maintenance),
         ),
         active_provider,
         connection_manager,
@@ -85,5 +87,17 @@ pub fn create_test_app_state(config: Config) -> Arc<AppState> {
         metadata_manager,
         auth: AuthState::for_tests(),
         playlist_updates: PlaylistUpdateControl::for_tests(),
+        maintenance,
     })
+}
+
+/// A maintenance registry for tests: persisted under the configured storage dir,
+/// or in memory only, so a test never writes into the working directory.
+pub fn create_test_maintenance(storage_dir: &str) -> Arc<crate::model::MaintenanceRegistry> {
+    if storage_dir.is_empty() {
+        return Arc::new(crate::model::MaintenanceRegistry::in_memory());
+    }
+    Arc::new(crate::model::MaintenanceRegistry::new(
+        std::path::PathBuf::from(storage_dir).join(crate::model::MAINTENANCE_FILE),
+    ))
 }

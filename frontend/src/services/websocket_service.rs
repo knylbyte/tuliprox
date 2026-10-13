@@ -482,6 +482,9 @@ impl WebSocketService {
             ProtocolMessage::RecordingRulesChanged => {
                 event_service.broadcast(EventMessage::RecordingRulesChanged);
             }
+            ProtocolMessage::MaintenanceChangedResponse(entries) => {
+                event_service.broadcast(EventMessage::MaintenanceChanged(Rc::new(entries)));
+            }
             ProtocolMessage::RecordingWsError { code } => {
                 event_service.broadcast(EventMessage::RecordingUnavailable { code });
             }

@@ -8,7 +8,7 @@ use super::{
     requeue_active_download_for_retry, set_active_download_state, should_exit_worker_after_preempt,
     spawn_recording_notification_after_persist, take_active, wait_for_provider_slot, write_completion_sidecar,
     ProviderAcquireResult, ProviderCapacities, QuotaGate, RetryCommit, DOWNLOAD_PREEMPTED_REASON,
-    LIVE_CAPACITY_WINDOW_CLOSED, RECORDING_PROGRESS_UPDATE_INTERVAL,
+    LIVE_CAPACITY_WINDOW_CLOSED, MAINTENANCE_REASON, RECORDING_PROGRESS_UPDATE_INTERVAL,
 };
 use crate::recording::{
     recording_capacity::RecordingCapacityPort,
@@ -147,14 +147,14 @@ async fn start_recording_worker<E: EventSink + Clone + 'static>(
                 'worker: loop {
                     // One read: the uuid, pause flag and live window must describe
                     // the same task.
-                    let active_head = dq
-                        .active
-                        .read()
-                        .await
-                        .iter()
-                        .find(|task| task.uuid == worker_uuid)
-                        .map(|download| (download.paused, recording_deadline_instant(download)));
-                    if let Some((paused, window_deadline)) = active_head {
+                    let active_head =
+                        dq.active.read().await.iter().find(|task| task.uuid == worker_uuid).map(|download| {
+                            // A retry or a requeue of a recording that already ran is not a new
+                            // start; maintenance only refuses new ones.
+                            let first_start = !download.recording.provider_started;
+                            (download.paused, recording_deadline_instant(download), first_start)
+                        });
+                    if let Some((paused, window_deadline, first_start)) = active_head {
                         if paused {
                             break;
                         }
@@ -176,6 +176,11 @@ async fn start_recording_worker<E: EventSink + Clone + 'static>(
                                         // concurrent recording starts respect background limits.
                                         let _capacity = dq.capacity_guard.lock().await;
                                         let capacities = capacity.capacities_for_input(&input_name).await;
+                                        // Checked right before every slot request, after every await
+                                        // of this attempt, so nothing has to be released.
+                                        if first_start && capacity.is_input_in_maintenance(&input_name) {
+                                            break ProviderAcquireResult::Maintenance;
+                                        }
                                         let live_config = app_config.config.load();
                                         let capacity_cfg = live_config.recording().unwrap_or(&download_cfg);
                                         if background_download_should_wait(priority, &capacities, capacity_cfg) {
@@ -253,6 +258,17 @@ async fn start_recording_worker<E: EventSink + Clone + 'static>(
                                     &event_manager,
                                     fail_active_download(&dq, &worker_uuid, LIVE_CAPACITY_WINDOW_CLOSED).await,
                                     "live capacity window closed",
+                                ) {
+                                    error!("Download worker commit failed: {err}");
+                                    break 'worker;
+                                }
+                                continue;
+                            }
+                            ProviderAcquireResult::Maintenance => {
+                                if let Err(err) = broadcast_required_worker_mutation(
+                                    &event_manager,
+                                    fail_active_download(&dq, &worker_uuid, MAINTENANCE_REASON).await,
+                                    "input maintenance",
                                 ) {
                                     error!("Download worker commit failed: {err}");
                                     break 'worker;

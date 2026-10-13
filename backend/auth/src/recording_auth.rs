@@ -110,6 +110,8 @@ fn permission_name(p: Permission) -> &'static str {
         Permission::RecordingCreate => "recording.create",
         Permission::RecordingManage => "recording.manage",
         Permission::RecordingDelete => "recording.delete",
+        Permission::MaintenanceRead => "maintenance.read",
+        Permission::MaintenanceWrite => "maintenance.write",
     }
 }
 
@@ -443,6 +445,7 @@ mod tests {
             measured_bytes: 0,
             completed_at: None,
             notification_markers: Vec::new(),
+            provider_started: false,
             group: None,
             series_name: None,
             deleting_previous_state: None,

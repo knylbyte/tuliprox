@@ -64,8 +64,9 @@ pub fn exec_xtream_expiry_sync(app_state: &Arc<AppState>, cancel: &CancellationT
         let mut state_dirty = false;
         loop {
             let now = Utc::now().timestamp();
-            let accounts = collect_accounts(&app_state);
+            let mut accounts = collect_accounts(&app_state);
             state_dirty |= prune_state(&mut state, &accounts, now);
+            retain_queryable(&app_state, &mut accounts);
             fetch_due_accounts(
                 &app_state,
                 &accounts,
@@ -253,6 +254,12 @@ fn prune_state(state: &mut ExpiryState, accounts: &[Account], now: i64) -> bool 
             + state.pending_expiry.len()
             + state.panel_last_attempt.len()
             + state.cooldown_until.len()
+}
+
+/// An input in maintenance keeps its throttle state (pruning sees every account) but is
+/// neither queried nor persisted; its accounts are picked up again afterwards.
+fn retain_queryable(app_state: &AppState, accounts: &mut Vec<Account>) {
+    accounts.retain(|account| !app_state.maintenance.is_in_maintenance(&account.input_name));
 }
 
 fn collect_accounts(app_state: &AppState) -> Vec<Account> {
@@ -512,6 +519,22 @@ mod tests {
             exp_date: None,
             panel: Arc::from("http://panel.example"),
         }
+    }
+
+    #[tokio::test]
+    async fn accounts_of_inputs_in_maintenance_are_not_queried() -> Result<(), Box<dyn std::error::Error>> {
+        let (_dir, app, _path) = super::super::provider_account_state::tests::fixture(false).await?;
+        let mut accounts = super::collect_accounts(&app);
+        super::retain_queryable(&app, &mut accounts);
+        assert!(!accounts.is_empty(), "the fixture input is queried normally");
+
+        app.maintenance.add("root", None, 1).await?;
+
+        let mut accounts = super::collect_accounts(&app);
+        assert!(!accounts.is_empty(), "pruning still sees accounts of an input in maintenance");
+        super::retain_queryable(&app, &mut accounts);
+        assert!(accounts.is_empty(), "an input in maintenance is not contacted");
+        Ok(())
     }
 
     #[tokio::test]
