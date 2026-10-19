@@ -164,7 +164,7 @@ pub enum StreamRequestDetach {
 }
 
 /// How long an ended session token blocks its recreation from a sealed playlist token.
-const ENDED_SESSION_RECREATE_BLOCK: Duration = Duration::from_secs(600);
+const ENDED_SESSION_RECREATE_BLOCK: Duration = Duration::from_mins(10);
 
 pub struct ReleasedConnection {
     pub addr_removed: bool,
@@ -256,7 +256,6 @@ mod session_lifecycle;
 use self::observability::divergence_key;
 #[cfg(test)]
 use self::observability::DivergenceKind;
-pub use self::session_lifecycle::next_session_incarnation;
 use self::{
     connections::{
         create_socket_reentry_guard_key, decide_connection_kind, url_host_key, PromotionAction, RecentWinnerProtection,
@@ -270,3 +269,4 @@ use self::{
         uses_session_reentry_guard, UserSessionParams,
     },
 };
+pub use self::{observability::SharedStreamProviderProjection, session_lifecycle::next_session_incarnation};
