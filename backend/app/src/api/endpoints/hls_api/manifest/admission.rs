@@ -87,6 +87,7 @@ pub(in crate::api::endpoints::hls_api) async fn prepare_hls_canonical_manifest_o
                 let strip = app_state.hls.proxy.strip();
                 match hls_provider_connections_exhausted_manifest_resolution(
                     app_state,
+                    Some(fingerprint),
                     session,
                     &context.username,
                     origin.input,

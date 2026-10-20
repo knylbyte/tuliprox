@@ -114,6 +114,65 @@ async fn live_window_timeout_preserves_unpublished_fallback_and_existing_lease_r
 }
 
 #[tokio::test]
+async fn live_window_provisioning_fallback_wakes_scheduler_for_the_requesting_lease() {
+    for mode in [HlsStartupMode::FirstReady, HlsStartupMode::Progressive, HlsStartupMode::Optimistic] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut dto = HlsCacheConfigDto {
+            cache_path: Some(directory.path().to_string_lossy().into_owned()),
+            max_segments_prefetch: 0,
+            ..Default::default()
+        };
+        dto.startup.mode = mode;
+        dto.strip.value = 1;
+        let manager = Arc::new(HlsProxyManager::with_hls_cache_config(&HlsCacheConfig::from(&dto)));
+        let app = test_app_state_with_hls_proxy(manager.clone());
+        super::owner_handoff::enable_hls_provisioning_custom_response(&app);
+        let session = manager
+            .get_or_create_session(HlsSessionKey::new(1, "provisioning-window"), b"secret", current_time_millis())
+            .await;
+        {
+            let mut state = session.write().await;
+            state.apply_origin_manifest(&origin(0, 6, &[4])).unwrap();
+            state.live_window_strip = StripConfig { mode: HlsStripMode::Segments, value: 0 };
+            prepare_revisions(&mut state, &[3, 4, 5]);
+            state.render_and_store_manifest(current_time_millis()).unwrap();
+        }
+        let proxy_id = session.read().await.proxy_session_id.clone();
+        let id = HlsAccessLeaseId("provisioning-lease".into());
+        super::prepare_pending_test_hls_access_lease(&app, &proxy_id, &id).await;
+        // Pause before origin I/O: this test verifies the scheduler handoff,
+        // independently of whether a provider slot is available afterwards.
+        let gate = manager.segment_worker_pool().pause_next_origin_prepare_for_test();
+        let response = super::super::hls_shared_provisioning_timeline_manifest_response(
+            &app,
+            Some(&super::test_fingerprint()),
+            &session,
+            &id,
+            HlsAccessLeaseState::Pending,
+            &StripConfig { mode: HlsStripMode::Segments, value: 1 },
+            None,
+        )
+        .await;
+        assert!(response.is_none(), "the requesting lease still needs its earlier entry segment");
+        tokio::time::timeout(Duration::from_secs(1), gate.entered.notified())
+            .await
+            .expect("the fallback must wake the scheduler for queued live-window work");
+        {
+            let state = session.read().await;
+            assert_eq!(state.segment_prefetch_queue.proxy_seqs(), vec![2]);
+            assert!(matches!(
+                state.segments[&2].status,
+                SegmentCacheStatus::Queued { priority: tuliprox_hls::api::SegmentFetchPriority::RenderWindow, .. }
+            ));
+        }
+        assert!(manager.access_leases().write().await.remove_access_lease(&id).is_some());
+        gate.prepare.notify_one();
+        tokio::time::timeout(Duration::from_secs(1), gate.prepared.notified()).await.unwrap();
+        gate.proceed.notify_one();
+    }
+}
+
+#[tokio::test]
 async fn live_window_api_matrix_has_exact_playlist_snapshot_and_no_second_strip() {
     for mode in [HlsStartupMode::FirstReady, HlsStartupMode::Progressive, HlsStartupMode::Optimistic] {
         for (count, strip_mode, strip, expected) in [
