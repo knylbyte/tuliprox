@@ -924,7 +924,11 @@ impl HlsProxyManager {
             }
         }
         self.schedule_session_idle_for_handle(&session).await;
-        session.write().await.configure_segment_prefetch_queue(self.segment_fetch_policy().max_prefetch_queue_depth);
+        {
+            let mut session = session.write().await;
+            session.configure_segment_prefetch_queue(self.segment_fetch_policy().max_prefetch_queue_depth);
+            session.live_window_strip = self.strip();
+        }
         (session, outcome)
     }
 }

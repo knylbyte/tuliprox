@@ -164,6 +164,7 @@ async fn optimistic_successor_without_a_retry_ends_only_its_lease() -> std::io::
     };
     let snapshot = crate::HlsLeaseManifestSnapshot {
         startup_revisions: Some(Arc::new(crate::HlsManifestRevisions {
+            window_plan: None,
             mode: config.mode,
             retained_start_seq: head_seq,
             revisions,

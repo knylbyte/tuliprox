@@ -268,6 +268,24 @@ Changing `rewrite_secret` is also disruptive for public HLS identifiers. Existin
 READY reserve, cache delivery and repair behavior. `first_ready` lowers initial admission to one processed start
 segment. Every listed successor must already have a successful HTTP 200 response and a nonempty body prefix.
 
+For untagged, rolling live playlists, each new access lease in `first_ready`, `progressive` or `optimistic`
+selects its own three-segment entry window from the newest end of the current origin playlist. This also applies
+when joining an already running shared session. `hls_cache.strip` is evaluated before selecting that window:
+segment mode counts backwards from the live edge; seconds mode sums the actual `EXTINF` durations backwards.
+The holdback is capped so at least three segments remain when the origin provides three or more. For origin
+segments `0–5`, strip `0` starts at `3,4,5`; strip `1` starts at `2,3,4`. These three segments are fetched in
+chronological order with `RenderWindow` priority. Held-back newer segments are optional reserve prefetch.
+
+After activation, strip no longer applies to that lease. Its window grows forwards up to six entries, without
+prepending segments before its previously advertised first sequence: `2,3,4` becomes `2–5`, then `2–6`, then
+`2–7`. Needed successors remain required fetch work even when reserve prefetch is disabled. Active slides retain
+contiguous cached predecessors from the lease's previous window when needed to preserve three target durations.
+A second lease independently selects its own three-segment entry. An idle re-entry also selects an entry
+window, while retaining that lease's progressive GET allowance and monotonic media sequence. A change that
+would move its sequence backwards keeps its previous valid view or returns the existing temporary error.
+The planned view is never stripped again during lease materialization. These rules do not change conservative,
+archive, ENDLIST, EVENT, VOD or other protected/transient playlist handling, or short-origin qualification.
+
 ```yaml
 reverse_proxy:
   hls_cache:

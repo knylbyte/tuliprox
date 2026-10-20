@@ -201,10 +201,9 @@ impl HlsProxyManager {
             self.clear_runtime_cache_state_for_cache_path_change().await;
         }
         for session in self.sessions.list_sessions().await {
-            session
-                .write()
-                .await
-                .configure_segment_prefetch_queue(runtime_config.segment_fetch_policy.max_prefetch_queue_depth);
+            let mut session = session.write().await;
+            session.configure_segment_prefetch_queue(runtime_config.segment_fetch_policy.max_prefetch_queue_depth);
+            session.live_window_strip.clone_from(&runtime_config.strip);
         }
         self.segment_repair.update_config(hls_config.segment_repair.clone());
         let global_fetch_semaphore =

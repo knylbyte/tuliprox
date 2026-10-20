@@ -54,13 +54,32 @@ impl HlsProxyManager {
             return Outcome::Rejected(Reject::SessionMismatch);
         };
         let mut leases = self.access_leases.write().await;
-        let session = current.session().read().await;
+        let mut session = current.session().write().await;
         if !leases.media_identity_is_current(lease_id, session_id, expected.media_identity(), now_ms)
             || session.is_gc_marked_for_removal()
         {
             return Outcome::Rejected(Reject::LeaseUnavailable);
         }
+        if snapshot.startup_revisions.as_ref().is_some_and(|publication| publication.window_plan.is_some()) {
+            session.live_window_strip = self.strip();
+        }
+        let retained = now_ms <= snapshot.delivered_at_ms.saturating_add(snapshot.playlist_duration_ms)
+            && leases
+                .response_snapshot(lease_id, session_id, now_ms)
+                .and_then(|lease| lease.last_manifest_snapshot)
+                .as_ref()
+                == Some(&snapshot);
         if let Some(publication) = snapshot.startup_revisions.as_mut() {
+            if let Some(window) = &publication.window_plan {
+                let plan = &window.plan;
+                let view_matches = leases.response_snapshot(lease_id, session_id, now_ms).is_some_and(|lease| {
+                    session.plan_live_window(crate::live_window::HlsLiveWindowView::for_lease(&lease)).as_ref()
+                        == Some(plan)
+                });
+                if (!plan.is_current(&session) || !view_matches) && !retained {
+                    return Outcome::Rejected(Reject::ManifestGenerationUnavailable);
+                }
+            }
             for (seq, revision) in &mut std::sync::Arc::make_mut(publication).revisions {
                 if let Some(guard) = leases.revision_recovery_guard(lease_id, *seq) {
                     match leases.recover_revision_binding(lease_id, &guard, &session, now_ms) {
@@ -91,7 +110,19 @@ impl HlsProxyManager {
                 }
             }
         }
-        leases.commit_manifest_publication_with_resources(lease_id, session_id, expected, snapshot, resources, now_ms)
+        let published = snapshot
+            .startup_revisions
+            .as_ref()
+            .and_then(|publication| publication.window_plan.as_ref())
+            .map(|_| snapshot.clone());
+        let outcome = leases
+            .commit_manifest_publication_with_resources(lease_id, session_id, expected, snapshot, resources, now_ms);
+        if outcome.is_committed() {
+            if let Some(snapshot) = published {
+                session.record_live_window_publication(lease_id, &snapshot);
+            }
+        }
+        outcome
     }
 
     /// Resolves one published URI against the exact current session and lease.

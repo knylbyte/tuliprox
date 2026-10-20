@@ -91,7 +91,9 @@ impl Fixture {
                                 socket.write_all(body.as_bytes()).await.unwrap();
                                 return;
                             }
-                            let failed_attempt = path == "/101.ts" && attempts.fetch_add(1, Ordering::AcqRel) == 0;
+                            // The accelerated entry is 103,104,105. Inject the
+                            // failure into its first visible successor.
+                            let failed_attempt = path == "/104.ts" && attempts.fetch_add(1, Ordering::AcqRel) == 0;
                             let headers = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: video/mp2t\r\nConnection: close\r\n\r\n", BODY.len());
                             socket.write_all(headers.as_bytes()).await.unwrap();
                             if failed_attempt {
@@ -100,7 +102,7 @@ impl Fixture {
                                 tokio::time::sleep(Duration::from_secs(2)).await;
                                 return;
                             }
-                            if path == "/101.ts" {
+                            if path == "/104.ts" {
                                 while !*retry_released.borrow_and_update() {
                                     if retry_released.changed().await.is_err() { return; }
                                 }
@@ -189,6 +191,7 @@ async fn incomplete_origin_200_recovers_same_segment_uri_without_a_playlist_refr
     let playlist = client.get(&variant).send().await.unwrap();
     assert_eq!(playlist.status(), 200, "startup: {}", fixture.log());
     let playlist = playlist.text().await.unwrap();
+    assert!(playlist.contains("#EXT-X-MEDIA-SEQUENCE:3\n"), "entry follows the current live edge");
     let segment = resolve_media(&variant, &playlist, 1);
     assert_eq!(fixture.attempts.load(Ordering::Acquire), 1);
     // Exercise unexposed successor recovery after consuming this lease's one

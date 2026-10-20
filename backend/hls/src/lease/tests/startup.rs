@@ -12,6 +12,7 @@ fn retired_revision_bindings_cannot_be_rebound_after_the_hard_limit() -> std::io
         revision.revision().prefix_available.store(1, std::sync::atomic::Ordering::Release);
         let mut snapshot = manifest_snapshot(seq);
         snapshot.startup_revisions = Some(Arc::new(crate::HlsManifestRevisions {
+            window_plan: None,
             mode: shared::model::HlsStartupMode::Progressive,
             retained_start_seq: 0,
             revisions: [(seq, revision)].into_iter().collect(),
@@ -25,6 +26,7 @@ fn retired_revision_bindings_cannot_be_rebound_after_the_hard_limit() -> std::io
     new_attempt.revision().prefix_available.store(1, std::sync::atomic::Ordering::Release);
     let mut old_uri = manifest_snapshot(1031);
     old_uri.startup_revisions = Some(Arc::new(crate::HlsManifestRevisions {
+        window_plan: None,
         mode: shared::model::HlsStartupMode::Progressive,
         retained_start_seq: 0,
         revisions: [(0, new_attempt)].into_iter().collect(),
@@ -49,6 +51,7 @@ fn repeated_lease_retirement_releases_publication_revision_guards() -> std::io::
         }
         let mut snapshot = manifest_snapshot(generation + 1);
         snapshot.startup_revisions = Some(Arc::new(crate::HlsManifestRevisions {
+            window_plan: None,
             mode: shared::model::HlsStartupMode::Progressive,
             retained_start_seq: 40,
             revisions: owners,
@@ -80,6 +83,7 @@ fn startup_claim_fixture() -> std::io::Result<(HlsAccessLeaseStore, HlsAccessLea
     }
     let mut snapshot = manifest_snapshot(10);
     snapshot.startup_revisions = Some(Arc::new(crate::HlsManifestRevisions {
+        window_plan: None,
         mode: shared::model::HlsStartupMode::Optimistic,
         retained_start_seq: 40,
         revisions,
@@ -179,6 +183,7 @@ fn optimistic_binding_accepts_pending_successors_but_not_failed_or_replaced_ones
     let snapshot_with = |revisions: std::collections::BTreeMap<u64, crate::SegmentRevisionGuard>| {
         let mut snapshot = manifest_snapshot(1);
         snapshot.startup_revisions = Some(Arc::new(crate::HlsManifestRevisions {
+            window_plan: None,
             mode: shared::model::HlsStartupMode::Optimistic,
             retained_start_seq: 0,
             revisions,
@@ -215,6 +220,7 @@ fn failed_unexposed_successor_may_be_rebound_but_exposed_bytes_never_change() ->
     let snapshot_with = |revisions: std::collections::BTreeMap<u64, crate::SegmentRevisionGuard>| {
         let mut snapshot = manifest_snapshot(1);
         snapshot.startup_revisions = Some(Arc::new(crate::HlsManifestRevisions {
+            window_plan: None,
             mode: shared::model::HlsStartupMode::Optimistic,
             retained_start_seq: 0,
             revisions,

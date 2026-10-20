@@ -327,11 +327,19 @@ impl HlsSegmentWorkerPool {
             if mode.publishes_pending_successors() {
                 return false;
             }
-            let Some(head) = session.publishable_origin_head_proxy_seq else {
-                return true;
+            let heads = if session.uses_fast_start_live_window() {
+                session.live_window_heads()
+            } else {
+                session.publishable_origin_head_proxy_seq.into_iter().collect()
             };
-            startup.revisions.get(&head).is_none_or(|revision| {
-                mode != shared::model::HlsStartupMode::Conservative && !revision.revision().is_startup_head_ready(mode)
+            if heads.is_empty() {
+                return true;
+            }
+            heads.iter().any(|head| {
+                startup.revisions.get(head).is_none_or(|revision| {
+                    mode != shared::model::HlsStartupMode::Conservative
+                        && !revision.revision().is_startup_head_ready(mode)
+                })
             })
         });
         let fetch_limit = if initial_barrier { 1 } else { policy.max_session_segment_fetches };

@@ -63,8 +63,12 @@ impl FirstRequestFixture {
         snapshot.last_proxy_seq = 14;
         snapshot.playlist_duration_ms = 12_000;
         snapshot.last_visible_media_end_ms = 12_000;
-        snapshot.startup_revisions =
-            Some(Arc::new(crate::HlsManifestRevisions { mode, retained_start_seq: 12, revisions: revisions.clone() }));
+        snapshot.startup_revisions = Some(Arc::new(crate::HlsManifestRevisions {
+            window_plan: None,
+            mode,
+            retained_start_seq: 12,
+            revisions: revisions.clone(),
+        }));
         let now = current_time_millis();
         let guard =
             leases.prepare_manifest_publication(&cached.lease_id, &cached.proxy_session_id, now).expect("guard");

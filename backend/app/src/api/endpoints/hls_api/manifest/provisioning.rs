@@ -668,6 +668,7 @@ pub(in crate::api::endpoints::hls_api) async fn hls_shared_provisioning_timeline
 
     try_hls_cached_manifest_response(
         app_state,
+        None,
         session,
         access_lease_id,
         access_lease_state,

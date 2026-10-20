@@ -253,6 +253,7 @@ async fn publish_revision_fixture(
     });
     let snapshot = crate::HlsLeaseManifestSnapshot {
         startup_revisions: Some(Arc::new(crate::HlsManifestRevisions {
+            window_plan: None,
             mode: config.mode,
             retained_start_seq: fixture.segment_file.proxy_seq,
             revisions,

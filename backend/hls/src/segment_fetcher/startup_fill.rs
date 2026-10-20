@@ -468,6 +468,9 @@ async fn bind_startup_revision(
 /// fill may fix the session policy or fall back to `first_ready`. A successor
 /// without replay stays raw and is delivered once complete.
 fn startup_fill_decides_policy(session: &super::super::HlsSession, proxy_seq: u64) -> bool {
+    if session.uses_fast_start_live_window() {
+        return session.live_window_heads().contains(&proxy_seq);
+    }
     !session.startup_mode().publishes_pending_successors()
         || session.publishable_origin_head_proxy_seq == Some(proxy_seq)
 }

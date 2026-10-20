@@ -645,6 +645,7 @@ async fn exposed_failure_ends_only_the_old_lease_and_cannot_append_retry_bytes()
     ));
     let mut snapshot = base_snapshot;
     snapshot.startup_revisions = Some(Arc::new(crate::HlsManifestRevisions {
+        window_plan: None,
         mode: shared::model::HlsStartupMode::Optimistic,
         retained_start_seq: fixture.segment_file.proxy_seq,
         revisions: [(fixture.segment_file.proxy_seq, retry)].into_iter().collect(),

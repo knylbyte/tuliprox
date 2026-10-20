@@ -146,6 +146,13 @@ impl super::HlsLeaseRuntime {
         if let Some(current) = current.as_ref() {
             let session = current.session();
             let mut session = session.write().await;
+            if session
+                .live_window_demands
+                .get(lease_id)
+                .is_some_and(|demand| demand.issued_at_ms == preparation.issued_at_ms)
+            {
+                session.live_window_demands.remove(lease_id);
+            }
             let finalized_manifest_released =
                 session.transient.release_finalized_manifest_generations(lease_id, preparation.issued_at_ms);
             if finalized_manifest_released {
