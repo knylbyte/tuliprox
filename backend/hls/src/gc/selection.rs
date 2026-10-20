@@ -147,9 +147,12 @@ pub(super) fn remove_stale_queue_entries(session: &mut HlsSession) -> usize {
     removed
 }
 
-/// Unfetched and evicted origin mappings are needed only while their origin
-/// window or an existing publication, reader or cache mutation still owns them.
+/// Fast-start origin mappings are needed only while their origin window or an
+/// existing publication, reader or cache mutation still owns them.
 pub(super) fn remove_obsolete_segment_metadata(session: &mut HlsSession, protected: &ProtectedSet) {
+    if !session.uses_fast_start_live_window() {
+        return;
+    }
     let Some(origin) = session.origin_window_proxy_seqs.as_ref() else { return };
     let origin = origin.iter().copied().collect::<HashSet<_>>();
     let obsolete = session

@@ -539,6 +539,39 @@ async fn obsolete_metadata_is_removed_only_after_publication_and_reader_protecti
 }
 
 #[test]
+fn obsolete_metadata_cleanup_preserves_non_fast_start_timeline_mappings() {
+    for archive in [false, true] {
+        let mut session = HlsSession::new(HlsSessionKey::new(1, "retained-metadata"), b"secret", 0);
+        session.apply_origin_manifest(&rolling_metadata_manifest(0)).unwrap();
+        if archive {
+            install_fast_start(&mut session);
+            session.origin_source.archive_reference = Some(1_784_898_000);
+        }
+        session.segments.get_mut(&0).unwrap().discontinuity_before = true;
+        session.discontinuity_sequence = 7;
+        session.apply_origin_manifest(&rolling_metadata_manifest(6)).unwrap();
+        assert!(!session.uses_fast_start_live_window());
+        let protected = ProtectedSet::from_session(&session);
+        assert!(!protected.segment_proxy_seqs.contains(&0));
+        let mappings = session.origin_to_proxy.clone();
+        let sequences = session.segments.keys().copied().collect::<Vec<_>>();
+        let head = session.publishable_origin_head_proxy_seq;
+        let next = session.proxy_next_seq;
+
+        crate::gc::selection::remove_obsolete_segment_metadata(&mut session, &protected);
+
+        assert_eq!(session.origin_to_proxy, mappings, "archive={archive}");
+        assert_eq!(session.segments.keys().copied().collect::<Vec<_>>(), sequences);
+        assert_eq!(session.discontinuity_sequence, 7);
+        assert_eq!(session.publishable_origin_head_proxy_seq, head);
+        let mut overlapping = rolling_metadata_manifest(0);
+        overlapping.segments.extend(rolling_metadata_manifest(6).segments);
+        session.apply_origin_manifest(&overlapping).unwrap();
+        assert_eq!(session.proxy_next_seq, next, "an overlapping URI must retain its original proxy sequence");
+    }
+}
+
+#[test]
 fn obsolete_metadata_cleanup_requires_origin_evidence_and_preserves_other_cache_states() {
     use crate::gc::{policy::protected_set_for_cache_reclamation, selection::remove_obsolete_segment_metadata};
 
@@ -546,6 +579,7 @@ fn obsolete_metadata_cleanup_requires_origin_evidence_and_preserves_other_cache_
     let cache = HlsSegmentCache::with_cache_path(directory.path());
     let mut session = HlsSession::new(HlsSessionKey::new(1, "metadata-states"), b"secret", 0);
     session.apply_origin_manifest(&rolling_metadata_manifest(0)).unwrap();
+    install_fast_start(&mut session);
     session.origin_window_proxy_seqs = None;
     remove_obsolete_segment_metadata(&mut session, &ProtectedSet::default());
     assert_eq!(session.segments.len(), 6);

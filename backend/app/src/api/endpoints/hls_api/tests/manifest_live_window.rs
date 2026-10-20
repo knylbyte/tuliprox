@@ -50,6 +50,70 @@ fn prepare_revisions(session: &mut tuliprox_hls::api::HlsSession, sequences: &[u
 }
 
 #[tokio::test]
+async fn live_window_timeout_preserves_unpublished_fallback_and_existing_lease_retries() {
+    for mode in [HlsStartupMode::FirstReady, HlsStartupMode::Progressive, HlsStartupMode::Optimistic] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut dto = HlsCacheConfigDto {
+            cache_path: Some(directory.path().to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+        dto.startup.mode = mode;
+        let manager = Arc::new(HlsProxyManager::with_hls_cache_config(&HlsCacheConfig::from(&dto)));
+        let app = test_app_state_with_hls_proxy(manager.clone());
+        super::enable_channel_unavailable_custom_response(&app);
+        let session = manager
+            .get_or_create_session(HlsSessionKey::new(1, "unready-window"), b"secret", current_time_millis())
+            .await;
+        let proxy_id = session.read().await.proxy_session_id.clone();
+        for has_origin in [false, true] {
+            if has_origin {
+                session.write().await.apply_origin_manifest(&origin(0, 6, &[4])).unwrap();
+            }
+            for state in [HlsAccessLeaseState::Pending, HlsAccessLeaseState::Activated, HlsAccessLeaseState::Idle] {
+                for wait in [Duration::ZERO, Duration::from_millis(1)] {
+                    let id = HlsAccessLeaseId(format!("timeout-{has_origin}-{state:?}-{wait:?}"));
+                    super::prepare_pending_test_hls_access_lease(&app, &proxy_id, &id).await;
+                    let mut lease =
+                        manager.access_lease_response_snapshot(&id, &proxy_id, current_time_millis()).await.unwrap();
+                    lease.state = state;
+                    if state == HlsAccessLeaseState::Activated {
+                        lease.active_until_ms = Some(current_time_millis() + 60_000);
+                    }
+                    manager.prepare_access_lease(lease).await;
+                    let response = try_test_hls_cached_manifest_response(
+                        &app,
+                        &session,
+                        &id,
+                        state,
+                        &StripConfig { mode: HlsStripMode::Segments, value: 0 },
+                        None,
+                        super::HlsCachedManifestOptions::initial(wait),
+                    )
+                    .await;
+                    if state == HlsAccessLeaseState::Pending {
+                        assert!(response.is_none(), "{mode}: unpublished fallback must remain reachable");
+                        let fallback =
+                            super::super::hls_unpublished_lease_channel_unavailable_response(&app, &proxy_id, &id)
+                                .await;
+                        assert_eq!(fallback.status(), StatusCode::OK);
+                        let body = String::from_utf8(response_body(fallback).await.to_vec()).unwrap();
+                        assert!(body.contains("#EXT-X-ENDLIST"));
+                        assert!(!body.contains("/hls/shared/live/"));
+                    } else {
+                        let response = response.expect("existing leases keep the temporary failure response");
+                        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+                        assert!(response.headers().contains_key(axum::http::header::RETRY_AFTER));
+                    }
+                    let lease =
+                        manager.access_lease_response_snapshot(&id, &proxy_id, current_time_millis()).await.unwrap();
+                    assert!(lease.last_manifest_snapshot.is_none());
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn live_window_api_matrix_has_exact_playlist_snapshot_and_no_second_strip() {
     for mode in [HlsStartupMode::FirstReady, HlsStartupMode::Progressive, HlsStartupMode::Optimistic] {
         for (count, strip_mode, strip, expected) in [

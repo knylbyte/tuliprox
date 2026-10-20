@@ -392,7 +392,8 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                     if wait_for_hls_startup_evidence(started_at, options.wait_timeout).await {
                         continue;
                     }
-                    return Some(hls_cached_manifest_temporarily_unavailable());
+                    return (access_lease_state != HlsAccessLeaseState::Pending)
+                        .then(hls_cached_manifest_temporarily_unavailable);
                 }
                 prepared
             } else if let Some(transient) = cached.transient_body {

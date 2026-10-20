@@ -164,9 +164,19 @@ async fn live_window_short_empty_readiness_and_stale_plans_are_explicit() {
 
 #[tokio::test]
 async fn live_window_http_fills_selected_head_with_existing_progressive_delivery() {
+    assert_live_window_http_fill(None).await;
+}
+
+#[tokio::test]
+#[ignore = "manual probe: set TULIPROX_HLS_WINDOW_ORIGIN to a controlled streaming fixture"]
+async fn live_window_http_fills_selected_head_against_manual_origin() {
+    let origin = std::env::var("TULIPROX_HLS_WINDOW_ORIGIN").expect("manual origin URL must be configured");
+    assert_live_window_http_fill(Some(&origin)).await;
+}
+
+async fn assert_live_window_http_fill(external: Option<&str>) {
     let server = spawn_segment_server(0).await;
-    let external = std::env::var("TULIPROX_HLS_WINDOW_ORIGIN").ok();
-    let base = external.as_deref().unwrap_or(&server.base_url);
+    let base = external.unwrap_or(&server.base_url);
     for mode in MODES {
         let directory = tempfile::tempdir().unwrap();
         let policy = SegmentFetchPolicy { max_prefetch_queue_depth: 0, ..Default::default() };
