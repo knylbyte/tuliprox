@@ -622,6 +622,7 @@ pub(in crate::api::endpoints::hls_api) async fn ensure_shared_hls_provisioning_h
 
 pub(in crate::api::endpoints::hls_api) async fn hls_shared_provisioning_timeline_manifest_response(
     app_state: &Arc<AppState>,
+    fingerprint: Option<&Fingerprint>,
     session: &HlsSessionHandle,
     access_lease_id: &HlsAccessLeaseId,
     access_lease_state: HlsAccessLeaseState,
@@ -668,6 +669,7 @@ pub(in crate::api::endpoints::hls_api) async fn hls_shared_provisioning_timeline
 
     try_hls_cached_manifest_response(
         app_state,
+        fingerprint,
         session,
         access_lease_id,
         access_lease_state,
@@ -682,6 +684,7 @@ pub(in crate::api::endpoints::hls_api) async fn hls_shared_provisioning_timeline
 #[allow(clippy::too_many_arguments)]
 pub(in crate::api::endpoints::hls_api) async fn hls_shared_provisioning_or_provider_exhausted_response(
     app_state: &Arc<AppState>,
+    fingerprint: Option<&Fingerprint>,
     session: &HlsSessionHandle,
     username: &str,
     input: &ConfigInput,
@@ -715,6 +718,7 @@ pub(in crate::api::endpoints::hls_api) async fn hls_shared_provisioning_or_provi
         }
         if let Some(response) = hls_shared_provisioning_timeline_manifest_response(
             app_state,
+            fingerprint,
             session,
             access_lease_id,
             access_lease_state,
@@ -757,6 +761,7 @@ pub(in crate::api::endpoints::hls_api) enum HlsProviderExhaustedResolution {
 #[allow(clippy::too_many_arguments)]
 pub(in crate::api::endpoints::hls_api) async fn hls_provider_connections_exhausted_manifest_resolution(
     app_state: &Arc<AppState>,
+    fingerprint: Option<&Fingerprint>,
     session: &HlsSessionHandle,
     username: &str,
     input: &ConfigInput,
@@ -793,6 +798,7 @@ pub(in crate::api::endpoints::hls_api) async fn hls_provider_connections_exhaust
     HlsProviderExhaustedResolution::Response(
         hls_shared_provisioning_or_provider_exhausted_response(
             app_state,
+            fingerprint,
             session,
             username,
             input,
