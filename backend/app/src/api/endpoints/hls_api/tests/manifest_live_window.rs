@@ -99,6 +99,12 @@ async fn live_window_timeout_preserves_unpublished_fallback_and_existing_lease_r
                         let body = String::from_utf8(response_body(fallback).await.to_vec()).unwrap();
                         assert!(body.contains("#EXT-X-ENDLIST"));
                         assert!(!body.contains("/hls/shared/live/"));
+                        super::disable_custom_stream_response(&app);
+                        let fallback =
+                            super::super::hls_unpublished_lease_channel_unavailable_response(&app, &proxy_id, &id)
+                                .await;
+                        assert_eq!(fallback.status(), StatusCode::NOT_FOUND);
+                        super::enable_channel_unavailable_custom_response(&app);
                     } else {
                         let response = response.expect("existing leases keep the temporary failure response");
                         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);

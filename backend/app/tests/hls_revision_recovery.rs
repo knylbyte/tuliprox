@@ -310,7 +310,14 @@ async fn exposed_failure_allows_a_new_player_with_user_connection_limit_one() {
         if response.status() == 200 {
             break response;
         }
-        assert_eq!(response.status(), 503, "new live playlist rejected: {}", fixture.log());
+        // Before its first publication, a lease can use the unavailable-channel
+        // fallback (404 without a configured custom stream) or a temporary 503.
+        assert!(
+            matches!(response.status().as_u16(), 404 | 503),
+            "new live playlist rejected with {}: {}",
+            response.status(),
+            fixture.log()
+        );
         assert!(tokio::time::Instant::now() < deadline, "new live playlist never recovered: {}", fixture.log());
         tokio::time::sleep(Duration::from_millis(25)).await;
     };
