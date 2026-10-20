@@ -12,6 +12,7 @@ pub(super) struct SegmentFetchCompletion {
     pub(super) notifier: Option<Arc<Notify>>,
     pub(super) scheduled_retry: Option<ScheduledSegmentRetry>,
     pub(super) evidence_changed_for: Option<ProxySessionId>,
+    pub(super) recovery_generation: Option<u64>,
 }
 
 pub(super) struct SegmentFetchCommit {
@@ -113,6 +114,7 @@ impl HlsSegmentWorkerPool {
             notifier,
             scheduled_retry,
             evidence_changed_for,
+            recovery_generation: generation_valid.then_some(session.activity.origin_work_generation),
         }
     }
 

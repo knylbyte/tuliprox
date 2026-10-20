@@ -186,6 +186,7 @@ impl HlsSegmentWorkerPool {
     ) -> Self {
         Self {
             runtime: ArcSwap::from_pointee(SegmentWorkerRuntime::new(policy, global_semaphore)),
+            revision_recovery: std::sync::OnceLock::new(),
             access_leases,
             metrics,
             availability_reevaluations,
@@ -404,6 +405,20 @@ impl HlsSegmentWorkerPool {
             let mut session = context.session.write().await;
             self.apply_segment_fetch_result(&mut session, &snapshot, &policy, result, finished_at_ms)
         };
+        if let Some(recovery_generation) = completion.recovery_generation {
+            if let Some(recovery) = self.revision_recovery.get() {
+                let session_id = context.session.read().await.proxy_session_id.clone();
+                recovery
+                    .recover_segment_leases_after_fetch(
+                        &session_id,
+                        snapshot.proxy_seq,
+                        recovery_generation,
+                        finished_at_ms,
+                    )
+                    .await;
+            }
+        }
+
         let mut notifier = completion.notifier;
         if completion.stale_commit_cleanup_reserved {
             if let Err(err) = context.segment_cache.delete(&snapshot.cache_key).await {

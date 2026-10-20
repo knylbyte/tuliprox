@@ -111,7 +111,7 @@ impl HlsProxyManager {
         gc.install_revision_store(&revision_store);
         segment_cache.install_revision_metrics(&metrics);
         let availability_reevaluations = Arc::new(HlsAvailabilityReevaluationCoordinator::default());
-        Self {
+        let manager = Self {
             sessions,
             segment_cache,
             segment_repair,
@@ -135,6 +135,7 @@ impl HlsProxyManager {
             transient_resources: Arc::new(TransientResourceStore::new()),
             access_leases,
             lifecycle,
+            lease_completion: Arc::new(super::lease_completion::HlsLeaseCompletion::default()),
             account_overlap_cooldowns,
             metrics,
             qos,
@@ -146,7 +147,9 @@ impl HlsProxyManager {
             availability_reevaluations,
             terminal_commit_clock: Arc::new(HlsTerminalCommitClock::default()),
             startup_observability: Arc::new(HlsStartupObservability::default()),
-        }
+        };
+        manager.install_worker_revision_recovery();
+        manager
     }
 
     pub fn segment_fetch_policy(&self) -> SegmentFetchPolicy { self.runtime_config.load().segment_fetch_policy.clone() }
