@@ -450,7 +450,11 @@ pub(super) fn refresh_origin_work_generation_is_current(
     refresh_origin_work_generation_matches(
         session,
         request.origin_io.as_ref().and_then(|origin_io| origin_io.started_generation),
-    )
+    ) && request
+        .origin_io
+        .as_ref()
+        .and_then(|io| io.prepared_account.as_ref())
+        .is_none_or(|snapshot| snapshot.matches_session_identity(session))
 }
 
 pub(super) fn refresh_origin_work_generation_matches(

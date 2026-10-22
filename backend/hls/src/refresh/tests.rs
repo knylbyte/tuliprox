@@ -67,6 +67,7 @@ mod headers_redirects;
 mod origin_binding;
 mod ownership;
 mod reduced_retry;
+mod reservation_retry;
 mod retry_policy;
 mod short_manifest;
 mod startup_representation;
@@ -109,6 +110,7 @@ async fn retryable_manifest_failure_keeps_optimistic_admission_degraded_until_me
     use std::sync::Arc;
     let session = test_session();
     let context = HlsOriginManifestFetchContext {
+        origin_account_snapshot: None,
         attempt: None,
         app_config: test_app_config(),
         session: Arc::clone(&session),

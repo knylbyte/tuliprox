@@ -65,6 +65,7 @@ impl<'a> HlsOriginManifestFetchRequest<'a> {
 pub async fn fetch_hls_origin_manifest_request(
     request: HlsOriginManifestFetchRequest<'_>,
 ) -> Result<FetchedOriginManifest, OriginManifestFetchError> {
+    request.context.ensure_current_origin().await?;
     if request.context.attempt.as_ref().is_some_and(|attempt| attempt.is_closed()) {
         return Err(OriginManifestFetchError::RetryExhausted);
     }
@@ -80,10 +81,10 @@ pub async fn fetch_hls_origin_manifest_request(
             }
         }
     };
-    result.map_err(|error| match request.context.attempt.as_ref() {
-        Some(attempt) => attempt.classify_error(error),
-        None => error,
-    })
+    match result {
+        Ok(fetched) => Ok(fetched),
+        Err(error) => Err(request.context.classify_current_error(error).await),
+    }
 }
 
 #[allow(clippy::too_many_lines, reason = "One loop owns the shared attempt budget and its original failure.")]
@@ -112,6 +113,8 @@ async fn fetch_hls_origin_manifest_initial_global_policy(
     // This HLS loop owns the logical manifest-attempt budget. Each iteration may traverse one bounded provider URL
     // failover cycle and redirect chain, but the generic resource-retry counter is not nested beneath it.
     for attempt_index in 0..attempts {
+        context.ensure_current_origin().await?;
+        let shared_index = context.attempt.as_ref().map_or(attempt_index, |attempt| attempt.logical_attempts());
         if context.attempt.as_ref().is_some_and(|attempt| !attempt.begin_logical_attempt()) {
             return Err(OriginManifestFetchError::RetryExhausted);
         }
@@ -155,17 +158,18 @@ async fn fetch_hls_origin_manifest_initial_global_policy(
             }
             Err(err) => Err(origin_manifest_fetch_error_from_io_error(&err)),
         };
+        context.ensure_current_origin().await?;
         let fetch_result = match fetch_result {
             Ok(fetched) => resolve_archive_master_manifest(context, fetched).await,
             Err(err) => Err(err),
         };
-        let fetch_result = fetch_result.map_err(|error| match context.attempt.as_ref() {
-            Some(attempt) => attempt.classify_error(error),
-            None => error,
-        });
+        let fetch_result = match fetch_result {
+            Ok(fetched) => Ok(fetched),
+            Err(error) => Err(context.classify_current_error(error).await),
+        };
         match fetch_result {
             Ok(fetched) => return Ok(fetched.with_attempts(attempt_index + 1)),
-            Err(err) if is_hls_retryable_initial_manifest_fetch_error(&err) && attempt_index + 1 < attempts => {
+            Err(err) if is_hls_retryable_initial_manifest_fetch_error(&err) && shared_index + 1 < attempts => {
                 record_retryable_manifest_attempt_failure(context, progress_generation, &err, current_time_millis())
                     .await;
                 let retry_after_ms = match &err {
@@ -176,11 +180,11 @@ async fn fetch_hls_origin_manifest_initial_global_policy(
                     _ => None,
                 };
                 let jitter_ms = if retry_after_ms.is_some() { 0 } else { context.retry_policy.sample_jitter_ms() };
-                let delay_ms = next_retry_delay_ms(&context.retry_policy, attempt_index, retry_after_ms, jitter_ms);
+                let delay_ms = next_retry_delay_ms(&context.retry_policy, shared_index, retry_after_ms, jitter_ms);
                 log_manifest_retry_scheduled(
                     context,
                     ManifestRetryLogKind::InitialFetch,
-                    attempt_index,
+                    shared_index,
                     attempts,
                     delay_ms,
                     None,

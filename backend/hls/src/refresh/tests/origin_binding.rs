@@ -119,6 +119,7 @@ async fn provider_failover_status_does_not_count_as_hls_retry() {
     .expect("provider entry url");
     let segment_worker_pool = Arc::new(HlsSegmentWorkerPool::default());
     let request = OriginRefreshRequest {
+        work_owner: None,
         attempt: None,
         app_config: test_app_config(),
         session: Arc::clone(&session),
@@ -333,6 +334,7 @@ async fn provider_failover_initial_success_commits_without_hls_host_retry_when_u
     )
     .expect("provider entry url");
     let request = OriginRefreshRequest {
+        work_owner: None,
         attempt: None,
         app_config: test_app_config(),
         session: Arc::clone(&session),

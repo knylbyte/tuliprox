@@ -5,6 +5,7 @@ pub(super) fn post_refresh_owner_request(fixture: &PostRefreshTerminalFixture) -
         super::super::super::manifest_fetch::LiveHlsOriginEntry::parse("http://127.0.0.1:9/live/user/pass/12345.m3u8")
             .expect("test origin entry parses");
     OriginRefreshRequest {
+        work_owner: None,
         attempt: None,
         app_config: Arc::clone(&fixture.ctx.app_config),
         session: Arc::clone(&fixture.session),

@@ -30,6 +30,7 @@ pub struct HlsManifestAttemptContext {
     attempts: AtomicUsize,
     closed: AtomicBool,
     failed: AtomicBool,
+    admission_backoff_paid: AtomicBool,
 }
 
 impl PartialEq for HlsManifestAttemptContext {
@@ -50,6 +51,7 @@ impl HlsManifestAttemptContext {
             attempts: AtomicUsize::new(0),
             closed: AtomicBool::new(false),
             failed: AtomicBool::new(false),
+            admission_backoff_paid: AtomicBool::new(false),
         }
     }
 
@@ -62,11 +64,27 @@ impl HlsManifestAttemptContext {
     pub fn permits_407_retry(&self) -> bool {
         self.requirement == crate::HlsManifestCommitRequirement::CommittedManifestAllowed && self.active_live_playback
     }
-    pub(super) fn begin_logical_attempt(&self) -> bool {
-        !self.is_closed()
-            && (self.requirement == crate::HlsManifestCommitRequirement::CommittedManifestAllowed
-                || self.attempts.fetch_add(1, Ordering::AcqRel) < RetryPolicy::default().attempt_count())
+    pub fn logical_attempts(&self) -> usize { self.attempts.load(Ordering::Acquire) }
+
+    pub fn remaining_attempts(&self) -> usize {
+        RetryPolicy::default().attempt_count().saturating_sub(self.logical_attempts())
     }
+
+    pub(crate) fn begin_logical_attempt(&self) -> bool {
+        let started = !self.is_closed()
+            && self
+                .attempts
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                    (used < RetryPolicy::default().attempt_count()).then_some(used + 1)
+                })
+                .is_ok();
+        if started {
+            self.admission_backoff_paid.store(false, Ordering::Release);
+        }
+        started
+    }
+    pub(crate) fn mark_admission_backoff_paid(&self) { self.admission_backoff_paid.store(true, Ordering::Release); }
+    pub(super) fn admission_backoff_paid(&self) -> bool { self.admission_backoff_paid.load(Ordering::Acquire) }
     pub(crate) fn classify_error(&self, error: OriginManifestFetchError) -> OriginManifestFetchError {
         let error = match error {
             OriginManifestFetchError::RetryableStatus(StatusCode::PROXY_AUTHENTICATION_REQUIRED, _)
@@ -337,6 +355,8 @@ impl FetchedOriginManifest {
 
 #[derive(Clone)]
 pub struct HlsOriginManifestFetchContext {
+    /// Identity captured by the refresh owner; retries must not send an obsolete entry URL.
+    pub origin_account_snapshot: Option<crate::origin_account_runtime::HlsOriginAccountSnapshot>,
     pub attempt: Option<Arc<HlsManifestAttemptContext>>,
     pub app_config: Arc<AppConfig>,
     pub session: HlsSessionHandle,
@@ -356,6 +376,33 @@ pub struct HlsOriginManifestFetchContext {
     /// Lease-specific pressure evidence captured before refresh scheduling.
     /// Each started generation freezes its own timing from this seed.
     pub acceptance_timing_seed: Option<HlsAcceptanceEpisodeTimingSeed>,
+}
+
+impl HlsOriginManifestFetchContext {
+    pub(crate) async fn classify_current_error(&self, error: OriginManifestFetchError) -> OriginManifestFetchError {
+        let session = self.session.read().await;
+        if self.origin_account_snapshot.as_ref().is_some_and(|snapshot| !snapshot.matches_session_identity(&session)) {
+            return OriginManifestFetchError::RecoveryUnavailable {
+                reason: super::error::HlsManifestRecoveryUnavailableReason::BindingSuperseded,
+            };
+        }
+        // A hard failure closes the shared attempt while its binding is still current.
+        // A handoff cannot interleave between the identity check and that close.
+        match self.attempt.as_ref() {
+            Some(attempt) => attempt.classify_error(error),
+            None => error,
+        }
+    }
+    pub(crate) async fn ensure_current_origin(&self) -> Result<(), OriginManifestFetchError> {
+        if let Some(snapshot) = self.origin_account_snapshot.as_ref() {
+            if !snapshot.matches_session_identity(&*self.session.read().await) {
+                return Err(OriginManifestFetchError::RecoveryUnavailable {
+                    reason: super::error::HlsManifestRecoveryUnavailableReason::BindingSuperseded,
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

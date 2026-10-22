@@ -105,6 +105,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_lines, reason = "One loop owns admission, requalification and the shared retry budget.")]
 pub(crate) async fn retry_hls_origin_manifest_recovery_chain_with_diagnostics<T, C, Fut>(
     context: &HlsOriginManifestFetchContext,
     binding: HlsManifestOriginBinding,
@@ -133,18 +134,24 @@ where
     let mut requalifications = 0_u8;
     let mut attempt_index = usize::from(resume);
     let mut attempt_limit = if resume { 2 } else { attempts };
+    let mut scheduled_retry_delay_ms = None;
     while attempt_index < attempt_limit {
+        context.ensure_current_origin().await?;
+        let shared_index = context.attempt.as_ref().map_or(attempt_index, |attempt| attempt.logical_attempts());
+        let admission_delay_paid = context.attempt.as_ref().is_some_and(|attempt| attempt.admission_backoff_paid());
         if context.attempt.as_ref().is_some_and(|attempt| !attempt.begin_logical_attempt()) {
             return Err(last_error);
         }
         // A materially changed landscape is requalified immediately. Once
         // authorized, that new generation must still receive its complete
         // configured burst rather than losing candidates to a retry delay.
-        let delay_ms = if attempt_index > 0 && next_attempt_is_full_plan {
+        let delay_ms = if admission_delay_paid || (attempt_index > 0 && next_attempt_is_full_plan) {
             0
         } else {
-            let jitter = context.retry_policy.sample_jitter_ms();
-            context.retry_policy.delay_for_attempt_ms(attempt_index, jitter).unwrap_or_default()
+            scheduled_retry_delay_ms.take().unwrap_or_else(|| {
+                let jitter = context.retry_policy.sample_jitter_ms();
+                context.retry_policy.delay_for_attempt_ms(shared_index, jitter).unwrap_or_default()
+            })
         };
         let acceptance_deadline = current_acceptance_deadline(context, expected_generation).await?;
         if !resume
@@ -161,6 +168,11 @@ where
             tokio::time::sleep(Duration::from_millis(delay_ms)).await;
         }
 
+        let remaining_attempts = context
+            .attempt
+            .as_ref()
+            .map_or_else(|| attempts.saturating_sub(attempt_index + 1), |attempt| attempt.remaining_attempts());
+        let may_retry = remaining_attempts > 0 && attempt_index.saturating_add(1) < attempt_limit;
         let attempt_plan = HlsManifestRecoveryAttemptPlan {
             binding: &binding,
             attempt_index,
@@ -170,7 +182,10 @@ where
             acceptance_mode,
             trigger,
             current_burst_is_full_plan: next_attempt_is_full_plan,
-            may_requalify: requalifications < HLS_MANIFEST_ACCEPTANCE_MAX_REQUALIFICATIONS_PER_REFRESH,
+            // Do not replace the complete episode unless its mandatory full
+            // burst still fits in this refresh's shared logical budget.
+            may_requalify: remaining_attempts > 0
+                && requalifications < HLS_MANIFEST_ACCEPTANCE_MAX_REQUALIFICATIONS_PER_REFRESH,
             requalification_window: if resume && attempt_index == 1 {
                 HlsManifestRequalificationWindow::ResumedAfterSharedBackoff
             } else {
@@ -195,10 +210,11 @@ where
                 requalifications = requalifications.saturating_add(1);
                 next_attempt_is_full_plan = true;
                 last_error = OriginManifestFetchError::RetryExhausted;
-                attempt_limit = attempt_limit_for_started_requalification(attempt_limit, attempt_index);
+                attempt_limit = attempt_limit_for_started_requalification(attempt_limit, attempt_index, attempts);
             }
-            HlsManifestRecoveryAttemptError::Rejected(reason) if attempt_index.saturating_add(1) < attempt_limit => {
-                log_manifest_recovery_retry(context, attempt_index, attempt_limit, Some(&reason), None).await;
+            HlsManifestRecoveryAttemptError::Rejected(reason) if may_retry => {
+                scheduled_retry_delay_ms =
+                    Some(log_manifest_recovery_retry(context, attempt_index, Some(&reason), None).await);
                 reject_reason = Some(reason);
                 last_error = OriginManifestFetchError::RetryExhausted;
             }
@@ -206,10 +222,10 @@ where
                 return Err(OriginManifestFetchError::RetryExhausted);
             }
             HlsManifestRecoveryAttemptError::Fetch(err)
-                if is_hls_retryable_manifest_reject_fetch_error(&err)
-                    && attempt_index.saturating_add(1) < attempt_limit =>
+                if is_hls_retryable_manifest_reject_fetch_error(&err) && may_retry =>
             {
-                log_manifest_recovery_retry(context, attempt_index, attempt_limit, None, Some(&err)).await;
+                scheduled_retry_delay_ms =
+                    Some(log_manifest_recovery_retry(context, attempt_index, None, Some(&err)).await);
                 last_error = err;
             }
             HlsManifestRecoveryAttemptError::Fetch(err) => return Err(err),
@@ -223,20 +239,25 @@ where
 async fn log_manifest_recovery_retry(
     context: &HlsOriginManifestFetchContext,
     attempt_index: usize,
-    attempt_limit: usize,
     reject_reason: Option<&HlsManifestRejectLogReason>,
     fetch_error: Option<&OriginManifestFetchError>,
-) {
+) -> u64 {
+    let next_index = context.attempt.as_ref().map_or(attempt_index + 1, |attempt| attempt.logical_attempts());
+    let delay_ms = context
+        .retry_policy
+        .delay_for_attempt_ms(next_index, context.retry_policy.sample_jitter_ms())
+        .unwrap_or_default();
     log_manifest_retry_scheduled(
         context,
         ManifestRetryLogKind::PinnedHostRecovery,
-        attempt_index,
-        attempt_limit,
-        next_retry_delay_ms(&context.retry_policy, attempt_index, None, 0),
+        next_index.saturating_sub(1),
+        context.retry_policy.attempt_count(),
+        delay_ms,
         reject_reason,
         fetch_error,
     )
     .await;
+    delay_ms
 }
 
 pub(super) fn acceptance_attempt_may_start(
@@ -267,11 +288,14 @@ async fn current_acceptance_deadline(
     ))
 }
 
-pub(super) fn attempt_limit_for_started_requalification(attempt_limit: usize, attempt_index: usize) -> usize {
-    // A requalification normally consumes the next configured retry slot. If
-    // the landscape changed in the last slot, reserve exactly one additional
-    // slot for the newly started generation's mandatory configured burst.
-    attempt_limit.max(attempt_index.saturating_add(2))
+pub(super) fn attempt_limit_for_started_requalification(
+    attempt_limit: usize,
+    attempt_index: usize,
+    budget_limit: usize,
+) -> usize {
+    // A resumed reduced check may use a following slot for its mandatory
+    // full burst, but never extend the configured logical attempt budget.
+    attempt_limit.max(attempt_index.saturating_add(2)).min(budget_limit)
 }
 
 /// A due session retry can open a fresh episode only after changed origin evidence.

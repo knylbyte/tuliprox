@@ -41,7 +41,7 @@ async fn spawn_moving_origin(head: Arc<AtomicU64>) -> TestSegmentOrigin {
     .await
 }
 
-async fn enable_hls_cache_with_startup_mode(app_state: &Arc<AppState>, mode: HlsStartupMode) {
+pub(super) async fn enable_hls_cache_with_startup_mode(app_state: &Arc<AppState>, mode: HlsStartupMode) {
     let config = Config {
         reverse_proxy: Some(ReverseProxyConfig::from(&ReverseProxyConfigDto {
             hls_cache: Some(HlsCacheConfigDto {
@@ -209,4 +209,52 @@ async fn target_duration_recovery_precedes_http_publication_and_keeps_valid_fall
         let session = app.hls.proxy.sessions().get_by_key(&key).await.unwrap();
         assert_eq!(session.read().await.origin_refresh.consecutive_failures, 0);
     }
+}
+
+pub(super) async fn canonical_response_for_lease(
+    app_state: &Arc<AppState>,
+    input: &ConfigInput,
+    request_url: &str,
+    lease: &str,
+) -> axum::response::Response {
+    let origin_source = super::super::build_hls_origin_source(input, "12345");
+    let session_key = origin_source.session_key();
+    let proxy_session_id = build_proxy_session_id(&session_key, &app_state.get_encrypt_secret());
+    let access_lease_id = HlsAccessLeaseId(lease.to_string());
+    let access_context = test_hls_access_context(proxy_session_id.clone(), access_lease_id.clone());
+    let stored = app_state
+        .hls
+        .proxy
+        .access_lease_response_snapshot(&access_lease_id, &proxy_session_id, super::super::current_time_millis())
+        .await;
+    let lease_state = stored.as_ref().map_or(HlsAccessLeaseState::Pending, |lease| lease.state);
+    if stored.is_none() {
+        prepare_pending_test_hls_access_lease(app_state, &proxy_session_id, &access_lease_id).await;
+        if lease != "warm" {
+            if let Some(session) = app_state.hls.proxy.sessions().get_by_key(&session_key).await {
+                session.write().await.origin_refresh.last_success_at_ms =
+                    Some(super::super::current_time_millis().saturating_sub(10_000));
+            }
+        }
+    }
+    super::super::try_hls_cache_canonical_manifest_response(
+        app_state,
+        &test_fingerprint(),
+        &access_context,
+        &proxy_session_id,
+        &access_lease_id,
+        lease_state,
+        super::super::HlsCacheManifestOrigin {
+            raw_request_url: request_url,
+            session_entry_url: super::super::HlsOriginEntryUrl::direct_http(request_url),
+            input,
+            origin_source,
+        },
+        HeaderMap::new(),
+        None,
+        "/live/hls-user/hls-pass/12345.m3u8",
+        super::super::HlsManifestRefreshOrdering::Background,
+    )
+    .await
+    .expect("hls cache should handle the live entrypoint")
 }

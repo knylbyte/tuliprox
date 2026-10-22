@@ -46,6 +46,7 @@ async fn refresh_stores_headers_after_hls_origin_policy() {
     headers.insert(header::ACCEPT_LANGUAGE, HeaderValue::from_static("de"));
 
     let request = OriginRefreshRequest {
+        work_owner: None,
         attempt: None,
         app_config: test_app_config(),
         session: Arc::clone(&session),
@@ -218,6 +219,7 @@ async fn shared_initial_manifest_automatic_cross_origin_redirect_keeps_identity_
     headers.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer origin-secret"));
     headers.insert(header::COOKIE, HeaderValue::from_static("sid=origin-secret"));
     let context = HlsOriginManifestFetchContext {
+        origin_account_snapshot: None,
         attempt: None,
         app_config: test_app_config(),
         session: test_session(),
@@ -278,6 +280,7 @@ async fn shared_initial_manifest_budget_covers_status_decoder_redirect_and_succe
     let origin_entry =
         LiveHlsOriginEntry::parse(&format!("{}/live/user/pass/12345.m3u8", server.base_url)).expect("entry url");
     let context = HlsOriginManifestFetchContext {
+        origin_account_snapshot: None,
         attempt: None,
         app_config: test_app_config(),
         session: test_session(),

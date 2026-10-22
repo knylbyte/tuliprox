@@ -1361,6 +1361,7 @@ pub(in crate::api::endpoints::hls_api::tests) fn regression_origin_refresh_reque
     access_lease_id: Option<HlsAccessLeaseId>,
 ) -> OriginRefreshRequest {
     OriginRefreshRequest {
+        work_owner: None,
         attempt: None,
         app_config: Arc::clone(&app_state.app_config),
         session,

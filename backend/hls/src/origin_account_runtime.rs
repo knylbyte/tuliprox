@@ -35,6 +35,13 @@ impl HlsOriginAccountSnapshot {
     }
 
     pub fn matches_session(&self, session: &crate::HlsSession) -> bool {
+        self.matches_session_identity(session)
+            && self.binding.as_ref().and_then(|binding| binding.provider_binding_tag)
+                == session.origin_account_binding.as_ref().and_then(|binding| binding.provider_binding_tag)
+    }
+
+    /// Allocation may install a fresh binding tag without changing the account generation.
+    pub(crate) fn matches_session_identity(&self, session: &crate::HlsSession) -> bool {
         self.generation == session.activity.origin_work_generation
             && match (&self.binding, &session.origin_account_binding) {
                 (Some(expected), Some(current)) => {
@@ -42,7 +49,6 @@ impl HlsOriginAccountSnapshot {
                         && expected.account_name == current.account_name
                         && expected.session_owner == current.session_owner
                         && expected.generation == current.generation
-                        && expected.provider_binding_tag == current.provider_binding_tag
                         && expected.is_active() == current.is_active()
                 }
                 (None, None) => true,

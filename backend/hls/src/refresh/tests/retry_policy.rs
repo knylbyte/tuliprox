@@ -740,6 +740,7 @@ async fn concurrent_maybe_trigger_origin_refresh_starts_singleflight_once() {
     let no_redirect_client =
         reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().expect("client builds");
     let request = OriginRefreshRequest {
+        work_owner: None,
         attempt: None,
         app_config: test_app_config(),
         session: Arc::clone(&session),
@@ -1117,6 +1118,7 @@ async fn shared_initial_manifest_decoder_failure_retries_until_success() {
     let origin_entry =
         LiveHlsOriginEntry::parse(&format!("{}/live/user/pass/12345.m3u8", server.base_url)).expect("entry url");
     let context = HlsOriginManifestFetchContext {
+        origin_account_snapshot: None,
         attempt: None,
         app_config: test_app_config(),
         session: test_session(),
@@ -1165,6 +1167,7 @@ async fn shared_initial_manifest_waits_for_next_attempt_base_delay() {
     let origin_entry =
         LiveHlsOriginEntry::parse(&format!("{}/live/user/pass/12345.m3u8", server.base_url)).expect("entry url");
     let context = HlsOriginManifestFetchContext {
+        origin_account_snapshot: None,
         attempt: None,
         app_config: test_app_config(),
         session: test_session(),
@@ -1205,6 +1208,7 @@ async fn shared_initial_manifest_decoder_failures_stop_at_attempt_budget() {
     let retry_policy = no_delay_policy();
     let expected_attempts = retry_policy.attempt_count();
     let context = HlsOriginManifestFetchContext {
+        origin_account_snapshot: None,
         attempt: None,
         app_config: test_app_config(),
         session: test_session(),

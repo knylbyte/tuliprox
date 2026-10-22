@@ -117,6 +117,10 @@ pub use self::terminal_tail::HlsTerminalTailGeneration;
 /// by the module that defines it, so a subsystem can be pruned or moved without
 /// reading the whole facade. Nothing is kept for a hypothetical future consumer.
 pub mod api {
+    #[cfg(any(test, feature = "test-support"))]
+    pub use super::media_reserve::{evaluate_lease_reserve, HlsLeaseReserveInput};
+    #[cfg(any(test, feature = "test-support"))]
+    pub use super::recovery_timing::HlsRecoveryTriggerBudgetMs;
     pub use super::{
         availability::{
             commit_terminal_tail_if_lease_reserve_requires_cutover, hls_manifest_acceptance_directive_for_session,
@@ -328,6 +332,7 @@ pub(crate) use self::{
 #[cfg(any(test, feature = "test-support"))]
 pub use self::{
     manifest_acceptance::{HlsManifestAcceptanceExhaustionReason, HlsManifestAcceptanceTrigger},
+    manifest_fetch::HlsManifestAttemptContext,
     master_playlist::HlsBandwidthPersistenceState,
     media_reserve::{
         HlsLeaseManifestSegment, HlsLeaseManifestSnapshot, HlsManifestCommitIdentity, HlsManifestDeliveryMode,

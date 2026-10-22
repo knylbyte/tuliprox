@@ -66,10 +66,11 @@ fn hls_recovery_timing_deadline_never_abandons_started_full_burst_but_blocks_lat
 }
 
 #[test]
-fn requalification_in_last_retry_slot_reserves_exactly_one_mandatory_full_burst() {
-    assert_eq!(attempt_limit_for_started_requalification(5, 1), 5);
-    assert_eq!(attempt_limit_for_started_requalification(5, 4), 6);
-    assert_eq!(attempt_limit_for_started_requalification(usize::MAX, usize::MAX), usize::MAX);
+fn requalification_full_burst_never_extends_the_logical_budget() {
+    assert_eq!(attempt_limit_for_started_requalification(2, 1, 5), 3);
+    assert_eq!(attempt_limit_for_started_requalification(5, 1, 5), 5);
+    assert_eq!(attempt_limit_for_started_requalification(5, 4, 5), 5);
+    assert_eq!(attempt_limit_for_started_requalification(usize::MAX, usize::MAX, 5), 5);
 }
 
 #[test]

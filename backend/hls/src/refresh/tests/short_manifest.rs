@@ -304,13 +304,17 @@ async fn short_qualification_rejects_stale_epoch_binding_and_acceptance_generati
 pub(super) struct QualificationLogger(std::sync::Mutex<Vec<String>>);
 
 impl log::Log for QualificationLogger {
-    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool { metadata.level() <= log::Level::Info }
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool { metadata.level() <= log::Level::Debug }
     fn log(&self, record: &log::Record<'_>) {
         if self.enabled(record.metadata()) {
             let message = record.args().to_string();
             if message.starts_with("HLS short origin window qualified:")
                 || message.starts_with("HLS origin target duration")
                 || message.starts_with("HLS origin manifest refresh completed:")
+                || message.contains("reason=ReservedForOther conflict=")
+                || message.starts_with("HLS manifest provider attempt:")
+                || message.starts_with("HLS manifest provider retry scheduled:")
+                || (message.starts_with("Manifest '") && message.contains("retry scheduled:"))
             {
                 self.0.lock().unwrap().push(message);
             }
@@ -324,8 +328,28 @@ pub(super) fn init_qualification_logger() {
     static INIT: std::sync::Once = std::sync::Once::new();
     INIT.call_once(|| {
         log::set_logger(&LOGGER).unwrap();
-        log::set_max_level(log::LevelFilter::Info);
+        log::set_max_level(log::LevelFilter::Debug);
     });
+}
+
+pub(super) fn reservation_messages() -> Vec<String> {
+    LOGGER
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|message| {
+            message.contains("reason=ReservedForOther conflict=")
+                || message.starts_with("HLS manifest provider attempt:")
+                || message.starts_with("HLS manifest provider retry scheduled:")
+        })
+        .cloned()
+        .collect()
+}
+
+pub(super) fn manifest_retry_messages(session_label: &str) -> Vec<String> {
+    let prefix = format!("Manifest '{session_label}' retry scheduled:");
+    LOGGER.0.lock().unwrap().iter().filter(|message| message.starts_with(&prefix)).cloned().collect()
 }
 pub(super) fn qualification_messages(proxy_session: &str) -> Vec<String> {
     LOGGER
