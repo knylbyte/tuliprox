@@ -109,6 +109,7 @@ async fn retryable_manifest_failure_keeps_optimistic_admission_degraded_until_me
     use std::sync::Arc;
     let session = test_session();
     let context = HlsOriginManifestFetchContext {
+        attempt: None,
         app_config: test_app_config(),
         session: Arc::clone(&session),
         availability_runtime: None,

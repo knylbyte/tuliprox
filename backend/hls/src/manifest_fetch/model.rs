@@ -1,4 +1,4 @@
-use super::error::{HlsManifestAcceptanceRejectReason, HlsManifestRejectLogReason};
+use super::error::{HlsManifestAcceptanceRejectReason, HlsManifestRejectLogReason, OriginManifestFetchError};
 use crate::{
     recovery_timing::{HlsAcceptanceEpisodeTimingSeed, HlsRecoveryTimingPolicy},
     session_store::HlsSessionHandle,
@@ -7,11 +7,81 @@ use crate::{
 use axum::http::{HeaderMap, StatusCode};
 use reqwest::Client;
 use shared::model::InputFetchMethod;
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::{
+    collections::HashMap,
+    fmt,
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc,
+    },
+};
 use tuliprox_core::model::{AppConfig, ConfigProvider, HlsManifestRecoveryBurstConfig, InputSource, ProviderConfig};
 use url::Url;
 
 pub(super) const DEFAULT_HLS_TARGET_DURATION_SECS: u32 = 15;
+
+/// One logical client attempt, shared by fetch, qualification and availability owners.
+/// Its original playback contract cannot be weakened by a later qualification.
+#[derive(Debug)]
+pub struct HlsManifestAttemptContext {
+    pub requirement: crate::HlsManifestCommitRequirement,
+    pub active_live_playback: bool,
+    pub revalidation_generation: Option<u64>,
+    attempts: AtomicUsize,
+    closed: AtomicBool,
+    failed: AtomicBool,
+}
+
+impl PartialEq for HlsManifestAttemptContext {
+    fn eq(&self, other: &Self) -> bool { std::ptr::eq(self, other) }
+}
+impl Eq for HlsManifestAttemptContext {}
+
+impl HlsManifestAttemptContext {
+    pub fn new(
+        requirement: crate::HlsManifestCommitRequirement,
+        active_live_playback: bool,
+        revalidation_generation: Option<u64>,
+    ) -> Self {
+        Self {
+            requirement,
+            active_live_playback,
+            revalidation_generation,
+            attempts: AtomicUsize::new(0),
+            closed: AtomicBool::new(false),
+            failed: AtomicBool::new(false),
+        }
+    }
+
+    pub fn is_closed(&self) -> bool { self.closed.load(Ordering::Acquire) }
+    pub fn failed(&self) -> bool { self.failed.load(Ordering::Acquire) }
+    pub fn finish(&self, failed: bool) {
+        self.failed.store(failed, Ordering::Release);
+        self.closed.store(true, Ordering::Release);
+    }
+    pub fn permits_407_retry(&self) -> bool {
+        self.requirement == crate::HlsManifestCommitRequirement::CommittedManifestAllowed && self.active_live_playback
+    }
+    pub(super) fn begin_logical_attempt(&self) -> bool {
+        !self.is_closed()
+            && (self.requirement == crate::HlsManifestCommitRequirement::CommittedManifestAllowed
+                || self.attempts.fetch_add(1, Ordering::AcqRel) < RetryPolicy::default().attempt_count())
+    }
+    pub(crate) fn classify_error(&self, error: OriginManifestFetchError) -> OriginManifestFetchError {
+        let error = match error {
+            OriginManifestFetchError::RetryableStatus(StatusCode::PROXY_AUTHENTICATION_REQUIRED, _)
+                if !self.permits_407_retry() =>
+            {
+                OriginManifestFetchError::NonRetryableStatus(StatusCode::PROXY_AUTHENTICATION_REQUIRED)
+            }
+            error => error,
+        };
+        if crate::refresh::failure::manifest_hard_fetch_error(&error) {
+            self.finish(true);
+        }
+        error
+    }
+}
 
 const DEFAULT_HLS_SESSION_IDLE_TIMEOUT_SECS: u64 = 300;
 pub(super) const HLS_COMMITTED_CONTENT_ANCHOR_PROBE_LIMIT: usize = 64;
@@ -267,6 +337,7 @@ impl FetchedOriginManifest {
 
 #[derive(Clone)]
 pub struct HlsOriginManifestFetchContext {
+    pub attempt: Option<Arc<HlsManifestAttemptContext>>,
     pub app_config: Arc<AppConfig>,
     pub session: HlsSessionHandle,
     /// Availability owner used to react to failed attempts while the logical fetch is still in flight.

@@ -134,6 +134,9 @@ where
     let mut attempt_index = usize::from(resume);
     let mut attempt_limit = if resume { 2 } else { attempts };
     while attempt_index < attempt_limit {
+        if context.attempt.as_ref().is_some_and(|attempt| !attempt.begin_logical_attempt()) {
+            return Err(last_error);
+        }
         // A materially changed landscape is requalified immediately. Once
         // authorized, that new generation must still receive its complete
         // configured burst rather than losing candidates to a retry delay.
@@ -314,6 +317,10 @@ where
     .await
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Hard failure cancellation precedes the existing acceptance and commit sequence."
+)]
 async fn fetch_and_commit_manifest_recovery_burst_attempt<T, C, Fut>(
     context: &HlsOriginManifestFetchContext,
     plan: HlsManifestRecoveryAttemptPlan<'_>,
@@ -339,6 +346,9 @@ where
         last_fetch_error,
         mut last_reject_reason,
     } = fetch_manifest_recovery_burst_candidates(context, &plan, burst_plan).await;
+    if last_fetch_error.as_ref().is_some_and(crate::refresh::failure::manifest_hard_fetch_error) {
+        return HlsManifestRecoveryAttemptError::Fetch(last_fetch_error.expect("observed hard failure"));
+    }
     diagnostics.record_attempt(plan.attempt_index + 1, completed_candidates, burst_plan.total_candidates() > 1);
     record_full_manifest_acceptance_burst(
         context,
@@ -864,6 +874,9 @@ async fn fetch_manifest_recovery_burst_candidates(
             if stagger_ms > 0 {
                 tokio::time::sleep(Duration::from_millis(stagger_ms)).await;
             }
+            if context.attempt.as_ref().is_some_and(|attempt| attempt.is_closed()) {
+                return (candidate_index, 0, Err(OriginManifestFetchError::RetryExhausted));
+            }
             let request = HlsOriginManifestFetchRequest::recovery_direct_target(
                 &context,
                 &binding,
@@ -910,6 +923,15 @@ async fn fetch_manifest_recovery_burst_candidates(
                 }
             }
             Err(err) => {
+                if crate::refresh::failure::manifest_hard_fetch_error(&err) {
+                    tasks.abort_all();
+                    return HlsManifestRecoveryBurstCollection {
+                        fetched_candidates: Vec::new(),
+                        completed_candidates,
+                        last_fetch_error: Some(err),
+                        last_reject_reason: None,
+                    };
+                }
                 last_fetch_error = Some(err);
             }
         }

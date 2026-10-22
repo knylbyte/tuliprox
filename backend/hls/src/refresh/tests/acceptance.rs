@@ -19,7 +19,6 @@ use crate::{
     HlsSegmentCache, HlsSession, HlsSessionKey, HlsSessionStore, OriginSegmentKey, RenderedManifest,
     RenderedManifestStoreOutcome, SegmentCacheKey, SegmentCacheStatus, SegmentEntry,
 };
-use axum::http::StatusCode;
 use shared::model::{ConfigProviderDto, HlsManifestRecoveryBurstLevel, ProviderUrlSelectionPolicy};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -310,14 +309,14 @@ async fn warm_retryable_initial_failure_does_not_open_acceptance_episode() {
 }
 
 #[tokio::test]
-async fn initial_provider_failover_does_not_leak_into_established_burst() {
+async fn initial_hard_provider_failover_does_not_start_established_burst() {
     let phase = Arc::new(AtomicUsize::new(0));
     let phase_for_first = Arc::clone(&phase);
     let first = spawn_test_origin(Arc::new(move |_path| {
         if phase_for_first.load(Ordering::SeqCst) == 0 {
             (200, Vec::new(), three_segment_manifest_body(100))
         } else {
-            (407, Vec::new(), "rotate".to_string())
+            (503, Vec::new(), "rotate".to_string())
         }
     }))
     .await;
@@ -357,15 +356,11 @@ async fn initial_provider_failover_does_not_leak_into_established_burst() {
     let Err(error) = fetch_and_commit_manifest_with_policy(&mut request).await else {
         panic!("hard initial provider cycle and fixed-target recovery must remain failed");
     };
-    assert!(matches!(error, OriginManifestFetchError::RetryableStatus(StatusCode::PROXY_AUTHENTICATION_REQUIRED, _)));
+    assert!(matches!(error, OriginManifestFetchError::NonRetryableStatus(status) if status.as_u16() == 461));
 
-    let plan = HlsManifestRecoveryBurstLevel::Friendly.plan();
     let first_requests = first.requests.lock().await;
     let second_requests = second.requests.lock().await;
-    assert!(
-        first_requests.len() >= 2_usize.saturating_add(plan.total_candidates()),
-        "baseline, ordinary provider attempt, and at least one full fixed-target burst are required"
-    );
+    assert_eq!(first_requests.len(), 2, "baseline and initial request; hard failure cannot start recovery");
     assert_eq!(second_requests.len(), 1, "only the ordinary provider cycle may reach URL index 1");
     assert!(first_requests.iter().all(|path| path == "/live/user/pass/12345.m3u8?token=fixed"));
     assert_eq!(second_requests[0], "/live/user/pass/12345.m3u8?token=fixed");

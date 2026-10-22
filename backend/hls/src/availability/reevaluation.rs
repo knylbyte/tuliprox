@@ -107,10 +107,15 @@ pub(super) const fn availability_refresh_trigger_decision(
     terminal_evaluation_pending: bool,
 ) -> HlsAvailabilityRefreshTriggerDecision {
     match outcome {
+        HlsOriginRefreshTriggerOutcome::AttemptCompleted if terminal_evaluation_pending => {
+            HlsAvailabilityRefreshTriggerDecision::Wait(HlsAvailabilityAttemptSchedule::Backoff)
+        }
         HlsOriginRefreshTriggerOutcome::Started if terminal_evaluation_pending => {
             HlsAvailabilityRefreshTriggerDecision::Wait(HlsAvailabilityAttemptSchedule::RefreshCompletion)
         }
-        HlsOriginRefreshTriggerOutcome::Started => HlsAvailabilityRefreshTriggerDecision::FinishCycle,
+        HlsOriginRefreshTriggerOutcome::AttemptCompleted | HlsOriginRefreshTriggerOutcome::Started => {
+            HlsAvailabilityRefreshTriggerDecision::FinishCycle
+        }
         HlsOriginRefreshTriggerOutcome::InFlight => {
             HlsAvailabilityRefreshTriggerDecision::Wait(HlsAvailabilityAttemptSchedule::RefreshCompletion)
         }
@@ -196,6 +201,12 @@ async fn handle_evaluated_availability_directive(
     directive: HlsManifestAcceptanceDirective,
     terminal_evaluation_pending: bool,
 ) -> HlsAvailabilityWorkerDecision {
+    if refresh_request.attempt.is_none() {
+        refresh_request.attempt = ctx.hls_proxy.prepare_manifest_attempt(refresh_request).await;
+        if refresh_request.attempt.is_none() {
+            return HlsAvailabilityWorkerDecision::ContinueAttempts(HlsAvailabilityAttemptSchedule::Backoff);
+        }
+    }
     if !directive.trigger.starts_episode() {
         if terminal_evaluation_pending {
             return HlsAvailabilityWorkerDecision::ContinueAttempts(HlsAvailabilityAttemptSchedule::Backoff);

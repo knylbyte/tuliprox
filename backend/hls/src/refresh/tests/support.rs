@@ -143,6 +143,7 @@ pub(in crate::refresh::tests) async fn refresh_session_with_origin_body(body: &'
     let entry = LiveHlsOriginEntry::parse(&format!("{}/live/user/pass/12345.m3u8", server.base_url))
         .expect("valid origin entry");
     let request = OriginRefreshRequest {
+        attempt: None,
         app_config: test_app_config(),
         session: Arc::clone(&session),
         origin_entry: entry.clone(),
@@ -348,6 +349,7 @@ pub(in crate::refresh::tests) fn test_origin_refresh_request(session: Arc<RwLock
     let entry =
         LiveHlsOriginEntry::parse("http://origin.example.com/live/user/pass/12345.m3u8").expect("valid origin entry");
     OriginRefreshRequest {
+        attempt: None,
         app_config: test_app_config(),
         session,
         origin_entry: entry.clone(),

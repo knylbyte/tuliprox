@@ -28,10 +28,11 @@ pub use self::{
         deterministic_timeline_conflict_from_rejection,
     },
     model::{
-        fetched_effective_manifest_host, FetchedOriginManifest, HlsManifestCommitAcceptanceMode,
-        HlsManifestContinuityMode, HlsManifestFetchSelection, HlsManifestOriginQuality, HlsManifestOriginQualityScore,
-        HlsManifestOriginRelation, HlsManifestRecoveryCandidateScoreReport, HlsManifestSequenceRelation,
-        HlsOriginManifestFetchContext, LiveHlsOriginEntry, RetryPolicy, MAX_HLS_MANIFEST_BYTES,
+        fetched_effective_manifest_host, FetchedOriginManifest, HlsManifestAttemptContext,
+        HlsManifestCommitAcceptanceMode, HlsManifestContinuityMode, HlsManifestFetchSelection,
+        HlsManifestOriginQuality, HlsManifestOriginQualityScore, HlsManifestOriginRelation,
+        HlsManifestRecoveryCandidateScoreReport, HlsManifestSequenceRelation, HlsOriginManifestFetchContext,
+        LiveHlsOriginEntry, RetryPolicy, MAX_HLS_MANIFEST_BYTES,
     },
     quality::{
         evaluate_manifest_origin_quality_with_mode, next_committed_origin_highwater,

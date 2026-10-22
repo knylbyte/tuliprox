@@ -41,6 +41,7 @@ pub(super) fn prepare_qualification_refresh(request: &mut OriginRefreshRequest, 
             HlsFreshManifestRequiredReason::ProvisioningHandoff => {
                 session.pending_handoff_discontinuity_sequence.is_none()
             }
+            HlsFreshManifestRequiredReason::OriginReserveExhausted => false,
             HlsFreshManifestRequiredReason::ExpiredRevalidation => {
                 // Each qualification may still be waiting for its media,
                 // including revalidation of an already published session.
@@ -56,7 +57,8 @@ pub(super) fn prepare_qualification_refresh(request: &mut OriginRefreshRequest, 
         };
     } else if matches!(
         reason,
-        HlsFreshManifestRequiredReason::ExpiredRevalidation
+        HlsFreshManifestRequiredReason::OriginReserveExhausted
+            | HlsFreshManifestRequiredReason::ExpiredRevalidation
             | HlsFreshManifestRequiredReason::PreviousHardManifestFailure
             | HlsFreshManifestRequiredReason::ProvisioningHandoff
     ) {
@@ -197,7 +199,11 @@ pub(super) async fn qualify_short_manifest_if_needed(
     let recovery_result = run_qualification(request, &qualification_context, binding, &mut diagnostics).await;
     // Duration is a preference, never a new failure reason. The original regular
     // window still has to pass the ordinary commit and ownership checks.
-    let recovery_result = if recovery_result.is_err() && short_duration && !short_window {
+    let recovery_result = if recovery_result.is_err()
+        && short_duration
+        && !short_window
+        && !request.attempt.as_ref().is_some_and(|attempt| attempt.is_closed())
+    {
         match commit_manifest_recovery_candidate(
             request,
             fetched.clone(),

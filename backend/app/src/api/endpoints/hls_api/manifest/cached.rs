@@ -438,6 +438,24 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
     );
     let mut last_wait_reason = None;
     loop {
+        let lease = app_state
+            .hls
+            .proxy
+            .access_lease_response_snapshot(access_lease_id, &proxy_session_id, current_time_millis())
+            .await?;
+        if lease.manifest_start_attempt.as_ref().is_some_and(|attempt| attempt.failed()) {
+            return None;
+        }
+        let (entry_allowed, refresh_in_flight) = {
+            let state = session.read().await;
+            (state.live_entry_allowed_for_lease(&lease), state.origin_refresh.in_flight)
+        };
+        if !entry_allowed {
+            if refresh_in_flight && wait_for_hls_startup_evidence(started_at, options.wait_timeout).await {
+                continue;
+            }
+            return None;
+        }
         let cached = read_hls_cached_manifest(session, options, started_at_ms).await;
         let fast_start = session.read().await.uses_fast_start_live_window();
         if cached.wait_for_initial_commit || (cached.rendered_body.is_none() && cached.transient_body.is_none()) {

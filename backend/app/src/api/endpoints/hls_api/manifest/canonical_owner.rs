@@ -231,6 +231,15 @@ pub(in crate::api::endpoints::hls_api) async fn evaluate_hls_canonical_owner_han
         }
         HlsLeasePlaybackMode::Live => {}
     }
+    if lease.manifest_start_attempt.as_ref().is_some_and(|attempt| attempt.failed()) {
+        let response = hls_unpublished_lease_channel_unavailable_response(
+            context.app_state,
+            context.proxy_session_id,
+            context.access_lease_id,
+        )
+        .await;
+        return HlsCanonicalOwnerEvaluation::Resolved(HlsCanonicalOwnerResolution::Standalone(response));
+    }
     if matches!(
         lease.state,
         HlsAccessLeaseState::PolicyRevoking | HlsAccessLeaseState::Expired | HlsAccessLeaseState::Denied
@@ -348,6 +357,7 @@ pub(in crate::api::endpoints::hls_api) async fn hls_direct_refresh_follow_up(
 ) -> Option<axum::response::Response> {
     match outcome {
         HlsOriginRefreshTriggerOutcome::Started
+        | HlsOriginRefreshTriggerOutcome::AttemptCompleted
         | HlsOriginRefreshTriggerOutcome::SessionUnavailable
         | HlsOriginRefreshTriggerOutcome::InFlight
         | HlsOriginRefreshTriggerOutcome::DebouncedUntil { .. } => return None,

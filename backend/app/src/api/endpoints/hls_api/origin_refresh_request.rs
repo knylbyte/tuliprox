@@ -26,6 +26,7 @@ pub(super) fn hls_origin_refresh_request(
     let origin_provider_session_headers = prepared.snapshot.provider_session_headers.clone();
     origin_io.prepared_account = Some(prepared.snapshot);
     OriginRefreshRequest {
+        attempt: None,
         app_config: Arc::clone(&app_state.app_config),
         session: Arc::clone(session),
         origin_entry: prepared.entry,

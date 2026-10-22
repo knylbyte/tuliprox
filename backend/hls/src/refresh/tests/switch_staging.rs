@@ -257,6 +257,7 @@ async fn different_host_single_candidate_retries_do_not_prove_acceptance() {
     install_published_recovery_binding(&session, &candidate_entry_url, None).await;
     let entry = LiveHlsOriginEntry::parse(&candidate_entry_url).expect("entry url");
     let request = OriginRefreshRequest {
+        attempt: None,
         app_config: test_app_config(),
         session: Arc::clone(&session),
         origin_entry: entry.clone(),
@@ -457,6 +458,7 @@ async fn host_switch_conflict_runs_one_full_plan_then_only_bounded_follow_ups() 
     install_published_recovery_binding(&session, &candidate_entry_url, None).await;
     let entry = LiveHlsOriginEntry::parse(&candidate_entry_url).expect("entry url");
     let request = OriginRefreshRequest {
+        attempt: None,
         app_config: test_app_config(),
         session: Arc::clone(&session),
         origin_entry: entry.clone(),

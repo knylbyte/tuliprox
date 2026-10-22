@@ -49,7 +49,7 @@ use std::sync::Arc;
 use tuliprox_core::model::{AppConfig, HlsManifestRecoveryBurstConfig, ReverseProxyDisabledHeaderConfig, StripConfig};
 
 mod commit;
-mod failure;
+pub(crate) mod failure;
 mod short_manifest;
 pub(crate) use short_manifest::observe_target_duration;
 mod switch_staging;
@@ -62,7 +62,7 @@ use self::{
         ensure_refresh_origin_work_generation_is_current, refresh_origin_work_generation_is_current,
         HlsManifestCommitProgressEvidence,
     },
-    failure::{apply_manifest_fetch_failure_signal, manifest_hard_fetch_error, refresh_failure_backoff_schedule},
+    failure::{apply_manifest_fetch_failure_signal, refresh_failure_backoff_schedule},
     switch_staging::{
         critical_handoff_snapshot_is_current, prepare_critical_handoff, remove_uncommitted_staged_switch_files,
         stage_alternative_manifest_switch, switch_staging_error, verify_staged_content_anchor,
@@ -78,6 +78,7 @@ const HLS_RECOVERY_PRESSURE_START_CAS_ATTEMPTS: usize = 3;
 /// Debounce and singleflight state for one live HLS origin manifest.
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct OriginRefreshState {
+    pub attempt: Option<Arc<crate::manifest_fetch::HlsManifestAttemptContext>>,
     pub last_fetch_started_at_ms: Option<u64>,
     pub last_fetch_finished_at_ms: Option<u64>,
     pub next_fetch_allowed_at_ms: u64,
@@ -153,6 +154,7 @@ impl OriginRefreshState {
 
 #[derive(Clone)]
 pub struct OriginRefreshRequest {
+    pub attempt: Option<Arc<crate::manifest_fetch::HlsManifestAttemptContext>>,
     pub app_config: Arc<AppConfig>,
     pub session: HlsSessionHandle,
     pub origin_entry: LiveHlsOriginEntry,
@@ -251,7 +253,8 @@ impl HlsManifestCommitRequirement {
             } => HlsManifestCommitAcceptanceMode::FreshBaseline,
             Self::FreshCommitRequired {
                 reason:
-                    HlsFreshManifestRequiredReason::ExpiredRevalidation
+                    HlsFreshManifestRequiredReason::OriginReserveExhausted
+                    | HlsFreshManifestRequiredReason::ExpiredRevalidation
                     | HlsFreshManifestRequiredReason::PreviousHardManifestFailure,
             } => HlsManifestCommitAcceptanceMode::FreshPinnedRevalidation,
         }
@@ -267,7 +270,8 @@ impl HlsManifestCommitRequirement {
             }
             Self::FreshCommitRequired {
                 reason:
-                    HlsFreshManifestRequiredReason::ExpiredRevalidation
+                    HlsFreshManifestRequiredReason::OriginReserveExhausted
+                    | HlsFreshManifestRequiredReason::ExpiredRevalidation
                     | HlsFreshManifestRequiredReason::PreviousHardManifestFailure,
             } => HlsManifestAcceptanceTrigger::RecoveryRequired,
             Self::FreshCommitRequired { reason: HlsFreshManifestRequiredReason::StaleEntryWindow }
@@ -278,6 +282,7 @@ impl HlsManifestCommitRequirement {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HlsOriginRefreshTriggerOutcome {
+    AttemptCompleted,
     Started,
     SessionUnavailable,
     InFlight,
@@ -338,6 +343,28 @@ async fn mark_origin_refresh_started_with_outcome(
     request: &mut OriginRefreshRequest,
     fetch_started_at_ms: u64,
 ) -> HlsOriginRefreshTriggerOutcome {
+    if request.attempt.is_none() {
+        let Ok(session) = request.session.try_read() else {
+            return HlsOriginRefreshTriggerOutcome::RecoveryPressureStateContention;
+        };
+        if !session.origin_refresh.in_flight
+            && fetch_started_at_ms < session.origin_refresh.next_fetch_allowed_at_ms
+            && (request.manifest_commit_requirement.fresh_reason().is_none()
+                || session.origin_refresh.consecutive_failures > 0)
+        {
+            return HlsOriginRefreshTriggerOutcome::DebouncedUntil {
+                retry_at_ms: session.origin_refresh.next_fetch_allowed_at_ms,
+            };
+        }
+        drop(session);
+        request.attempt = request.hls_proxy.prepare_manifest_attempt(request).await;
+        if request.attempt.is_none() {
+            return HlsOriginRefreshTriggerOutcome::RecoveryPressureStateContention;
+        }
+    }
+    if request.attempt.as_ref().is_some_and(|attempt| attempt.is_closed()) {
+        return HlsOriginRefreshTriggerOutcome::AttemptCompleted;
+    }
     if let Some(io) = request.origin_io.as_ref() {
         let needs_prepare = {
             let session = request.session.read().await;
@@ -398,6 +425,9 @@ fn mark_origin_refresh_started_in_session(
     fetch_started_at_ms: u64,
     metrics: &super::HlsCacheMetrics,
 ) -> HlsOriginRefreshTriggerOutcome {
+    if request.attempt.as_ref().is_some_and(|attempt| attempt.is_closed()) {
+        return HlsOriginRefreshTriggerOutcome::AttemptCompleted;
+    }
     if session.is_gc_marked_for_removal()
         || request
             .origin_io
@@ -447,11 +477,17 @@ fn mark_origin_refresh_started_in_session(
     if let Some(origin_io) = request.origin_io.as_mut() {
         origin_io.started_generation = Some(session.start_origin_work());
     }
-    request.fresh_manifest_requirement_generation = request
-        .manifest_commit_requirement
-        .fresh_reason()
-        .and_then(|reason| session.fresh_manifest_commit_requirement_generation(reason));
+    request.fresh_manifest_requirement_generation =
+        request.manifest_commit_requirement.fresh_reason().and_then(|reason| {
+            let reason = if reason == HlsFreshManifestRequiredReason::OriginReserveExhausted {
+                session.fresh_manifest_commit_required?
+            } else {
+                reason
+            };
+            session.fresh_manifest_commit_requirement_generation(reason)
+        });
     session.origin_refresh.mark_started(fetch_started_at_ms);
+    session.origin_refresh.attempt = request.attempt.clone();
     request.refresh_identity = session.origin_refresh.refresh_identity.clone();
     metrics.record_refresh_started();
     info!(
@@ -643,6 +679,16 @@ async fn refresh_and_commit(mut request: OriginRefreshRequest, fetch_started_at_
             }
         }
     };
+    if let Some(attempt) = request.attempt.as_ref() {
+        let session = request.session.read().await;
+        let failed = committed_evidence_session.is_none()
+            || (attempt.requirement
+                == HlsManifestCommitRequirement::FreshCommitRequired {
+                    reason: HlsFreshManifestRequiredReason::OriginReserveExhausted,
+                }
+                && session.live_entry_revalidation.required);
+        attempt.finish(failed);
+    }
     if let Some(proxy_session_id) = committed_evidence_session.as_ref() {
         request.hls_proxy.notify_session_evidence_changed(proxy_session_id);
     }
@@ -921,6 +967,7 @@ fn manifest_fetch_context(
     target_duration: Option<u32>,
 ) -> HlsOriginManifestFetchContext {
     HlsOriginManifestFetchContext {
+        attempt: request.attempt.clone(),
         app_config: Arc::clone(&request.app_config),
         session: Arc::clone(&request.session),
         availability_runtime: request.post_refresh_runtime.as_ref().map(|runtime| runtime.ctx.clone()),
@@ -944,6 +991,12 @@ fn manifest_fetch_context(
 async fn fetch_and_commit_manifest_with_policy(
     request: &mut OriginRefreshRequest,
 ) -> Result<CommittedOriginManifest, OriginManifestFetchError> {
+    if request.attempt.is_none() {
+        request.attempt = request.hls_proxy.prepare_manifest_attempt(request).await;
+        if request.attempt.is_none() {
+            return Err(OriginManifestFetchError::RetryExhausted);
+        }
+    }
     let (mut established_recovery_binding, prefetch_trigger) = {
         let session = request.session.read().await;
         if !refresh_origin_work_generation_is_current(&session, request) {
@@ -989,26 +1042,6 @@ async fn fetch_and_commit_manifest_with_policy(
             .await
         {
             Ok(fetched) => fetched,
-            Err(initial_error) if manifest_hard_fetch_error(&initial_error) => {
-                if let Some(binding) = established_recovery_binding.clone() {
-                    return Box::pin(recover_manifest_for_request(
-                        &fetch_context,
-                        request,
-                        HlsManifestRecoveryPath {
-                            binding,
-                            reject_reason: None,
-                            deterministic_conflict: None,
-                            trigger: HlsManifestAcceptanceTrigger::Observe,
-                            diagnostic: HlsRecoveryTriggerDiagnostic::new(HlsRecoveryTriggerSource::HardFetchFailure),
-                        },
-                    ))
-                    .await;
-                }
-                if !recovery_suppression_logged {
-                    log_manifest_recovery_burst_suppressed(request, HlsManifestAcceptanceTrigger::Observe).await;
-                }
-                return Err(initial_error);
-            }
             Err(initial_error) => return Err(initial_error),
         };
     // A handoff first resolves the new entry. Recovery may use only that concrete target,
@@ -1084,7 +1117,8 @@ fn recovery_prefetch_diagnostic(request: &OriginRefreshRequest) -> HlsRecoveryTr
         } => HlsRecoveryTriggerDiagnostic::new(HlsRecoveryTriggerSource::HardFetchFailure),
         HlsManifestCommitRequirement::FreshCommitRequired {
             reason:
-                HlsFreshManifestRequiredReason::ExpiredRevalidation
+                HlsFreshManifestRequiredReason::OriginReserveExhausted
+                | HlsFreshManifestRequiredReason::ExpiredRevalidation
                 | HlsFreshManifestRequiredReason::ColdStart
                 | HlsFreshManifestRequiredReason::StaleEntryWindow,
         }

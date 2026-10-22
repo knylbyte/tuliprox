@@ -170,6 +170,9 @@ pub async fn hls_startup_admission_allows_snapshot(
 ) -> bool {
     let (ready_timeline, origin_state, observed_latency, target_duration_ms) = {
         let session = session.read().await;
+        if session.live_entry_revalidation.required {
+            return false;
+        }
         let degraded = session.origin_control.path_condition.is_degraded();
         (
             session.ready_timeline_snapshot(snapshot.first_proxy_seq, now_ms),

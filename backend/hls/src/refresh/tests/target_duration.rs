@@ -135,6 +135,12 @@ async fn duration_only_search_can_fall_back_to_original_after_transport_failures
         let metrics = Arc::clone(request.segment_worker_pool.metrics());
         assert!(trigger_origin_refresh_sync(request.clone()).await);
         let session = request.session.read().await;
+        if recovery_status == 404 {
+            assert_eq!(session.origin_manifest_commits(), 0, "hard qualification failure must not fall back");
+            assert_eq!(session.origin_control.path_condition, crate::HlsOriginPathCondition::HardFetchFailure);
+            assert_eq!(metrics.snapshot().refresh_failed, 1);
+            continue;
+        }
         assert_eq!(session.origin_manifest_commits(), 1);
         assert_eq!(session.origin_refresh.consecutive_failures, 0);
         assert!(session.origin_refresh.last_error_at_ms.is_none());
@@ -142,7 +148,7 @@ async fn duration_only_search_can_fall_back_to_original_after_transport_failures
         let proxy_session = crate::safe_proxy_session_id(&session.proxy_session_id);
         drop(session);
         assert_eq!(result(&request).await.1, Some(Outcome::NoSuitableOrigin));
-        let attempts = if recovery_status == 500 { request.retry_policy.attempt_count() } else { 1 };
+        let attempts = request.retry_policy.attempt_count().saturating_sub(1);
         let expected_requests = 1 + level.total_candidates() + attempts - 1;
         assert_eq!(server.requests.lock().await.len(), expected_requests);
         let completion = super::short_manifest::refresh_completion_message(&proxy_session).unwrap();

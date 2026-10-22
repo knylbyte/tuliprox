@@ -724,7 +724,7 @@ impl HlsProxyManager {
             return outcome;
         }
         session.live_window_demands.remove(lease_id);
-        Self::finish_terminal_commit(leases, session, proxy_session_id);
+        Self::finish_terminal_commit(leases, session, proxy_session_id, preparation);
         HlsTerminalCommitOutcome::Committed
     }
 
@@ -759,7 +759,7 @@ impl HlsProxyManager {
             return outcome;
         }
         session.live_window_demands.remove(lease_id);
-        Self::finish_terminal_commit(leases, session, proxy_session_id);
+        Self::finish_terminal_commit(leases, session, proxy_session_id, &command.preparation);
         HlsTerminalCommitOutcome::Committed
     }
 
@@ -767,7 +767,11 @@ impl HlsProxyManager {
         leases: &mut HlsAccessLeaseStore,
         session: &mut super::super::HlsSession,
         proxy_session_id: &ProxySessionId,
+        preparation: &crate::lease::HlsTerminalTailPreparation,
     ) {
+        if !preparation.trigger.is_runtime_policy() && preparation.reserve.is_exhausted() {
+            session.require_live_entry_revalidation(preparation.origin_progress_generation);
+        }
         let all_terminal = leases.all_live_leases_terminal_for_session(proxy_session_id);
         session.origin_control.progress_phase = if all_terminal {
             super::super::origin_progress::HlsOriginProgressPhase::Terminal

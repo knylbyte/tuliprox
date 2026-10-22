@@ -172,6 +172,18 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
             now_ms,
         )
         .await;
+    if matches!(access_lease_state, HlsAccessLeaseState::Pending | HlsAccessLeaseState::Idle)
+        && app_state
+            .hls
+            .proxy
+            .access_lease_response_snapshot(access_lease_id, path_proxy_session_id, now_ms)
+            .await
+            .is_some_and(|lease| lease.manifest_start_attempt.as_ref().is_some_and(|attempt| attempt.failed()))
+    {
+        return Some(
+            hls_unpublished_lease_channel_unavailable_response(app_state, path_proxy_session_id, access_lease_id).await,
+        );
+    }
     if access_lease_state == HlsAccessLeaseState::Activated {
         let timing = hls_access_lease_timing_for_session(app_state, &session).await;
         match app_state
@@ -283,7 +295,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
         &session,
         session_outcome,
         handoff_previous_rendered_at_ms,
-        access_lease_state == HlsAccessLeaseState::Pending,
+        matches!(access_lease_state, HlsAccessLeaseState::Pending | HlsAccessLeaseState::Idle),
         now_ms,
     )
     .await;

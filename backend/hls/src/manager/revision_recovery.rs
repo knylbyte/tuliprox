@@ -139,6 +139,12 @@ impl HlsProxyManager {
         }
         let mut leases = self.access_leases.write().await;
         let mut session = current.session().write().await;
+        if leases
+            .response_snapshot(lease_id, session_id, now_ms)
+            .is_none_or(|lease| !session.live_entry_snapshot_allowed_for_lease(&lease, Some(&snapshot)))
+        {
+            return Outcome::Rejected(Reject::ManifestGenerationUnavailable);
+        }
         // A retained request may have waited for these locks. Recheck its
         // deadline at the transaction without moving behind the request observation.
         let now_ms =

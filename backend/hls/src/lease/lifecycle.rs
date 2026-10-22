@@ -112,6 +112,51 @@ impl HlsAccessLeaseActivation {
 }
 
 impl HlsAccessLeaseStore {
+    pub(crate) fn manifest_attempt_context(
+        &mut self,
+        lease_id: Option<&HlsAccessLeaseId>,
+        requirement: crate::HlsManifestCommitRequirement,
+        current: Option<std::sync::Arc<crate::manifest_fetch::HlsManifestAttemptContext>>,
+        revalidation_generation: Option<u64>,
+        now_ms: u64,
+    ) -> std::sync::Arc<crate::manifest_fetch::HlsManifestAttemptContext> {
+        let lease = lease_id.and_then(|id| self.by_lease_id.get_mut(id));
+        let active_live = lease.as_ref().is_some_and(|lease| {
+            lease.state == HlsAccessLeaseState::Activated
+                && lease.active_until_ms.is_some_and(|until| until > now_ms)
+                && lease.playback_mode == HlsLeasePlaybackMode::Live
+                && lease.last_manifest_snapshot.is_some()
+        });
+        if let Some(attempt) = lease
+            .as_ref()
+            .filter(|_| !active_live)
+            .and_then(|lease| lease.manifest_start_attempt.as_ref())
+            .filter(|attempt| attempt.failed() || !attempt.is_closed())
+        {
+            return std::sync::Arc::clone(attempt);
+        }
+        let attempt = current
+            .filter(|attempt| {
+                !attempt.is_closed()
+                    && (requirement == crate::HlsManifestCommitRequirement::CommittedManifestAllowed
+                        || attempt.requirement != crate::HlsManifestCommitRequirement::CommittedManifestAllowed)
+                    && (attempt.requirement != crate::HlsManifestCommitRequirement::CommittedManifestAllowed
+                        || attempt.active_live_playback == active_live)
+                    && attempt.revalidation_generation == revalidation_generation
+            })
+            .unwrap_or_else(|| {
+                std::sync::Arc::new(crate::manifest_fetch::HlsManifestAttemptContext::new(
+                    requirement,
+                    active_live,
+                    revalidation_generation,
+                ))
+            });
+        if let Some(lease) = lease.filter(|_| !active_live) {
+            lease.manifest_start_attempt = Some(std::sync::Arc::clone(&attempt));
+        }
+        attempt
+    }
+
     pub fn repair_prewarm_is_current(
         &self,
         lease_id: &HlsAccessLeaseId,
@@ -542,6 +587,11 @@ impl HlsAccessLeaseStore {
         };
         if new_lease.state == HlsAccessLeaseState::Expired {
             return HlsAccessLeaseActivation::Expired;
+        }
+        if new_lease.playback_mode == HlsLeasePlaybackMode::Live
+            && new_lease.manifest_start_attempt.as_ref().is_some_and(|attempt| attempt.failed())
+        {
+            return HlsAccessLeaseActivation::AvailabilityPending;
         }
         let previous_state = new_lease.state;
         let active_until_ms = Some(now_ms.saturating_add(timing.active_window_ms));
