@@ -27,6 +27,7 @@ pub(super) enum HlsPostRefreshTerminalEvaluation {
     PendingOwnerRegistered,
     TerminalCommitted,
     ReevaluateNow,
+    AwaitingEvidence,
     FailedClosed(HlsTerminalFailedClosedReason),
 }
 
@@ -200,7 +201,7 @@ pub(super) async fn evaluate_active_terminal_leases_for_reevaluation(
     } else if recovered_live {
         let path_degraded = session.read().await.origin_control.path_condition.is_degraded();
         if path_degraded {
-            HlsPostRefreshTerminalEvaluation::ReevaluateNow
+            HlsPostRefreshTerminalEvaluation::AwaitingEvidence
         } else {
             HlsPostRefreshTerminalEvaluation::RecoveredLive
         }

@@ -23,7 +23,6 @@ use axum::{
 use log::debug;
 use shared::utils::sanitize_sensitive_info;
 use std::{sync::Arc, time::Duration};
-use tuliprox_core::utils::current_time_millis;
 use tuliprox_hls::api::{
     build_proxy_session_id, hls_cached_manifest_options_for_requirement, hls_manifest_acceptance_directive_for_session,
     hls_manifest_commit_requirement, register_hls_availability_reevaluation, safe_hls_access_lease_id,
@@ -160,7 +159,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
     if &expected_proxy_session_id != path_proxy_session_id {
         return Some(StatusCode::NOT_FOUND.into_response());
     }
-    let now_ms = current_time_millis();
+    let now_ms = app_state.hls.proxy.now_ms();
     let rewrite_secret = app_state.get_encrypt_secret();
     let (session, session_outcome) = app_state
         .hls
@@ -380,7 +379,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
         let owner_wait_lease = app_state
             .hls
             .proxy
-            .access_lease_response_snapshot(access_lease_id, path_proxy_session_id, current_time_millis())
+            .access_lease_response_snapshot(access_lease_id, path_proxy_session_id, app_state.hls.proxy.now_ms())
             .await;
         let expected_lease_issued_at_ms = owner_wait_lease.as_ref().map(|lease| lease.issued_at_ms);
         let request_deadline_ms = owner_wait_lease
@@ -456,7 +455,12 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
         )
         .await
         {
-            clear_hls_provisioning_handoff_consumer(app_state, origin.input, context.virtual_id, current_time_millis());
+            clear_hls_provisioning_handoff_consumer(
+                app_state,
+                origin.input,
+                context.virtual_id,
+                app_state.hls.proxy.now_ms(),
+            );
             return Some(response);
         }
         return Some(StatusCode::SERVICE_UNAVAILABLE.into_response());
@@ -637,7 +641,7 @@ pub(in crate::api::endpoints::hls_api) async fn hls_initial_manifest_wait_timeou
 ) -> Duration {
     let session = session.read().await;
     if matches!(
-        session.account_binding_protection(current_time_millis()),
+        session.account_binding_protection(app_state.hls.proxy.now_ms()),
         HlsAccountBindingProtection::NoMediaYet | HlsAccountBindingProtection::Expired
     ) {
         hls_initial_manifest_decision_wait_timeout(app_state)

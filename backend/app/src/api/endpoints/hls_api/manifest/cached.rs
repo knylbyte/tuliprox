@@ -16,7 +16,6 @@ use axum::response::IntoResponse;
 use log::{debug, error, warn};
 use shared::utils::sanitize_sensitive_info;
 use std::{sync::Arc, time::Duration};
-use tuliprox_core::utils::current_time_millis;
 use tuliprox_hls::api::{
     derive_hls_lease_manifest_snapshot, hls_committed_manifest_body_for_request,
     hls_should_wait_for_initial_manifest_commit, hls_startup_admission_allows_snapshot, safe_hls_access_lease_id,
@@ -31,6 +30,7 @@ type HlsPreparedManifest =
 
 enum HlsLiveWindowPreparation {
     Prepared(HlsPreparedManifest),
+    RetainedOriginGeneration { lease: Box<tuliprox_hls::api::HlsAccessLease> },
     NoRenderableWindow { lease: Box<tuliprox_hls::api::HlsAccessLease>, plan: tuliprox_hls::api::HlsLiveWindowPlan },
     Unavailable(&'static str),
 }
@@ -75,6 +75,10 @@ fn published_live_window_response(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the typed retained selection before the ordinary origin and render checks."
+)]
 async fn prepare_live_window_response(
     app_state: &Arc<AppState>,
     session: &HlsSessionHandle,
@@ -85,12 +89,20 @@ async fn prepare_live_window_response(
 ) -> HlsLiveWindowPreparation {
     use tuliprox_hls::api::{HlsManifestRenderer, RenderError};
 
-    let now_ms = current_time_millis();
+    let now_ms = app_state.hls.proxy.now_ms();
     let Some(lease) =
         app_state.hls.proxy.access_lease_response_snapshot(view.access_lease_id, view.proxy_session_id, now_ms).await
     else {
         return HlsLiveWindowPreparation::Unavailable("lease_unavailable");
     };
+    if let Some(lease) = app_state
+        .hls
+        .proxy
+        .retained_live_window_after_origin_change(session, view.access_lease_id, options, started_at_ms, now_ms)
+        .await
+    {
+        return HlsLiveWindowPreparation::RetainedOriginGeneration { lease: Box::new(lease) };
+    }
     let (prepared, queued) = {
         let mut state = session.write().await;
         state.live_window_strip = app_state.hls.proxy.strip();
@@ -175,8 +187,9 @@ async fn prepare_live_window_response(
             let context =
                 super::super::build_hls_segment_fetch_context(app_state, session, None, fingerprint, None).await;
             let worker = Arc::clone(app_state.hls.proxy.segment_worker_pool());
+            let hls_proxy = Arc::clone(&app_state.hls.proxy);
             tokio::spawn(async move {
-                worker.wake_scheduler(context, current_time_millis()).await;
+                worker.wake_scheduler(context, hls_proxy.now_ms()).await;
             });
         }
     }
@@ -194,9 +207,9 @@ pub(in crate::api::endpoints::hls_api) async fn read_hls_cached_manifest(
     session: &HlsSessionHandle,
     options: HlsCachedManifestOptions,
     started_at_ms: u64,
+    now_ms: u64,
 ) -> HlsCachedManifestRead {
     let session = session.read().await;
-    let now_ms = current_time_millis();
     let should_wait = session.initial_manifest_commit_work_pending();
     let committed_body = hls_committed_manifest_body_for_request(&session, options, started_at_ms, now_ms);
     let (transient_body, rendered_body) = match committed_body {
@@ -287,7 +300,7 @@ impl HlsCachedManifestViewContext<'_> {
         touch_pending_manifest_follow_up_window(app_state, session, self.access_lease_id, self.access_lease_state)
             .await;
         drop(spawn_hls_runtime_bandwidth_persistence(app_state, session, self.bandwidth_learning));
-        mark_successful_canonical_manifest_activity(app_state, session, current_time_millis()).await;
+        mark_successful_canonical_manifest_activity(app_state, session, app_state.hls.proxy.now_ms()).await;
         log_hls_initial_strip_publication(self.proxy_session_id, self.access_lease_id, strip_diagnostic);
         hls_response(materialized.body).into_response()
     }
@@ -306,7 +319,7 @@ pub(in crate::api::endpoints::hls_api) fn spawn_hls_runtime_bandwidth_persistenc
         let Ok(mut session_guard) = session.try_write() else {
             return None;
         };
-        let bitrate_bps = session_guard.begin_bandwidth_persistence(current_time_millis())?;
+        let bitrate_bps = session_guard.begin_bandwidth_persistence(app_state.hls.proxy.now_ms())?;
         (bitrate_bps, session_guard.proxy_session_id.clone(), session_guard.origin_source.stream_ref.clone())
     };
     let app_config = Arc::clone(&app_state.app_config);
@@ -331,7 +344,7 @@ pub(in crate::api::endpoints::hls_api) fn spawn_hls_runtime_bandwidth_persistenc
         if !Arc::ptr_eq(&current_session, &session) {
             return;
         }
-        current_session.write().await.finish_bandwidth_persistence(bitrate_bps, outcome, current_time_millis());
+        current_session.write().await.finish_bandwidth_persistence(bitrate_bps, outcome, hls_proxy.now_ms());
     }))
 }
 
@@ -413,7 +426,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
     bandwidth_learning: HlsRuntimeBandwidthLearningContext<'_>,
 ) -> Option<axum::response::Response> {
     let started_at = tokio::time::Instant::now();
-    let started_at_ms = current_time_millis();
+    let started_at_ms = app_state.hls.proxy.now_ms();
     let proxy_session_id = session.read().await.proxy_session_id.clone();
     let Some(publication_guard) = app_state
         .hls
@@ -441,8 +454,11 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
         let lease = app_state
             .hls
             .proxy
-            .access_lease_response_snapshot(access_lease_id, &proxy_session_id, current_time_millis())
+            .access_lease_response_snapshot(access_lease_id, &proxy_session_id, app_state.hls.proxy.now_ms())
             .await?;
+        if let Some(response) = super::hls_terminal_playback_response(&lease, &proxy_session_id, access_lease_id) {
+            return Some(response);
+        }
         if lease.manifest_start_attempt.as_ref().is_some_and(|attempt| attempt.failed()) {
             return None;
         }
@@ -456,7 +472,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
             }
             return None;
         }
-        let cached = read_hls_cached_manifest(session, options, started_at_ms).await;
+        let cached = read_hls_cached_manifest(session, options, started_at_ms, app_state.hls.proxy.now_ms()).await;
         let fast_start = session.read().await.uses_fast_start_live_window();
         if cached.wait_for_initial_commit || (cached.rendered_body.is_none() && cached.transient_body.is_none()) {
             log_hls_manifest_wait_transition(&mut last_wait_reason, "fresh_render_required", session, access_lease_id)
@@ -464,14 +480,19 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
         }
         if fast_start || !cached.wait_for_initial_commit {
             let mut retained_plan = None;
+            let mut retained_origin_generation = false;
             let prepared = if fast_start {
                 let preparation =
                     prepare_live_window_response(app_state, session, &view, fingerprint, options, started_at_ms).await;
                 let selection = match preparation {
                     HlsLiveWindowPreparation::Prepared(prepared) => Ok(prepared),
+                    HlsLiveWindowPreparation::RetainedOriginGeneration { lease } => {
+                        retained_origin_generation = true;
+                        retained_live_window_response(&lease, options, app_state.hls.proxy.now_ms())
+                    }
                     HlsLiveWindowPreparation::NoRenderableWindow { lease, plan } => {
                         retained_plan = Some(plan);
-                        retained_live_window_response(&lease, options, current_time_millis())
+                        retained_live_window_response(&lease, options, app_state.hls.proxy.now_ms())
                     }
                     HlsLiveWindowPreparation::Unavailable(reason) => Err(reason),
                 };
@@ -499,7 +520,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                 } else {
                     HlsPublishedTransientResourceIds::from_manifest_body(&materialized.body)
                 };
-                let delivered_at_ms = current_time_millis();
+                let delivered_at_ms = app_state.hls.proxy.now_ms();
                 let snapshot_input = if transient.window_policy.preserves_full_manifest() {
                     HlsLeaseManifestSnapshotInput::TransientPassthroughTemplate {
                         template: &transient.template,
@@ -533,7 +554,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
             } else if let Some(body) = cached.rendered_body {
                 let materialized = view.materialize(&body, "normal", HlsManifestWindowPolicy::ApplyLiveWindow);
                 let published_resource_ids = HlsPublishedTransientResourceIds::from_manifest_body(&materialized.body);
-                let delivered_at_ms = current_time_millis();
+                let delivered_at_ms = app_state.hls.proxy.now_ms();
                 let snapshot = {
                     let session = session.read().await;
                     observe_hls_lease_manifest_snapshot_derivation(
@@ -592,8 +613,8 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                     return Some(hls_cached_manifest_temporarily_unavailable());
                 }
                 let startup_snapshot = snapshot.clone();
-                let admission_at_ms = current_time_millis();
-                let outcome = if retained_plan.is_some() {
+                let admission_at_ms = app_state.hls.proxy.now_ms();
+                let outcome = if retained_plan.is_some() || retained_origin_generation {
                     app_state
                         .hls
                         .proxy
@@ -623,6 +644,22 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                         .await
                 };
                 if fast_start && !outcome.is_committed() {
+                    if let Some(current) = app_state
+                        .hls
+                        .proxy
+                        .access_lease_response_snapshot(
+                            access_lease_id,
+                            &proxy_session_id,
+                            app_state.hls.proxy.now_ms(),
+                        )
+                        .await
+                    {
+                        if let Some(response) =
+                            super::hls_terminal_playback_response(&current, &proxy_session_id, access_lease_id)
+                        {
+                            return Some(response);
+                        }
+                    }
                     if outcome
                         == tuliprox_hls::api::HlsLeaseManifestPublicationOutcome::Rejected(
                             tuliprox_hls::api::HlsLeaseManifestPublicationRejectReason::SnapshotChanged,
@@ -645,11 +682,18 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                         safe_proxy_session_id(&proxy_session_id), safe_hls_access_lease_id(access_lease_id),
                         startup_snapshot.first_proxy_seq, startup_snapshot.last_proxy_seq,
                         plan.visible.first(), plan.visible.last(),
-                        startup_snapshot.delivered_at_ms.saturating_add(startup_snapshot.playlist_duration_ms).saturating_sub(current_time_millis()),
+                        startup_snapshot.delivered_at_ms.saturating_add(startup_snapshot.playlist_duration_ms).saturating_sub(app_state.hls.proxy.now_ms()),
+                    );
+                }
+                if retained_origin_generation {
+                    debug!(
+                        "HLS live window retained: proxy_session={} lease={} reason=origin_generation status=200",
+                        safe_proxy_session_id(&proxy_session_id),
+                        safe_hls_access_lease_id(access_lease_id),
                     );
                 }
                 if let Some(snapshot_generation) = outcome.snapshot_generation() {
-                    let published_at_ms = current_time_millis();
+                    let published_at_ms = app_state.hls.proxy.now_ms();
                     let first_startup_publication =
                         app_state.hls.proxy.startup_observability().record_manifest_publication(
                             access_lease_id,
@@ -662,7 +706,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                         app_state.hls.proxy.spawn_access_lease_repair_prewarm(
                             Arc::clone(session),
                             access_lease_id.clone(),
-                            startup_snapshot,
+                            startup_snapshot.clone(),
                             snapshot_generation,
                         );
                     }
@@ -677,7 +721,41 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                 else {
                     return Some(hls_cached_manifest_temporarily_unavailable());
                 };
-                return Some(view.finish(app_state, session, materialized, strip_diagnostic).await);
+                let response = view.finish(app_state, session, materialized, strip_diagnostic).await;
+                if fast_start {
+                    let current_session =
+                        app_state.hls.proxy.sessions().get_by_proxy_session_id(&proxy_session_id).await?;
+                    if !Arc::ptr_eq(&current_session, session) {
+                        return Some(hls_cached_manifest_temporarily_unavailable());
+                    }
+                    let current = app_state
+                        .hls
+                        .proxy
+                        .access_lease_response_snapshot(
+                            access_lease_id,
+                            &proxy_session_id,
+                            app_state.hls.proxy.now_ms(),
+                        )
+                        .await?;
+                    if let Some(terminal) =
+                        super::hls_terminal_playback_response(&current, &proxy_session_id, access_lease_id)
+                    {
+                        return Some(terminal);
+                    }
+                    if current.issued_at_ms != lease.issued_at_ms {
+                        return Some(hls_cached_manifest_temporarily_unavailable());
+                    }
+                    let current_generation = current.last_manifest_snapshot.as_ref()?.snapshot_generation;
+                    if current_generation != outcome.snapshot_generation()? {
+                        let mut expected = startup_snapshot;
+                        expected.snapshot_generation = current_generation;
+                        if current.last_manifest_snapshot.as_ref() != Some(&expected) {
+                            // Another view won while activity was recorded.
+                            continue;
+                        }
+                    }
+                }
+                return Some(response);
             }
         }
         if options.wait_timeout.is_zero() || !cached.should_wait || started_at.elapsed() >= options.wait_timeout {

@@ -288,11 +288,11 @@ impl HlsProxyManager {
 
     pub fn map_worker_pool(&self) -> &Arc<HlsMapWorkerPool> { &self.map_worker_pool }
 
-    /// The clock every time-dependent HLS scheduler reads.
+    /// Shared-HLS request and scheduling clock.
     ///
     /// One clock, so a test that controls time controls all of it rather than
     /// some schedulers following the wall clock and others the test clock.
-    pub(crate) fn now_ms(&self) -> u64 { self.terminal_commit_clock.now_ms() }
+    pub fn now_ms(&self) -> u64 { self.terminal_commit_clock.now_ms() }
 
     /// Anchor the scheduling clock to tokio's, for `start_paused` tests.
     #[cfg(test)]

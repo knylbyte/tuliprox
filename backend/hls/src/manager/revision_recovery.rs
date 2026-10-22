@@ -19,7 +19,9 @@ pub(crate) struct HlsLeaseRuntime {
     pub(super) terminal_commit_retries: Arc<crate::terminal_commit::HlsTerminalCommitRetryCoordinator>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_retained_live_window(
+    cache: &crate::HlsSegmentCache,
     leases: &mut crate::HlsAccessLeaseStore,
     session: &crate::HlsSession,
     lease_id: &HlsAccessLeaseId,
@@ -37,19 +39,27 @@ fn validate_retained_live_window(
     }
     if now_ms > snapshot.delivered_at_ms.saturating_add(snapshot.playlist_duration_ms)
         || lease.state != crate::HlsAccessLeaseState::Activated
+        || lease.playback_mode != crate::terminal_tail::HlsLeasePlaybackMode::Live
         || options.requires_newer_manifest()
         || session.fresh_manifest_commit_required.is_some()
-        || !crate::manifest_commit::hls_live_window_origin_allowed_for_request(session, options, started_at_ms, now_ms)
     {
         return Err(Reject::ManifestGenerationUnavailable);
     }
     let Some(publication) = snapshot.startup_revisions.as_ref() else {
         return Err(Reject::RevisionConflict);
     };
-    if publication
+    let generation_changed = publication
         .window_plan
         .as_ref()
-        .is_none_or(|window| window.plan.origin_work_generation != session.activity.origin_work_generation)
+        .is_some_and(|window| window.plan.origin_work_generation != session.activity.origin_work_generation);
+    if publication.window_plan.is_none()
+        || (!generation_changed
+            && !crate::manifest_commit::hls_live_window_origin_allowed_for_request(
+                session,
+                options,
+                started_at_ms,
+                now_ms,
+            ))
     {
         return Err(Reject::ManifestGenerationUnavailable);
     }
@@ -65,10 +75,133 @@ fn validate_retained_live_window(
     {
         return Err(Reject::RevisionConflict);
     }
+    if generation_changed {
+        validate_retained_generation_reserve(cache, session, &lease, snapshot, publication, now_ms)?;
+    }
+    Ok(())
+}
+
+fn validate_retained_generation_reserve(
+    cache: &crate::HlsSegmentCache,
+    session: &crate::HlsSession,
+    lease: &crate::HlsAccessLease,
+    snapshot: &crate::media_reserve::HlsLeaseManifestSnapshot,
+    publication: &crate::HlsManifestRevisions,
+    now_ms: u64,
+) -> Result<(), crate::lease::HlsLeaseManifestPublicationRejectReason> {
+    use crate::{
+        lease::HlsLeaseManifestPublicationRejectReason as Reject,
+        media_reserve::{evaluate_lease_reserve, HlsLeaseReserveInput},
+    };
+    // SegmentEntry's immutable media clock is also bound to playback
+    // requests. The manifest's duration-relative horizon is not that clock.
+    let timeline = session.ready_timeline_snapshot(
+        lease.playback_cursor.ready_timeline_start_proxy_seq(snapshot.first_proxy_seq),
+        now_ms,
+    );
+    if session.origin_control.path_condition == crate::origin_progress::HlsOriginPathCondition::HardFetchFailure {
+        return Err(Reject::ManifestGenerationUnavailable);
+    }
+    for segment in snapshot.visible_segments.iter() {
+        let revision = &publication.revisions[&segment.proxy_seq];
+        let crate::SegmentRevisionState::Complete(metadata) = revision.revision().state() else {
+            return Err(Reject::RevisionConflict);
+        };
+        let Some(unit) = timeline.units.iter().find(|unit| unit.proxy_seq == segment.proxy_seq) else {
+            return Err(Reject::RevisionConflict);
+        };
+        let entry = &session.segments[&segment.proxy_seq];
+        if let Some(map_id) = entry.map_ref {
+            let Some(map) = session.maps.get(&map_id) else { return Err(Reject::RevisionConflict) };
+            let crate::MapCacheStatus::Ready { content_length, .. } = map.status else {
+                return Err(Reject::RevisionConflict);
+            };
+            if !std::fs::metadata(cache.object_path(&map.cache_key))
+                .is_ok_and(|file| file.is_file() && file.len() == content_length)
+            {
+                return Err(Reject::RevisionConflict);
+            }
+        }
+        if let Some(encryption) = &entry.encryption {
+            let key = crate::TransientPassthroughState::transient_object_key(
+                &session.proxy_session_id,
+                &encryption.resource_id,
+                encryption.resource_extension.clone(),
+            );
+            if !std::fs::metadata(cache.object_path(&key)).is_ok_and(|file| file.is_file() && file.len() == 16) {
+                return Err(Reject::RevisionConflict);
+            }
+        }
+        if !std::fs::metadata(&metadata.path).is_ok_and(|file| file.is_file() && file.len() == metadata.size)
+            || !segment.map_ref_ready
+            || unit.duration_ms != segment.duration_ms
+            || !unit.required_map_ready
+            || !unit.required_key_ready
+        {
+            return Err(Reject::RevisionConflict);
+        }
+    }
+    let reserve = evaluate_lease_reserve(HlsLeaseReserveInput {
+        manifest: snapshot,
+        cursor: &lease.playback_cursor,
+        ready_timeline: &timeline,
+        now_ms,
+        recovery_trigger_budget: crate::recovery_timing::HlsRecoveryTriggerBudgetMs::from_millis(0),
+        origin_path_degraded: true,
+        recovery_committed: false,
+    });
+    if !reserve.playback_position_known || reserve.guaranteed_reserve_ms == 0 {
+        return Err(Reject::ManifestGenerationUnavailable);
+    }
     Ok(())
 }
 
 impl HlsProxyManager {
+    /// Select only the fully local published view retired by an origin generation change.
+    pub async fn retained_live_window_after_origin_change(
+        &self,
+        session: &crate::HlsSessionHandle,
+        lease_id: &HlsAccessLeaseId,
+        options: crate::manifest_commit::HlsCachedManifestOptions,
+        started_at_ms: u64,
+        now_ms: u64,
+    ) -> Option<crate::HlsAccessLease> {
+        let proxy_id = session.read().await.proxy_session_id.clone();
+        let current = self.sessions.hold_current_proxy_session(&proxy_id).await?;
+        if !Arc::ptr_eq(current.session(), session) {
+            return None;
+        }
+        let mut leases = self.access_leases.write().await;
+        let state = session.read().await;
+        if state.is_gc_marked_for_removal()
+            || state.live_window_origin_work_generation == Some(state.activity.origin_work_generation)
+        {
+            return None;
+        }
+        let lease = leases.response_snapshot(lease_id, &proxy_id, now_ms)?;
+        let snapshot = lease.last_manifest_snapshot.as_ref()?;
+        if snapshot
+            .startup_revisions
+            .as_ref()?
+            .window_plan
+            .as_ref()
+            .is_none_or(|window| window.plan.origin_work_generation == state.activity.origin_work_generation)
+        {
+            return None;
+        }
+        validate_retained_live_window(
+            &self.segment_cache,
+            &mut leases,
+            &state,
+            lease_id,
+            snapshot,
+            options,
+            started_at_ms,
+            now_ms,
+        )
+        .ok()?;
+        Some(lease)
+    }
     pub(super) fn revision_recovery_runtime(&self) -> HlsLeaseRuntime {
         HlsLeaseRuntime {
             sessions: Arc::clone(&self.sessions),
@@ -147,8 +280,7 @@ impl HlsProxyManager {
         }
         // A retained request may have waited for these locks. Recheck its
         // deadline at the transaction without moving behind the request observation.
-        let now_ms =
-            if retained_request.is_some() { now_ms.max(tuliprox_core::utils::current_time_millis()) } else { now_ms };
+        let now_ms = if retained_request.is_some() { now_ms.max(self.now_ms()) } else { now_ms };
         if !leases.media_identity_is_current(lease_id, session_id, expected.media_identity(), now_ms)
             || session.is_gc_marked_for_removal()
         {
@@ -157,7 +289,13 @@ impl HlsProxyManager {
         if snapshot.startup_revisions.as_ref().is_some_and(|publication| publication.window_plan.is_some()) {
             session.live_window_strip = self.strip();
         }
-        let retained = now_ms <= snapshot.delivered_at_ms.saturating_add(snapshot.playlist_duration_ms)
+        let retained = (retained_request.is_some()
+            || snapshot
+                .startup_revisions
+                .as_ref()
+                .and_then(|publication| publication.window_plan.as_ref())
+                .is_some_and(|window| window.plan.origin_work_generation == session.activity.origin_work_generation))
+            && now_ms <= snapshot.delivered_at_ms.saturating_add(snapshot.playlist_duration_ms)
             && leases
                 .response_snapshot(lease_id, session_id, now_ms)
                 .and_then(|lease| lease.last_manifest_snapshot)
@@ -165,6 +303,7 @@ impl HlsProxyManager {
                 == Some(&snapshot);
         if let Some((_, options, started_at_ms)) = retained_request {
             if let Err(reason) = validate_retained_live_window(
+                &self.segment_cache,
                 &mut leases,
                 &session,
                 lease_id,

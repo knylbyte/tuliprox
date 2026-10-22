@@ -405,7 +405,7 @@ impl HlsAcceptanceEpisodeTiming {
         let initial_recovery_eta_ms =
             calculated_eta_ms.max(input.observed_latency.p99.map_or(trigger_budget_ms, HlsRecoveryEtaMs::as_millis));
         let ceiling_ms = recovery_budget_ceiling_ms(input.target_duration_ms);
-        log::debug!("HLS recovery decision budget: session_target_duration_ms={} raw_trigger_ms={trigger_budget_ms} raw_eta_ms={initial_recovery_eta_ms} ceiling_ms={ceiling_ms} effective_trigger_ms={} effective_eta_ms={}",
+        log::trace!("HLS recovery decision budget: session_target_duration_ms={} raw_trigger_ms={trigger_budget_ms} raw_eta_ms={initial_recovery_eta_ms} ceiling_ms={ceiling_ms} effective_trigger_ms={} effective_eta_ms={}",
             input.target_duration_ms, trigger_budget_ms.min(ceiling_ms), initial_recovery_eta_ms.min(ceiling_ms));
         let trigger_budget_ms = trigger_budget_ms.min(ceiling_ms);
         let initial_recovery_eta_ms = initial_recovery_eta_ms.min(ceiling_ms);

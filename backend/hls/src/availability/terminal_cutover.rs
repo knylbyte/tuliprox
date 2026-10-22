@@ -133,7 +133,36 @@ fn evaluate_lease_terminal_cutover(
     });
     let cutover_timing =
         HlsLeaseCutoverTiming::from_reserve(now_ms, reserve.guaranteed_reserve_ms, reserve.transition_margin, None);
-    let safe_deadline = live_reserve_deadline(now_ms, reserve, cutover_timing);
+    let mut safe_deadline = live_reserve_deadline(now_ms, reserve, cutover_timing);
+    if let Some(deadline) = &mut safe_deadline {
+        let recovery_delta = reserve
+            .guaranteed_reserve_ms
+            .saturating_sub(recovery_trigger_budget.as_millis().saturating_add(reserve.transition_margin.as_millis()));
+        if !reserve.recovery_required && recovery_delta > 0 {
+            deadline.next_reevaluation_at_ms =
+                deadline.next_reevaluation_at_ms.min(now_ms.saturating_add(recovery_delta));
+        }
+        let position = reserve.conservative_playback_position_ms;
+        for pair in state.ready_timeline.units.windows(2) {
+            let end = pair[0].start_ms.saturating_add(pair[0].duration_ms);
+            if end > position && end < reserve.guaranteed_media_horizon_ms && pair[0].duration_ms != pair[1].duration_ms
+            {
+                deadline.next_reevaluation_at_ms =
+                    deadline.next_reevaluation_at_ms.min(now_ms.saturating_add(end - position));
+                break;
+            }
+        }
+        for boundary in [
+            reserve.key_readiness_valid_until_ms.map(|valid_until| valid_until.saturating_add(1)),
+            Some(manifest.delivered_at_ms.saturating_add(manifest.playlist_duration_ms).saturating_add(1)),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|at| *at > now_ms)
+        {
+            deadline.next_reevaluation_at_ms = deadline.next_reevaluation_at_ms.min(boundary);
+        }
+    }
     let commit_window = cutover_timing.terminal_commit_window(
         origin_path_degraded,
         false,
