@@ -370,9 +370,12 @@ where
         last_fetch_error,
         mut last_reject_reason,
     } = fetch_manifest_recovery_burst_candidates(context, &plan, burst_plan).await;
-    if last_fetch_error.as_ref().is_some_and(crate::refresh::failure::manifest_hard_fetch_error) {
-        return HlsManifestRecoveryAttemptError::Fetch(last_fetch_error.expect("observed hard failure"));
-    }
+    let last_fetch_error = match last_fetch_error {
+        Some(error) if crate::refresh::failure::manifest_hard_fetch_error(&error) => {
+            return HlsManifestRecoveryAttemptError::Fetch(error);
+        }
+        error => error,
+    };
     diagnostics.record_attempt(plan.attempt_index + 1, completed_candidates, burst_plan.total_candidates() > 1);
     record_full_manifest_acceptance_burst(
         context,

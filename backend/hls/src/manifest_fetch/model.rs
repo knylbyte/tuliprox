@@ -74,7 +74,7 @@ impl HlsManifestAttemptContext {
         let started = !self.is_closed()
             && self
                 .attempts
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                .try_update(Ordering::AcqRel, Ordering::Acquire, |used| {
                     (used < RetryPolicy::default().attempt_count()).then_some(used + 1)
                 })
                 .is_ok();

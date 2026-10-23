@@ -119,7 +119,7 @@ async fn capacity_retry_requires_the_complete_peak_and_only_reservation_release(
 
 #[tokio::test]
 async fn thousand_live_windows_keep_one_manager_two_leases_and_bounded_revision_disk() -> std::io::Result<()> {
-    tokio::time::timeout(Duration::from_secs(60), live_window_soak())
+    tokio::time::timeout(Duration::from_mins(1), live_window_soak())
         .await
         .expect("1000-window soak makes bounded progress")
 }

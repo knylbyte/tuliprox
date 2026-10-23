@@ -81,7 +81,7 @@ async fn persistent_real_reservation_exhausts_five_without_http_or_progress() {
     refresh_and_commit(request, 100).await;
     assert_eq!(attempt.logical_attempts(), 5);
     assert!(attempt.failed());
-    assert!(started.elapsed() <= Duration::from_millis(2000));
+    assert!(started.elapsed() <= Duration::from_secs(2));
     assert!(server.requests.lock().await.is_empty());
     let session = session.read().await;
     assert_eq!(session.origin_control.last_origin_response_at_ms, None);
