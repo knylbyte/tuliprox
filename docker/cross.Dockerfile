@@ -12,7 +12,7 @@
 # -----------------------------------------------------------------
 # We use a static build to ensure it works in the scratch image without libraries
 # Static ffmpeg image is multi-arch, so it pulls correct arch automatically
-FROM mwader/static-ffmpeg:9.0.2@sha256:7d9bdaaf887f7e6ce6151f67325c344074b5ff1fb75316011c3376503e449a7b AS ffmpeg-static
+FROM mwader/static-ffmpeg:9.0.2-1@sha256:f5d100184884eb3e82b0eb14bb5ebf98da99826ac824989720297fb9ef21c822 AS ffmpeg-static
 
 # The cross image provides the target compiler and sysroot, but no Rust toolchain.
 FROM rust:1.99.0-trixie@sha256:81015672d6939b0265f09adf96d5de125482bb1330106076956b0518e74edc90 AS rust-toolchain
@@ -57,7 +57,7 @@ RUN mkdir -p frontend/src backend/app/src/tools tools/tuliprox-testkit/src && \
 # -----------------------------------------------------------------
 # Stage 1: Build the Rust binary for production
 # -----------------------------------------------------------------
-FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.4@sha256:79e3cf3994f70c6a318f003a94313d1b13a4de564e37998f9b0f7b1943153cf7 AS rust-build
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5@sha256:77db671d8356a64ae72a3e1415e63f547f26d374fbe3c4762c1cd36c7eac7b99 AS rust-build
 
 COPY --from=rust-toolchain /usr/local/cargo /usr/local/cargo
 COPY --from=rust-toolchain /usr/local/rustup /usr/local/rustup
