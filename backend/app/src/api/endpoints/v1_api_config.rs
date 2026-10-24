@@ -362,7 +362,7 @@ async fn recording_reload_for(app_state: &Arc<AppState>, incoming: &ConfigDto) -
         &incoming_recording.directory,
         &app_state.app_config.paths.load().home_path,
     );
-    let existing = app_state.recordings.committed_snapshot().await.1.len();
+    let existing = app_state.recording.queue.committed_snapshot().await.1.len();
     recording_reload_outcome(current_recording, &incoming_recording, existing)
 }
 
@@ -1142,10 +1142,14 @@ mod tests {
         use tower::ServiceExt;
         let temp = tempfile::tempdir().unwrap();
         let file = temp.path().join("config.yml");
+        let hls_cache = HlsCacheConfigDto {
+            cache_path: Some(temp.path().join("hls-cache").to_string_lossy().into_owned()),
+            ..HlsCacheConfigDto::default()
+        };
         let config = crate::model::Config {
             backup_dir: Some(temp.path().join("backup").to_string_lossy().into_owned()),
             reverse_proxy: Some(crate::model::ReverseProxyConfig::from(&ReverseProxyConfigDto {
-                hls_cache: Some(HlsCacheConfigDto::default()),
+                hls_cache: Some(hls_cache.clone()),
                 rewrite_secret: "00112233445566778899aabbccddeeff".to_string(),
                 ..Default::default()
             })),
@@ -1164,7 +1168,7 @@ mod tests {
         dto.storage_dir = Some(temp.path().to_string_lossy().into_owned());
         dto.backup_dir = Some(temp.path().join("backup").to_string_lossy().into_owned());
         dto.reverse_proxy = Some(ReverseProxyConfigDto {
-            hls_cache: Some(HlsCacheConfigDto::default()),
+            hls_cache: Some(hls_cache),
             rewrite_secret: "00112233445566778899aabbccddeeff".to_string(),
             ..Default::default()
         });
