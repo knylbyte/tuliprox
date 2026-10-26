@@ -15,6 +15,8 @@ mod access;
 mod admission;
 mod cached;
 mod canonical_owner;
+#[cfg(test)]
+pub(super) use canonical_owner::{await_hls_terminal_or_refresh, current_hls_refresh_lease};
 mod provisioning;
 mod publication;
 #[allow(unused_imports, reason = "Retains the existing module interface in production and test builds.")]

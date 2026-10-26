@@ -47,15 +47,16 @@ pub(in crate::api::endpoints::hls_api::tests) struct TestBinaryOriginResponse {
     pub(in crate::api::endpoints::hls_api::tests) status: StatusCode,
     pub(in crate::api::endpoints::hls_api::tests) location: Option<String>,
     pub(in crate::api::endpoints::hls_api::tests) body: Arc<[u8]>,
+    pub(in crate::api::endpoints::hls_api::tests) gate: Option<tokio::sync::watch::Receiver<bool>>,
 }
 
 impl TestBinaryOriginResponse {
     pub(in crate::api::endpoints::hls_api::tests) fn new(status: StatusCode, body: Arc<[u8]>) -> Self {
-        Self { status, location: None, body }
+        Self { status, location: None, body, gate: None }
     }
 
     pub(in crate::api::endpoints::hls_api::tests) fn redirect(location: String) -> Self {
-        Self { status: StatusCode::FOUND, location: Some(location), body: Arc::from(&b""[..]) }
+        Self { status: StatusCode::FOUND, location: Some(location), body: Arc::from(&b""[..]), gate: None }
     }
 }
 
@@ -91,7 +92,14 @@ pub(in crate::api::endpoints::hls_api::tests) async fn spawn_test_binary_origin(
                 if path_has_extension(path, "m3u8") {
                     manifest_requests.fetch_add(1, Ordering::SeqCst);
                 }
-                let TestBinaryOriginResponse { status, location, body } = handler(path);
+                let TestBinaryOriginResponse { status, location, body, gate } = handler(path);
+                if let Some(mut gate) = gate {
+                    while !*gate.borrow_and_update() {
+                        if gate.changed().await.is_err() {
+                            return;
+                        }
+                    }
+                }
                 let reason = status.canonical_reason().unwrap_or("Status");
                 let location_header = location.map_or_else(String::new, |location| format!("Location: {location}\r\n"));
                 let response = format!(

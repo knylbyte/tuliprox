@@ -26,7 +26,7 @@ use std::{
     fmt,
     sync::Arc,
 };
-use tokio::sync::Notify;
+use tokio::sync::{watch, Notify};
 
 /// Session mode selected for a shared HLS content session.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -349,6 +349,7 @@ pub struct HlsSession {
     fresh_manifest_commit_requirement_generation: u64,
     pub segment_failure_tracker: HlsSegmentFailureTracker,
     terminal_tail_protections: HashMap<HlsAccessLeaseId, HlsTerminalTailProtection>,
+    terminal_commit_tx: watch::Sender<()>,
     gc_marked_for_removal: bool,
 }
 
@@ -437,9 +438,18 @@ impl HlsSession {
             fresh_manifest_commit_requirement_generation: 0,
             segment_failure_tracker: HlsSegmentFailureTracker::default(),
             terminal_tail_protections: HashMap::new(),
+            terminal_commit_tx: watch::channel(()).0,
             gc_marked_for_removal: false,
         }
     }
+
+    /// Observes successful terminal commits; callers must revalidate their own lease.
+    pub fn subscribe_terminal_commits(&self) -> watch::Receiver<()> { self.terminal_commit_tx.subscribe() }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn terminal_commit_observer_count_for_test(&self) -> usize { self.terminal_commit_tx.receiver_count() }
+
+    pub(crate) fn notify_terminal_commit(&self) { self.terminal_commit_tx.send_replace(()); }
 
     pub fn next_manifest_commit_identity(&self, rendered_at_ms: u64) -> Option<HlsManifestCommitIdentity> {
         self.manifest_commit_generation
@@ -1041,6 +1051,7 @@ impl fmt::Debug for HlsSession {
             .field("fresh_manifest_commit_requirement_generation", &self.fresh_manifest_commit_requirement_generation)
             .field("segment_failure_tracker", &self.segment_failure_tracker)
             .field("terminal_tail_protections_len", &self.terminal_tail_protections.len())
+            .field("terminal_commit_tx", &self.terminal_commit_tx)
             .field("gc_marked_for_removal", &self.gc_marked_for_removal)
             .finish()
     }
