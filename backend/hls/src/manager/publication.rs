@@ -300,10 +300,8 @@ impl HlsProxyManager {
     pub fn now_ms(&self) -> u64 { self.terminal_commit_clock.now_ms() }
 
     /// Anchor the scheduling clock to tokio's, for `start_paused` tests.
-    #[cfg(test)]
-    pub(crate) fn follow_tokio_clock_for_test(&self, base_ms: u64) {
-        self.terminal_commit_clock.follow_tokio_clock(base_ms);
-    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn follow_tokio_clock_for_test(&self, base_ms: u64) { self.terminal_commit_clock.follow_tokio_clock(base_ms); }
 
     pub fn transient_resources(&self) -> &Arc<TransientResourceStore> { &self.transient_resources }
 
