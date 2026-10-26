@@ -63,7 +63,8 @@ dashmap       = "6.2.1"
 cookie        = "0.18.2"
 arc-swap      = "1.9.2"
 paste         = "1.0.15"
-pest          = "2.9.0"
+# Native targets enable std separately to keep stacker/psm out of WASM builds.
+pest          = { version = "2.9.0", default-features = false, features = ["memchr"] }
 pest_derive   = "2.9.0"
 zeroize       = "1.9.0"
 deunicode     = "1.6.2"
