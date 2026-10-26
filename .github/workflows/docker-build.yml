@@ -22,7 +22,7 @@ on:
 
 # Avoid multiple parallel builds for the same branch to prevent race conditions
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref_name }}
   cancel-in-progress: false # Set to true if you want to abort old builds immediately
 
 jobs:
@@ -155,25 +155,41 @@ jobs:
         run: |
           git config user.name "euzu"
           git config user.email "euzu@proton.me"
-          git add .
+          echo "base_commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git add -- Cargo.toml Cargo.lock frontend/Cargo.toml
           if git diff --cached --quiet; then
             echo "did_commit=false" >> "$GITHUB_OUTPUT"
           else
             VERSION=$(grep -Po '^version\s*=\s*"\K[0-9\.]+' ./Cargo.toml | head -n1)
-            git commit -m "ci: bump version v$VERSION"
-            # Delete local tag if it exists (from a previous failed run)
-            git tag -d "v$VERSION" 2>/dev/null || true
-            git tag -a "v$VERSION" -m "v$VERSION"
+            git commit --only -m "ci: bump version v$VERSION" -- Cargo.toml Cargo.lock frontend/Cargo.toml
             echo "did_commit=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build and push Docker images
+      - name: Prepare release tag
         env:
-          GITHUB_IO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO_OWNER: ${{ github.repository_owner }}
+          RELEASE_BRANCH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref_name }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          if [[ "$RELEASE_BRANCH" == "experimental" ]]; then
+            exit 0
+          fi
+          if git show-ref --verify --quiet "refs/tags/v$VERSION"; then
+            if [[ "$(git rev-parse "refs/tags/v$VERSION^{commit}")" != "$(git rev-parse HEAD)" ]]; then
+              echo "Refusing to replace v$VERSION: the tag belongs to a different commit." >&2
+              exit 1
+            fi
+          else
+            git config user.name "euzu"
+            git config user.email "euzu@proton.me"
+            git tag -a "v$VERSION" -m "v$VERSION"
+          fi
+
+      - name: Build release bundles and Docker context
+        env:
+          RELEASE_BRANCH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref_name }}
         run: |
           chmod +x ./bin/build_docker.sh
-          ./bin/build_docker.sh ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref_name }}
+          ./bin/build_docker.sh "$RELEASE_BRANCH" build
 
       - name: Verify release bundle artifacts
         run: |
@@ -211,24 +227,40 @@ jobs:
             echo "\`\`\`"
           } > artifacts/RELEASE_NOTES_SHA256.md
 
+      - name: Publish version commit and tag
+        env:
+          RELEASE_BRANCH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref_name }}
+          VERSION: ${{ steps.version.outputs.value }}
+          BASE_COMMIT: ${{ steps.version_commit.outputs.base_commit }}
+        run: |
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "Refusing to publish: tracked files changed after the version commit." >&2
+            exit 1
+          fi
+          expected_commit="${BASE_COMMIT:-$(git rev-parse HEAD)}"
+          remote_commit=$(git ls-remote --exit-code origin "refs/heads/$RELEASE_BRANCH" | awk '{print $1}')
+          if [[ "$remote_commit" != "$expected_commit" ]]; then
+            echo "Refusing to publish: $RELEASE_BRANCH changed during the build. Start a new run from the current branch." >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_BRANCH" != "experimental" ]]; then
+            git push --atomic origin "HEAD:refs/heads/$RELEASE_BRANCH" "refs/tags/v$VERSION:refs/tags/v$VERSION"
+          fi
+
+      - name: Publish Docker images
+        env:
+          GITHUB_IO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          RELEASE_BRANCH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref_name }}
+        run: |
+          ./bin/build_docker.sh "$RELEASE_BRANCH" publish
+
       - name: Upload release bundle artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tuliprox-release-v${{ steps.version.outputs.value }}
           path: artifacts/*
           if-no-files-found: error
-
-      - name: Push version bump
-        if: >-
-          success() &&
-          (
-            (github.event_name == 'push' && github.ref == 'refs/heads/develop') ||
-            (github.event_name == 'workflow_dispatch' && github.event.inputs.branch == 'develop')
-          ) &&
-          steps.version_commit.outputs.did_commit == 'true'
-        run: |
-          # Use origin HEAD to push to the correct remote branch, and push tags
-          git push origin HEAD --tags
 
       - name: Publish release bundles to GitHub Release
         if: >-
