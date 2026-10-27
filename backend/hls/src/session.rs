@@ -556,6 +556,7 @@ impl HlsSession {
         self.transient.invalidate_origin_resources();
         for segment in self.segments.values_mut() {
             if !matches!(segment.status, SegmentCacheStatus::Ready { .. }) {
+                segment.retained_resource_identity = segment.media_resource_identity();
                 segment.origin_fetch_ref = None;
                 if !matches!(segment.status, SegmentCacheStatus::Fetching { .. }) {
                     segment.status = SegmentCacheStatus::Discovered;
@@ -1118,6 +1119,7 @@ mod tests {
             origin_byte_range: None,
             map_ref: None,
             encryption: None,
+            retained_resource_identity: None,
             origin_fetch_ref: None,
             status: SegmentCacheStatus::Ready { content_length, ready_at_ms: 1 },
             last_rendered_at_ms: Some(1),

@@ -597,6 +597,14 @@ fn mark_manifest_acceptance_success(
     observed_at_ms: u64,
 ) {
     session.origin_account_manifest_pending = None;
+    let startup_window_ms = session
+        .account_overlap_timing()
+        .target_duration_ms
+        .saturating_mul(2)
+        .max(tuliprox_session::STARTING_LEASE_TTL_SECS.saturating_mul(1_000));
+    if let Some(binding) = session.origin_account_binding.as_mut() {
+        binding.startup_media_deadline_ms.get_or_insert(observed_at_ms.saturating_add(startup_window_ms));
+    }
     let binding = Url::parse(&fetched.resolved_request_url)
         .ok()
         .and_then(|request_url| HlsManifestOriginBinding::new(request_url, fetched.provider_url_index).ok());
