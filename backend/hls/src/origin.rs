@@ -103,6 +103,8 @@ pub struct HlsOriginAccountBinding {
     pub session_owner: String,
     pub playback_request_id: Option<PlaybackRequestId>,
     pub pinned_at_ms: u64,
+    /// Media-preparation deadline fixed by this binding's first successful manifest.
+    pub startup_media_deadline_ms: Option<u64>,
     pub last_origin_io_at_ms: Option<u64>,
     pub last_reservation_refresh_at_ms: Option<u64>,
     pub binding_mode: HlsOriginAccountBindingMode,
@@ -406,6 +408,7 @@ impl HlsOriginAccountBinding {
             session_owner: build_hls_origin_session_owner(proxy_session_id),
             playback_request_id: None,
             pinned_at_ms: now_ms,
+            startup_media_deadline_ms: None,
             last_origin_io_at_ms: None,
             last_reservation_refresh_at_ms: None,
             binding_mode: HlsOriginAccountBindingMode::Active,
@@ -427,6 +430,7 @@ impl HlsOriginAccountBinding {
             session_owner,
             playback_request_id: None,
             pinned_at_ms: now_ms,
+            startup_media_deadline_ms: None,
             last_origin_io_at_ms: None,
             last_reservation_refresh_at_ms: None,
             binding_mode: HlsOriginAccountBindingMode::Active,
@@ -476,6 +480,7 @@ impl fmt::Debug for HlsOriginAccountBinding {
             .field("session_owner", &"<redacted>")
             .field("playback_request_id", &self.playback_request_id)
             .field("pinned_at_ms", &self.pinned_at_ms)
+            .field("startup_media_deadline_ms", &self.startup_media_deadline_ms)
             .field("last_origin_io_at_ms", &self.last_origin_io_at_ms)
             .field("last_reservation_refresh_at_ms", &self.last_reservation_refresh_at_ms)
             .field("binding_mode", &self.binding_mode)

@@ -509,6 +509,7 @@ pub(in crate::api::endpoints::hls_api) fn shared_hls_provisioning_segment_entry(
         origin_byte_range: None,
         map_ref: None,
         encryption: None,
+        retained_resource_identity: None,
         origin_fetch_ref: None,
         status: SegmentCacheStatus::Ready { content_length, ready_at_ms: now_ms },
         last_rendered_at_ms: None,
