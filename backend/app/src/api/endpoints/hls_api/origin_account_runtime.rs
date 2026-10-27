@@ -196,6 +196,13 @@ async fn prepare_hls_origin_runtime_locked(
     if reacquire_detached_binding {
         log_hls_origin_binding_reacquire_started(session, work_kind).await;
     }
+    let preferred_account = existing_binding
+        .as_ref()
+        .filter(|binding| {
+            binding.is_detached()
+                && hls_origin_account_status(&app_state.hls_ctx(), binding) == HlsOriginAccountStatus::Known
+        })
+        .map(|binding| Arc::clone(&binding.account_name));
     if let Some(binding) = existing_binding {
         if binding.is_active()
             || !matches!(hls_origin_account_status(&app_state.hls_ctx(), &binding), HlsOriginAccountStatus::Known)
@@ -247,6 +254,7 @@ async fn prepare_hls_origin_runtime_locked(
         work_kind,
         work_class,
         playback_kind,
+        preferred_account.as_ref(),
         now_ms,
     )
     .await
@@ -325,6 +333,7 @@ async fn prepare_hls_origin_runtime_locked(
             work_kind,
             work_class,
             playback_kind,
+            None,
             now_ms,
         )
         .await

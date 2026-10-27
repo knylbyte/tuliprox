@@ -666,17 +666,38 @@ pub(super) async fn prepare_hls_origin_runtime_with_new_account(
     work_kind: HlsOriginWorkKind,
     work_class: HlsOriginWorkClass,
     playback_kind: PlaybackKind,
+    preferred_account: Option<&Arc<str>>,
     now_ms: u64,
 ) -> Result<HlsOriginRuntimeAllocation, HlsOriginRuntimeAcquireError> {
     let session_owner = build_hls_origin_session_owner(proxy_session_id);
-    let Some(provider_handle) = app_state.active_provider.acquire_connection_with_lease_for_session(
-        &input.name,
-        &fingerprint.addr,
-        allow_grace,
-        priority,
-        connection_kind,
-        Some(PlaybackLeaseRef::new(&session_owner, playback_kind)),
-    ) else {
+    let lease = PlaybackLeaseRef::new(&session_owner, playback_kind);
+    let provider_handle = preferred_account
+        .and_then(|account| {
+            let handle = app_state.active_provider.try_acquire_exact_connection_with_lease_for_session(
+                account,
+                &fingerprint.addr,
+                priority,
+                connection_kind,
+                Some(lease),
+            );
+            debug!(
+                "HLS origin account preference tried: account={} result={}",
+                sanitize_sensitive_info(account.as_ref()),
+                if handle.is_some() { "reused" } else { "unavailable" }
+            );
+            handle
+        })
+        .or_else(|| {
+            app_state.active_provider.acquire_connection_with_lease_for_session(
+                &input.name,
+                &fingerprint.addr,
+                allow_grace,
+                priority,
+                connection_kind,
+                Some(lease),
+            )
+        });
+    let Some(provider_handle) = provider_handle else {
         debug!(
             "HLS origin account acquire unavailable: work={} work_class={} grace={}",
             work_kind.as_log_value(),
@@ -841,7 +862,17 @@ pub(super) async fn detach_unprotected_hls_origin_account_bindings(app_state: &A
             // A retained session can contain delivery from an earlier playback.
             // Give each newly published binding its own bounded start window;
             // healthy preparation leaves pinned_at_ms unchanged.
-            let starting_window_expired = now_ms > binding.pinned_at_ms.saturating_add(starting_window_ms);
+            let opening_deadline_ms = binding.pinned_at_ms.saturating_add(starting_window_ms);
+            // A slow manifest must leave one bounded media-preparation window after its
+            // first commit. Refreshes and repeated preparation never move this anchor.
+            let delivered_on_binding =
+                session_guard.activity.last_delivered_media_at_ms.is_some_and(|last| last >= binding.pinned_at_ms);
+            let startup_deadline_ms = if delivered_on_binding {
+                opening_deadline_ms
+            } else {
+                binding.startup_media_deadline_ms.unwrap_or(opening_deadline_ms).max(opening_deadline_ms)
+            };
+            let starting_window_expired = now_ms > startup_deadline_ms;
             let media_window_expired = session_guard.activity.last_delivered_media_at_ms.is_none_or(|last| {
                 now_ms > last.saturating_add(timing.hard_active_window_ms).saturating_add(timing.soft_active_window_ms)
             });
