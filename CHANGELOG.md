@@ -192,6 +192,11 @@
 
 ## 🌟 New Features
 
+- **`playback_provider` input option.** Binds a global `provider` profile to an input whose `url` and alias URLs are
+  plain `http(s)://` URLs. Mappings that rewrite channel URLs to `provider://<name>/...` now resolve on such inputs
+  instead of failing with `Provider config for '<name>' not found in input` (HTTP 503), so CDN URL failover works for
+  independent playlists. Available in the input editor of the Web UI.
+
 - **Shared HLS origin transfer telemetry.** New optional `reverse_proxy.hls_origin_telemetry` block (off by default)
   measures the existing origin fetches for segments, maps, keys and manifests: time to headers, first byte and body
   completion, bytes, status, outcome and failure phase, with queue wait separated from network time. Aggregates keep
@@ -1205,6 +1210,11 @@
   metadata alone: it takes no scan slot and no file lock and does not open the database.
 
 ## 🐛 Fixes
+
+- **VOD from providers that label ranged media `text/html` plays again in reverse proxy mode.** The
+  "Provider returned HTML content" check rejected every non-adaptive success response with a `text/html`
+  content type, so a valid `206` movie (for example Matroska) served with the wrong type fell back to the
+  error video. Responses with status `206` or a `Content-Range` header are no longer rejected on content type.
 
 - **Token-only M3U streams on a `provider://` profile no longer fail with 503 on the HLS media manifest.** The HLS
   origin rewrite required the selected account's username/password even when the URL carries only a token and needs
