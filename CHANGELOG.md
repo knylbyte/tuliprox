@@ -192,6 +192,17 @@
 
 ## 🌟 New Features
 
+- **Shared HLS origin transfer telemetry.** New optional `reverse_proxy.hls_origin_telemetry` block (off by default)
+  measures the existing origin fetches for segments, maps, keys and manifests: time to headers, first byte and body
+  completion, bytes, status, outcome and failure phase, with queue wait separated from network time. Aggregates keep
+  availability and transfer quality apart and report sample coverage and freshness. Transfer-quality values stay `null`
+  when unmeasured or stale; availability values such as `success_ratio` are not nulled by freshness, so check
+  `availability.last_sample_age_ms`.
+  The bounded recorder counts dropped events, adds no provider requests and exports no credentials or origin URLs.
+  Configurable in the Web UI under Config → Reverse Proxy. Read it at `GET /api/v1/hls/origin-telemetry` or via the
+  MCP tool `get_hls_origin_telemetry`. See
+  [Shared HLS Origin Telemetry](docs/src/operator/hls-origin-telemetry.md).
+
 - **Plex, Emby and Jellyfin libraries become separate categories.** Every imported media server library is now its
   own playlist group named after the library (for example `Movies 1`, `Movies 2`), so it shows up as a separate
   category in Xtream, M3U and every other output instead of one `Media Server Movies` / `Media Server Series` group.
