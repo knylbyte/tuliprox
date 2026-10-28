@@ -247,6 +247,7 @@ async fn first_ready_revalidation_keeps_its_qualification_while_new_media_is_loa
         assert_eq!(session.origin_control.acceptance_generation.0, 1);
         session.last_rendered_manifest.as_mut().unwrap().valid_until_ms = 0;
         session.activity.last_authorized_media_at_ms = None;
+        session.origin_account_binding.as_mut().unwrap().startup_protection.as_mut().unwrap().anchored_at_ms = 0;
         session.startup.as_mut().unwrap().revisions.clear();
         for segment in session.segments.values_mut() {
             segment.status = SegmentCacheStatus::Expired;

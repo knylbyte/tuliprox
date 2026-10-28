@@ -33,6 +33,7 @@ use tuliprox_hls::api::{
 };
 
 #[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_lines, reason = "Keep admission, final failure retention and its response in one lifecycle.")]
 pub(in crate::api::endpoints::hls_api) async fn prepare_hls_canonical_manifest_origin_runtime(
     app_state: &Arc<AppState>,
     session: &HlsSessionHandle,
@@ -45,6 +46,7 @@ pub(in crate::api::endpoints::hls_api) async fn prepare_hls_canonical_manifest_o
     server_path: Option<&str>,
     now_ms: u64,
 ) -> Result<PreparedHlsOriginRuntime, Box<axum::response::Response>> {
+    let expected_account = tuliprox_hls::api::HlsOriginAccountSnapshot::from_session(&*session.read().await);
     let mut allow_grace_hold = true;
     loop {
         let origin_policy = hls_effective_origin_acquire_policy(session).await;
@@ -102,7 +104,45 @@ pub(in crate::api::endpoints::hls_api) async fn prepare_hls_canonical_manifest_o
                     HlsProviderExhaustedResolution::RetryAcquire => {
                         allow_grace_hold = false;
                     }
-                    HlsProviderExhaustedResolution::Response(response) => return Err(Box::new(response)),
+                    HlsProviderExhaustedResolution::Provisioning(response) => return Err(Box::new(response)),
+                    HlsProviderExhaustedResolution::Exhausted(response) => {
+                        if matches!(access_lease_state, HlsAccessLeaseState::Pending | HlsAccessLeaseState::Idle)
+                            && session.read().await.origin_playback_kind()
+                                == tuliprox_core::model::PlaybackKind::LiveHls
+                            && app_state
+                                .hls
+                                .proxy
+                                .access_lease_response_snapshot(
+                                    access_lease_id,
+                                    path_proxy_session_id,
+                                    app_state.hls.proxy.now_ms(),
+                                )
+                                .await
+                                .is_some()
+                        {
+                            app_state
+                                .hls
+                                .proxy
+                                .fail_access_lease_start_admission(
+                                    &app_state.hls_ctx(),
+                                    session,
+                                    access_lease_id,
+                                    tuliprox_hls::api::HlsBoundAccountAcquireErrorKind::Exhausted,
+                                    now_ms,
+                                    &expected_account,
+                                )
+                                .await;
+                            return Err(Box::new(
+                                hls_unpublished_lease_channel_unavailable_response(
+                                    app_state,
+                                    path_proxy_session_id,
+                                    access_lease_id,
+                                )
+                                .await,
+                            ));
+                        }
+                        return Err(Box::new(response));
+                    }
                 }
             }
             Err(HlsOriginRuntimeAcquireError::Fatal(status)) => {
@@ -171,6 +211,17 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
             now_ms,
         )
         .await;
+    if session.read().await.origin_playback_kind() == tuliprox_core::model::PlaybackKind::LiveHls {
+        touch_initial_manifest_access_lease_window(
+            app_state,
+            access_lease_id,
+            path_proxy_session_id,
+            access_lease_state,
+            hls_initial_manifest_decision_wait_timeout(app_state),
+            now_ms,
+        )
+        .await;
+    }
     if matches!(access_lease_state, HlsAccessLeaseState::Pending | HlsAccessLeaseState::Idle)
         && app_state
             .hls
@@ -609,6 +660,16 @@ pub(in crate::api::endpoints::hls_api) async fn touch_initial_manifest_access_le
     }
     let wait_timeout_ms = duration_to_millis_saturating(wait_timeout);
     let deadline_ms = now_ms.saturating_add(wait_timeout_ms.max(hls_pending_bootstrap_window_ms(app_state)));
+    let live = if let Some(session) = app_state.hls.proxy.sessions().get_by_proxy_session_id(proxy_session_id).await {
+        session.read().await.origin_playback_kind() == tuliprox_core::model::PlaybackKind::LiveHls
+    } else {
+        false
+    };
+    let pending_deadline = if live {
+        HlsAccessLeasePendingDeadline::Processing { deadline_ms }
+    } else {
+        HlsAccessLeasePendingDeadline::Bootstrap { deadline_ms }
+    };
     let touch = app_state
         .hls
         .proxy
@@ -617,7 +678,7 @@ pub(in crate::api::endpoints::hls_api) async fn touch_initial_manifest_access_le
             proxy_session_id,
             now_ms,
             None,
-            Some(HlsAccessLeasePendingDeadline::Bootstrap { deadline_ms }),
+            Some(pending_deadline),
             hls_access_lease_ttl_ms(app_state),
         )
         .await;

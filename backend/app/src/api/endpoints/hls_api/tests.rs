@@ -99,6 +99,8 @@ mod manifest_startup;
 mod observability;
 mod owner_handoff;
 mod provider_admission;
+mod provider_admission_retry_reservation;
+mod provider_admission_startup_reservation;
 mod runtime_policy;
 mod segment_responses;
 mod support;

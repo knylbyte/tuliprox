@@ -33,15 +33,31 @@ pub(in crate::api::endpoints::hls_api) async fn hls_exhausted_startup_response(
     session: &HlsSessionHandle,
     lease: &tuliprox_hls::api::HlsAccessLease,
 ) -> Option<axum::response::Response> {
+    if lease
+        .manifest_start_attempt
+        .as_ref()
+        .is_some_and(|attempt| attempt.failed() && attempt.provider_failure().is_some())
+    {
+        return None;
+    }
     let reason = tuliprox_hls::api::HlsRuntimeCustomTailReason::ChannelUnavailable;
     // Idle re-entry may have published media from its previous playback. The
     // standalone response must leave those snapshots and revision bindings intact.
     let idle_reentry = lease.state == HlsAccessLeaseState::Idle
         && lease.playback_mode == tuliprox_hls::api::HlsLeasePlaybackMode::Live
         && lease.runtime_policy_revocation.is_none();
-    if !(lease.permits_unpublished_standalone_tail(reason) || idle_reentry)
-        || !session.read().await.live_startup_segments_exhausted()
-    {
+    if !(lease.permits_unpublished_standalone_tail(reason) || idle_reentry) {
+        return None;
+    }
+    let exhausted = {
+        let state = session.read().await;
+        // A fresh manifest or media preparation may still replace an exhausted
+        // retained window. End the start only after that work has settled.
+        !state.initial_manifest_commit_work_pending()
+            && state.activity.active_origin_work_count.load(std::sync::atomic::Ordering::Acquire) == 0
+            && state.live_startup_segments_exhausted()
+    };
+    if !exhausted {
         return None;
     }
     let fallback_status = if is_custom_video_stream_enabled(&app_state.app_config) {

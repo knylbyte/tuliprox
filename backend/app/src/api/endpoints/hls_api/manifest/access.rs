@@ -27,7 +27,11 @@ pub(in crate::api::endpoints::hls_api) async fn mark_successful_canonical_manife
     session: &HlsSessionHandle,
     now_ms: u64,
 ) {
-    mark_hls_authorized_media_access(app_state, session, now_ms).await;
+    if session.read().await.origin_playback_kind() == tuliprox_core::model::PlaybackKind::LiveHls {
+        mark_hls_authorized_manifest_access(app_state, session, now_ms).await;
+    } else {
+        mark_hls_authorized_media_access(app_state, session, now_ms).await;
+    }
 }
 
 pub(in crate::api::endpoints::hls_api) async fn mark_hls_authorized_manifest_access(

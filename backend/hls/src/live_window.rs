@@ -156,7 +156,7 @@ impl HlsSession {
         })
     }
 
-    fn live_startup_segment_failed(&self, seq: u64) -> bool {
+    pub(crate) fn live_startup_segment_failed(&self, seq: u64) -> bool {
         self.segments.get(&seq).is_none_or(|entry| {
             matches!(
                 entry.status,
