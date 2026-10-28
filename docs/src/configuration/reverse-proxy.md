@@ -291,6 +291,10 @@ For the configuration reference, see [Shared HLS Configuration](./shared-hls-con
 For the shared session, access lease, and transient delivery state machines, see
 [HLS Cache State Machines](./hls-cache-state-machine.md).
 
+When all origin segments fail during pending startup or idle re-entry, disabling custom responses makes the HLS
+fallback use the global `custom_stream_response_error_status` (default `502`). See
+[Shared HLS Configuration](./shared-hls-configuration.md#optional-startup-modes) for startup recovery behavior.
+
 The session and global byte limits cover committed objects, immutable revisions, and outstanding write reservations.
 Staging and postprocessing grow their budgets before writing additional bytes. Committing an object consumes its own
 reservation; capacity released by a completed or aborted write wakes deferred downloads. Both targeted reclamation
