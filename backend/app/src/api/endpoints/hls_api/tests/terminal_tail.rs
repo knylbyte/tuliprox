@@ -444,6 +444,9 @@ pub(in crate::api::endpoints::hls_api::tests) async fn stale_origin_fixture() ->
         .expect("activated pinned-origin lease");
     let initial_visible_tail =
         lease.last_manifest_snapshot.as_ref().expect("initial lease manifest snapshot").last_proxy_seq;
+    // This fixture models active media playback. Manifest publication itself no
+    // longer supplies the authorized-media activity that keeps playback active.
+    session.write().await.mark_authorized_media_access(now_ms);
     let (initial_progress_generation, initial_origin_epoch, initial_progress_at_ms) = {
         let session = session.read().await;
         assert_eq!(session.origin_seq_highwater, Some(105));

@@ -142,10 +142,14 @@ async fn slow_initial_manifest_keeps_one_bounded_media_preparation_window() {
     {
         let mut current = session.write().await;
         current.target_duration = Some(11);
-        // Nine seconds to the first manifest, then two target durations to prepare media.
-        current.origin_account_binding.as_mut().unwrap().startup_media_deadline_ms = Some(31_000);
+        // Nine seconds to the first accepted manifest, then the fixed 3T start window.
+        current.origin_account_binding.as_mut().unwrap().startup_protection =
+            Some(tuliprox_hls::api::HlsOriginStartProtection {
+                anchored_at_ms: 9_000,
+                timing: tuliprox_hls::api::HlsAccountOverlapTiming::from_target_duration_secs(Some(11)),
+            });
     }
-    for now_ms in [10_001, 20_000, 31_000] {
+    for now_ms in [10_001, 20_000, 42_000] {
         let prepared = prepare_reacquire_test_binding(
             &app,
             &session,
@@ -159,12 +163,12 @@ async fn slow_initial_manifest_keeps_one_bounded_media_preparation_window() {
         assert!(binding.is_active());
         assert_eq!(binding.generation, 0);
         assert_eq!(binding.pinned_at_ms, 1_000);
-        assert_eq!(binding.startup_media_deadline_ms, Some(31_000));
+        assert_eq!(binding.startup_protection.unwrap().reservation_deadline_ms(), 43_000);
         assert_eq!(current.activity.origin_work_generation, 0);
         drop(current);
         app.connection_manager.release_managed_provider_handle(prepared.preacquired_origin_account_handle);
     }
-    super::super::detach_unprotected_hls_origin_account_bindings(&app, 31_001).await;
+    super::super::detach_unprotected_hls_origin_account_bindings(&app, 42_001).await;
     assert!(session.read().await.origin_account_binding.as_ref().unwrap().is_detached());
 }
 

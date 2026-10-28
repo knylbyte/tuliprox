@@ -652,6 +652,9 @@ async fn refresh_and_commit(mut request: OriginRefreshRequest, fetch_started_at_
                 (false, false, None, None, HlsPostRefreshAvailabilityAction::None, None)
             }
             Err(err) => {
+                if let (Some(attempt), OriginManifestFetchError::ProviderUnavailable(kind)) = (&request.attempt, &err) {
+                    attempt.record_provider_failure(*kind);
+                }
                 session.origin_control.qualification.record_failure();
                 session.origin_refresh.mark_failure(fetch_finished_at_ms);
                 metrics.record_refresh_failed();
@@ -691,6 +694,16 @@ async fn refresh_and_commit(mut request: OriginRefreshRequest, fetch_started_at_
     };
     if let Some(owner) = request.work_owner.as_ref() {
         owner.disarm();
+    }
+    crate::origin::finish_failed_hls_start(
+        request.origin_io.as_ref(),
+        &request.session,
+        request.origin_io.as_ref().and_then(|io| io.started_generation),
+    )
+    .await;
+    if request.attempt.as_ref().is_some_and(|attempt| attempt.failed()) {
+        let proxy_id = request.session.read().await.proxy_session_id.clone();
+        request.hls_proxy.notify_session_evidence_changed(&proxy_id);
     }
     if let Some(proxy_session_id) = committed_evidence_session.as_ref() {
         request.hls_proxy.notify_session_evidence_changed(proxy_session_id);

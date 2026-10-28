@@ -70,6 +70,7 @@ pub(in crate::api::endpoints::hls_api::tests) async fn spawn_test_binary_origin(
     let manifest_requests = Arc::new(AtomicUsize::new(0));
     let segment_requests = Arc::new(AtomicUsize::new(0));
     let manifest_requests_for_task = Arc::clone(&manifest_requests);
+    let segment_requests_for_task = Arc::clone(&segment_requests);
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("test origin binds");
     let addr = listener.local_addr().expect("local addr");
     let task = tokio::spawn(async move {
@@ -79,6 +80,7 @@ pub(in crate::api::endpoints::hls_api::tests) async fn spawn_test_binary_origin(
             };
             let handler = Arc::clone(&handler);
             let manifest_requests = Arc::clone(&manifest_requests_for_task);
+            let segment_requests = Arc::clone(&segment_requests_for_task);
             tokio::spawn(async move {
                 let mut buf = vec![0_u8; 2048];
                 let Ok(read) = socket.read(&mut buf).await else {
@@ -91,6 +93,8 @@ pub(in crate::api::endpoints::hls_api::tests) async fn spawn_test_binary_origin(
                 let path = request.lines().next().and_then(|line| line.split_whitespace().nth(1)).unwrap_or("/");
                 if path_has_extension(path, "m3u8") {
                     manifest_requests.fetch_add(1, Ordering::SeqCst);
+                } else if path_has_extension(path, "ts") {
+                    segment_requests.fetch_add(1, Ordering::SeqCst);
                 }
                 let TestBinaryOriginResponse { status, location, body, gate } = handler(path);
                 if let Some(mut gate) = gate {
