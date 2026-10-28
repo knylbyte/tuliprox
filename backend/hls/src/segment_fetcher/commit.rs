@@ -107,7 +107,7 @@ impl HlsSegmentWorkerPool {
         let notifier = (!stale_commit_cleanup_reserved && scheduled_retry.is_none())
             .then(|| session.segment_fetch_notifiers.remove(&snapshot.proxy_seq))
             .flatten();
-        let evidence_changed_for = (generation_valid && fetch_succeeded).then(|| session.proxy_session_id.clone());
+        let evidence_changed_for = generation_valid.then(|| session.proxy_session_id.clone());
         SegmentFetchCompletion {
             generation_valid,
             stale_commit_cleanup_reserved,
