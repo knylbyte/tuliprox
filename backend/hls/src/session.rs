@@ -302,6 +302,7 @@ pub struct HlsSession {
     pub(crate) live_window_origin_work_generation: Option<u64>,
     pub live_window_strip: tuliprox_core::model::StripConfig,
     pub(crate) live_window_demands: HashMap<super::HlsAccessLeaseId, super::live_window::HlsLiveWindowDemand>,
+    pub(crate) last_warned_short_startup_window: Option<Vec<u64>>,
     pub last_rendered_manifest: Option<RenderedManifest>,
     manifest_commit_generation: u64,
     /// Origin manifests committed into this session.
@@ -393,6 +394,7 @@ impl HlsSession {
                 value: 0,
             },
             live_window_demands: HashMap::new(),
+            last_warned_short_startup_window: None,
             render_policy: RenderPolicy::default(),
             startup: None,
             last_rendered_manifest: None,
@@ -1016,6 +1018,7 @@ impl fmt::Debug for HlsSession {
             .field("live_window_origin_work_generation", &self.live_window_origin_work_generation)
             .field("live_window_strip", &self.live_window_strip)
             .field("live_window_demands", &self.live_window_demands)
+            .field("last_warned_short_startup_window", &self.last_warned_short_startup_window)
             .field("initial_prefetch_gap_segments", &self.initial_prefetch_gap_segments)
             .field("segment_prefetch_queue_len", &self.segment_prefetch_queue.len())
             .field("active_segment_fetches", &self.active_segment_fetches)

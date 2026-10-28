@@ -249,6 +249,10 @@ pub(in crate::api::endpoints::hls_api) async fn evaluate_hls_canonical_owner_han
     let current_session =
         context.app_state.hls.proxy.sessions().get_by_proxy_session_id(context.proxy_session_id).await;
     if let Some(current_session) = current_session.as_ref() {
+        if let Some(response) = super::hls_exhausted_startup_response(context.app_state, current_session, &lease).await
+        {
+            return HlsCanonicalOwnerEvaluation::Resolved(HlsCanonicalOwnerResolution::Standalone(response));
+        }
         let options = hls_cached_manifest_options_for_requirement(
             Duration::ZERO,
             context.manifest_commit_requirement,
