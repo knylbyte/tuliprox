@@ -177,7 +177,7 @@ pub async fn hls_startup_admission_allows_snapshot(
         // that lease's fully downloaded replacement. Other origin failures keep
         // their normal admission and reserve checks.
         let recovered_entry = session.origin_control.path_condition
-            == crate::HlsOriginPathCondition::SegmentReadinessFailure
+            == crate::origin_progress::HlsOriginPathCondition::SegmentReadinessFailure
             && snapshot
                 .startup_revisions
                 .as_ref()

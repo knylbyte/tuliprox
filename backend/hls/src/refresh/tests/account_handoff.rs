@@ -66,7 +66,10 @@ async fn account_handoff_preserves_unpublished_overlap_and_allows_startup_render
         handoff_startup_account(&mut current, 1, 0);
         super::commit_fetched_manifest(&mut current, &first, &request, 9_000).unwrap();
         assert!(current.last_rendered_manifest.is_none());
-        assert_eq!(current.origin_account_binding.as_ref().unwrap().startup_media_deadline_ms, Some(31_000));
+        assert_eq!(
+            current.origin_account_binding.as_ref().unwrap().startup_protection.unwrap().reservation_deadline_ms(),
+            43_000
+        );
         let identity = current.segments[&1].media_resource_identity();
         assert!(identity.is_some());
         // Repeated handoffs before the first media download must retain the same evidence.
@@ -90,12 +93,12 @@ async fn account_handoff_preserves_unpublished_overlap_and_allows_startup_render
     }
     let rendered = current.render_and_store_manifest(12_000).expect("startup media window must render");
     assert_eq!(rendered.segment_proxy_seqs, vec![1, 2, 3, 4, 5, 6]);
-    let deadline = current.origin_account_binding.as_ref().unwrap().startup_media_deadline_ms;
+    let deadline = current.origin_account_binding.as_ref().unwrap().startup_protection;
     assert!(deadline.is_some());
     let mut later = second;
     later.body = later.body.replace("TARGETDURATION:11", "TARGETDURATION:22");
     super::commit_fetched_manifest(&mut current, &later, &request, 20_000).unwrap();
-    assert_eq!(current.origin_account_binding.as_ref().unwrap().startup_media_deadline_ms, deadline);
+    assert_eq!(current.origin_account_binding.as_ref().unwrap().startup_protection, deadline);
 }
 
 #[tokio::test]

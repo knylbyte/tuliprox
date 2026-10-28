@@ -229,7 +229,7 @@ async fn account_handoff_during_segment_prepare_blocks_old_origin_request() {
     let snapshot = worker.next_fetch_snapshot(&context, 10, &policy).await.expect("segment snapshot");
     let replacement_lease = Arc::new(HlsOriginAccountIoLease::active_for_test(&replacement, 1));
     let read_blocker = context.session.read().await;
-    let mut fetch = Box::pin(super::super::fetch_segment_with_retries_into_cache(&context, &snapshot, &policy));
+    let mut fetch = Box::pin(super::super::fetch_segment_with_retries_into_cache(&context, &snapshot, &policy, None));
     assert!(futures::poll!(fetch.as_mut()).is_pending());
     let mut handoff = Box::pin(context.session.write());
     assert!(futures::poll!(handoff.as_mut()).is_pending());

@@ -40,10 +40,16 @@ impl HlsAccessLeaseState {
 
 impl HlsAccessLeasePendingDeadline {
     pub(super) const fn tightened_with(self, candidate: Self) -> Self {
+        // Consume the entry deadline once when a timely session request starts.
+        // Its processing budget is independent; retries cannot move that deadline.
+        if let (Self::Bootstrap { .. }, Self::Processing { .. }) = (self, candidate) {
+            return candidate;
+        }
         let deadline_ms =
             if self.deadline_ms() <= candidate.deadline_ms() { self.deadline_ms() } else { candidate.deadline_ms() };
         match (self, candidate) {
             (Self::FollowUp { .. }, _) | (_, Self::FollowUp { .. }) => Self::FollowUp { deadline_ms },
+            (Self::Processing { .. }, _) | (_, Self::Processing { .. }) => Self::Processing { deadline_ms },
             (Self::Bootstrap { .. }, Self::Bootstrap { .. }) => Self::Bootstrap { deadline_ms },
         }
     }
@@ -112,6 +118,25 @@ impl HlsAccessLeaseActivation {
 }
 
 impl HlsAccessLeaseStore {
+    pub(crate) fn fail_start_attempts(
+        &mut self,
+        session: &ProxySessionId,
+        shared: &std::sync::Arc<crate::manifest_fetch::HlsManifestAttemptContext>,
+        kind: Option<crate::HlsBoundAccountAcquireErrorKind>,
+    ) {
+        for lease in self.by_lease_id.values_mut().filter(|lease| {
+            lease.proxy_session_id == *session
+                && matches!(lease.state, HlsAccessLeaseState::Pending | HlsAccessLeaseState::Idle)
+                && lease.playback_mode == HlsLeasePlaybackMode::Live
+        }) {
+            let attempt = lease.manifest_start_attempt.get_or_insert_with(|| std::sync::Arc::clone(shared));
+            if let Some(kind) = kind {
+                attempt.record_provider_failure(kind);
+            }
+            attempt.finish(true);
+        }
+    }
+
     pub(crate) fn manifest_attempt_context(
         &mut self,
         lease_id: Option<&HlsAccessLeaseId>,

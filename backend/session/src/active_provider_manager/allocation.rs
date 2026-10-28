@@ -315,7 +315,7 @@ impl ActiveProviderManager {
         Self::prune_expired_leases(&mut leases);
         let confirmed = leases
             .lease_of_owner(session_owner)
-            .is_some_and(|lease| lease.provider_name == *provider_name && lease.state.is_confirmed());
+            .is_some_and(|lease| lease.provider_name == *provider_name && lease.reserves_capacity());
         drop(leases);
         confirmed || self.has_active_owner_for_provider(provider_name, session_owner)
     }
