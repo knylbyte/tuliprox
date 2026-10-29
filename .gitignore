@@ -80,6 +80,11 @@ GOAL.md
 .env.*
 !.env.example
 
+# Local Gitleaks rules can contain personal data. Only the shared config is tracked.
+/.gitleaks.*.toml
+!/.gitleaks.default.toml
+/.githooks/tests/
+
 # Testkit report artifacts
 /testkit-report/
 
