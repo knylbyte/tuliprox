@@ -1,0 +1,26 @@
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci (chore): "
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: docker
+    directory: /docker
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci (chore): "
+    groups:
+      docker:
+        patterns:
+          - "*"
