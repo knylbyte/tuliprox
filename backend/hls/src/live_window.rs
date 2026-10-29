@@ -170,7 +170,7 @@ impl HlsSession {
     pub fn live_startup_segments_exhausted(&self) -> bool {
         self.uses_fast_start_live_window()
             && !self.live_origin_sequences().is_empty()
-            && self.live_origin_sequences().iter().all(|seq| self.live_startup_segment_failed(*seq))
+            && self.start_segments_exhausted()
     }
 
     pub fn plan_live_window_for_lease(&mut self, lease: &HlsAccessLease) -> Option<HlsLiveWindowPlan> {

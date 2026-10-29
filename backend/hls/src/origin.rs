@@ -737,7 +737,16 @@ pub(crate) async fn finish_failed_hls_start(
     expected_generation: Option<u64>,
 ) {
     let Some(io) = io else { return };
-    finish_failed_hls_start_for_context(&io.ctx, session, expected_generation, io.prepared_account.as_ref()).await;
+    let expected_account = io.prepared_account.as_ref().map(|snapshot| {
+        let mut snapshot = snapshot.clone();
+        // A committed terminal result may invalidate its own queued work. Keep
+        // the original account identity, fenced by the commit's resulting generation.
+        if let Some(generation) = expected_generation {
+            snapshot.generation = generation;
+        }
+        snapshot
+    });
+    finish_failed_hls_start_for_context(&io.ctx, session, expected_generation, expected_account.as_ref()).await;
 }
 
 pub(crate) async fn finish_failed_hls_start_for_context(

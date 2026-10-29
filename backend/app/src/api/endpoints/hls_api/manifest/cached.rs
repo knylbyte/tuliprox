@@ -55,7 +55,7 @@ pub(in crate::api::endpoints::hls_api) async fn hls_exhausted_startup_response(
         // retained window. End the start only after that work has settled.
         !state.initial_manifest_commit_work_pending()
             && state.activity.active_origin_work_count.load(std::sync::atomic::Ordering::Acquire) == 0
-            && state.live_startup_segments_exhausted()
+            && state.start_segments_exhausted()
     };
     if !exhausted {
         return None;

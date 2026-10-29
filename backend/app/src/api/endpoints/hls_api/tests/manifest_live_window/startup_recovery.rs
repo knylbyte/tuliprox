@@ -45,7 +45,14 @@ async fn fixture(mode: HlsStartupMode, failed: &[u64]) -> (tempfile::TempDir, Ar
         state.apply_origin_manifest(&origin(409_624, 6, &[8])).unwrap();
         state.target_duration = Some(21);
         let ready = (0..6).filter(|seq| !failed.contains(seq)).collect::<Vec<_>>();
-        prepare_revisions(&mut state, &ready);
+        if mode == HlsStartupMode::Conservative {
+            for seq in ready {
+                state.segments.get_mut(&seq).unwrap().status =
+                    SegmentCacheStatus::Ready { content_length: 1, ready_at_ms: current_time_millis() };
+            }
+        } else {
+            prepare_revisions(&mut state, &ready);
+        }
         for seq in failed {
             state.segments.get_mut(seq).unwrap().status = SegmentCacheStatus::FailedPermanent {
                 failed_at_ms: current_time_millis(),
@@ -96,8 +103,16 @@ async fn recovered_startup_publishes_ready_successors_including_short_windows_wi
 
 #[tokio::test]
 async fn exhausted_startup_returns_configured_fallback_immediately_and_keeps_active_leases() {
-    for (video, error_status) in CUSTOM_RESPONSE_CASES {
-        let (_directory, app, session) = fixture(HlsStartupMode::Optimistic, &[0, 1, 2, 3, 4, 5]).await;
+    for (mode, (video, error_status)) in [
+        HlsStartupMode::Conservative,
+        HlsStartupMode::FirstReady,
+        HlsStartupMode::Progressive,
+        HlsStartupMode::Optimistic,
+    ]
+    .into_iter()
+    .flat_map(|mode| CUSTOM_RESPONSE_CASES.map(|case| (mode, case)))
+    {
+        let (_directory, app, session) = fixture(mode, &[0, 1, 2, 3, 4, 5]).await;
         let proxy = session.read().await.proxy_session_id.clone();
         let id = HlsAccessLeaseId("exhausted-entry".into());
         super::super::prepare_pending_test_hls_access_lease(&app, &proxy, &id).await;
