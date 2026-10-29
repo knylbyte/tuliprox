@@ -67,6 +67,18 @@ impl HlsLeaseManifestPublicationOutcome {
 }
 
 impl HlsAccessLease {
+    // A retained failed lease can still authorize its fallback, but cannot
+    // reopen origin preparation. Other active viewers keep their own authority.
+    fn permits_origin_work(&self, now_ms: u64) -> bool {
+        match self.state {
+            HlsAccessLeaseState::Pending | HlsAccessLeaseState::Idle => {
+                !self.manifest_start_attempt.as_ref().is_some_and(|attempt| attempt.failed())
+            }
+            HlsAccessLeaseState::Activated => self.valid_until_ms > now_ms,
+            HlsAccessLeaseState::PolicyRevoking | HlsAccessLeaseState::Expired | HlsAccessLeaseState::Denied => false,
+        }
+    }
+
     pub fn with_archive_playback(mut self, epg_reference_ts: Option<i64>, archive_origin_url: Option<String>) -> Self {
         self.epg_reference_ts = epg_reference_ts;
         self.archive_origin_url = archive_origin_url;
@@ -852,10 +864,7 @@ impl HlsAccessLeaseStore {
             .filter(|lease| {
                 lease.proxy_session_id == *session
                     && matches!(lease.playback_mode, HlsLeasePlaybackMode::Live)
-                    && matches!(
-                        lease.state,
-                        HlsAccessLeaseState::Pending | HlsAccessLeaseState::Idle | HlsAccessLeaseState::Activated
-                    )
+                    && lease.permits_origin_work(now_ms)
             })
             .min_by(|left, right| {
                 left.issued_at_ms.cmp(&right.issued_at_ms).then_with(|| left.lease_id.0.cmp(&right.lease_id.0))
@@ -867,17 +876,9 @@ impl HlsAccessLeaseStore {
         if self.refresh_access_lease_validities_for_session(proxy_session_id, now_ms).is_err() {
             return false;
         }
-        let mut has_usable_lease = false;
-        for lease in self.by_lease_id.values() {
-            if lease.proxy_session_id == *proxy_session_id
-                && (lease.state == HlsAccessLeaseState::Pending
-                    || lease.state == HlsAccessLeaseState::Idle
-                    || (lease.state == HlsAccessLeaseState::Activated && lease.valid_until_ms > now_ms))
-            {
-                has_usable_lease = true;
-            }
-        }
-        has_usable_lease
+        self.by_lease_id
+            .values()
+            .any(|lease| lease.proxy_session_id == *proxy_session_id && lease.permits_origin_work(now_ms))
     }
 
     pub fn session_snapshot(

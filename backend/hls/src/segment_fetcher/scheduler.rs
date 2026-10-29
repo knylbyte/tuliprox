@@ -453,13 +453,11 @@ impl HlsSegmentWorkerPool {
             let mut session = context.session.write().await;
             self.apply_segment_fetch_result(&mut session, &snapshot, &policy, result, finished_at_ms)
         };
-        if completion.generation_valid {
-            crate::origin::finish_failed_hls_start(
-                context.origin_io.as_ref(),
-                &context.session,
-                Some(snapshot.origin_work_generation),
-            )
-            .await;
+        if let Some(generation) = completion.recovery_generation {
+            // A terminal failure can invalidate queued work during this commit.
+            // Cleanup belongs to its resulting generation, not the old fetch.
+            crate::origin::finish_failed_hls_start(context.origin_io.as_ref(), &context.session, Some(generation))
+                .await;
         }
         if let Some(recovery_generation) = completion.recovery_generation {
             if let Some(recovery) = self.revision_recovery.get() {

@@ -756,9 +756,13 @@ impl HlsSession {
         })
     }
 
-    pub(crate) fn start_segments_exhausted(&self) -> bool {
-        if self.uses_fast_start_live_window() {
-            return self.live_startup_segments_exhausted();
+    /// Whether every candidate in the current startup window has failed.
+    pub fn start_segments_exhausted(&self) -> bool {
+        let origin = self.live_origin_sequences();
+        if !origin.is_empty() {
+            // Missing-head recovery may already have advanced the conservative
+            // head past the tail. The accepted origin window still proves exhaustion.
+            return origin.iter().all(|seq| self.live_startup_segment_failed(*seq));
         }
         self.publishable_origin_head_proxy_seq.zip(self.publishable_origin_tail_proxy_seq).is_some_and(
             |(head, tail)| {

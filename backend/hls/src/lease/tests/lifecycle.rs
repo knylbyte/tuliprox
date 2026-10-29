@@ -7,6 +7,38 @@ use crate::ProxySessionId;
 use tuliprox_session::ConnectionKind;
 
 #[test]
+fn failed_start_lease_keeps_fallback_access_without_authorizing_new_origin_work() {
+    use crate::{HlsManifestAttemptContext, HlsManifestCommitRequirement};
+    use std::sync::Arc;
+
+    for state in [HlsAccessLeaseState::Pending, HlsAccessLeaseState::Idle, HlsAccessLeaseState::Activated] {
+        let mut store = HlsAccessLeaseStore::default();
+        let proxy = ProxySessionId("failed-start".to_owned());
+        let id = HlsAccessLeaseId("old-access".to_owned());
+        let attempt = Arc::new(HlsManifestAttemptContext::new(
+            HlsManifestCommitRequirement::CommittedManifestAllowed,
+            false,
+            None,
+        ));
+        let mut access = lease(id.clone(), &proxy.0, 1_000);
+        access.state = state;
+        access.active_until_ms = Some(10_000);
+        access.manifest_start_attempt = Some(Arc::clone(&attempt));
+        store.prepare_access_lease(access);
+        assert!(store.has_usable_access_lease_for_session(&proxy, 2_000));
+        assert_eq!(store.select_startup_repair_lease(&proxy, 2_000), Some(id.clone()));
+        attempt.finish(true);
+        let active = state == HlsAccessLeaseState::Activated;
+        assert_eq!(store.has_usable_access_lease_for_session(&proxy, 2_000), active, "{state:?}");
+        assert_eq!(store.select_startup_repair_lease(&proxy, 2_000).is_some(), active, "{state:?}");
+        assert!(store.access_lease(&id, &proxy, 2_000).is_some(), "fallback access must remain valid");
+        store.prepare_access_lease(lease(HlsAccessLeaseId("new-access".to_owned()), &proxy.0, 2_000));
+        assert!(store.has_usable_access_lease_for_session(&proxy, 2_000), "another viewer may still start");
+        assert!(store.select_startup_repair_lease(&proxy, 2_000).is_some());
+    }
+}
+
+#[test]
 fn access_lease_idles_at_exact_active_until_boundary() {
     let mut store = HlsAccessLeaseStore::default();
     let lease_id = HlsAccessLeaseId("lease-a".to_string());
