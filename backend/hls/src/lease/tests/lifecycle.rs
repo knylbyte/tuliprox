@@ -7,6 +7,42 @@ use crate::ProxySessionId;
 use tuliprox_session::ConnectionKind;
 
 #[test]
+fn terminal_lease_keeps_local_access_without_authorizing_origin_work_for_its_shared_session() {
+    use super::{HlsLeasePlaybackMode, HlsTerminalTailCompatibility};
+
+    let proxy = ProxySessionId("terminal-origin".into());
+    let id = HlsAccessLeaseId("terminal-viewer".into());
+    for mode in [
+        HlsLeasePlaybackMode::TerminalTail(super::terminal::terminal_plan(1, &proxy, &id)),
+        HlsLeasePlaybackMode::TerminalUnavailable {
+            decision_generation: 1,
+            reason: HlsTerminalTailCompatibility::MissingAsset,
+        },
+    ] {
+        for state in [HlsAccessLeaseState::Pending, HlsAccessLeaseState::Idle, HlsAccessLeaseState::Activated] {
+            let mut store = HlsAccessLeaseStore::default();
+            let mut terminal = lease(id.clone(), &proxy.0, 1_000);
+            terminal.state = state;
+            terminal.active_until_ms = Some(10_000);
+            terminal.playback_mode = mode.clone();
+            store.prepare_access_lease(terminal);
+
+            assert!(store.access_lease(&id, &proxy, 4_000).is_some(), "local response must remain authorized");
+            assert!(!store.has_usable_access_lease_for_session(&proxy, 4_000), "{mode:?} {state:?}");
+            assert_eq!(store.select_startup_repair_lease(&proxy, 4_000), None);
+
+            let live_id = HlsAccessLeaseId("live-viewer".into());
+            let mut live = lease(live_id.clone(), &proxy.0, 3_000);
+            live.state = state;
+            live.active_until_ms = Some(10_000);
+            store.prepare_access_lease(live);
+            assert!(store.has_usable_access_lease_for_session(&proxy, 4_000), "shared live viewer {state:?}");
+            assert_eq!(store.select_startup_repair_lease(&proxy, 4_000), Some(live_id));
+        }
+    }
+}
+
+#[test]
 fn failed_start_lease_keeps_fallback_access_without_authorizing_new_origin_work() {
     use crate::{HlsManifestAttemptContext, HlsManifestCommitRequirement};
     use std::sync::Arc;
