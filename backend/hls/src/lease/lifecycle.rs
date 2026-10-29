@@ -67,9 +67,12 @@ impl HlsLeaseManifestPublicationOutcome {
 }
 
 impl HlsAccessLease {
-    // A retained failed lease can still authorize its fallback, but cannot
-    // reopen origin preparation. Other active viewers keep their own authority.
+    // Terminal playback only needs local media. Failed starts retain fallback
+    // access without reopening origin preparation for pending or idle leases.
     fn permits_origin_work(&self, now_ms: u64) -> bool {
+        if !matches!(self.playback_mode, HlsLeasePlaybackMode::Live) {
+            return false;
+        }
         match self.state {
             HlsAccessLeaseState::Pending | HlsAccessLeaseState::Idle => {
                 !self.manifest_start_attempt.as_ref().is_some_and(|attempt| attempt.failed())
@@ -861,11 +864,7 @@ impl HlsAccessLeaseStore {
         self.refresh_access_lease_validities_for_session(session, now_ms).ok()?;
         self.by_lease_id
             .values()
-            .filter(|lease| {
-                lease.proxy_session_id == *session
-                    && matches!(lease.playback_mode, HlsLeasePlaybackMode::Live)
-                    && lease.permits_origin_work(now_ms)
-            })
+            .filter(|lease| lease.proxy_session_id == *session && lease.permits_origin_work(now_ms))
             .min_by(|left, right| {
                 left.issued_at_ms.cmp(&right.issued_at_ms).then_with(|| left.lease_id.0.cmp(&right.lease_id.0))
             })

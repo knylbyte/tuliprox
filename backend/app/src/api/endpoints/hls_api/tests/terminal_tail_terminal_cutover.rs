@@ -740,6 +740,10 @@ async fn delayed_terminal_response_before_refresh(mode: shared::model::HlsStartu
         manager.now_ms(), fixture.session.read().await.origin_refresh.in_flight, *controlled.release.borrow(), media[first_cvr - 1] == last_live, plan.0);
     drop(commits);
     assert_eq!(fixture.session.read().await.terminal_commit_observer_count_for_test(), 0);
+    assert!(
+        !manager.has_usable_access_lease_for_session(&fixture.proxy_session_id, manager.now_ms()).await,
+        "terminal-only viewers must not authorize new origin work"
+    );
     controlled.release.send_replace(true);
     within_real_second(async {
         while fixture.session.read().await.origin_refresh.in_flight {
