@@ -176,6 +176,11 @@ test: ## Run all workspace tests (Stable) — use detected CPU count for paralle
 	@echo "==> Running tests (stable) with $(CPU_COUNT) jobs/threads"
 	@TMPDIR="$${TMPDIR:-/tmp}" RUST_TEST_THREADS=$(CPU_COUNT) ./bin/test.sh -j$(CPU_COUNT) --workspace -- --test-threads=$(CPU_COUNT)
 
+.PHONY: test-slim
+test-slim: ## Run all workspace tests with the dev-slim profile (Stable)
+	@echo "==> Running tests (stable, dev-slim) with $(CPU_COUNT) jobs/threads"
+	@TMPDIR="$${TMPDIR:-/tmp}" RUST_TEST_THREADS=$(CPU_COUNT) ./bin/test.sh --profile dev-slim -j$(CPU_COUNT) --workspace -- --test-threads=$(CPU_COUNT)
+
 .PHONY: admission-test
 admission-test: ## Verify admission, provider-slot, seek/reopen, shared-stream, and cleanup invariants
 	@echo "==> Running HTTP admission and provider lifecycle tests"
