@@ -46,6 +46,11 @@ ARTIFACT_DIR="${WORKING_DIR}/artifacts"
 # Config
 declare -A ARCHITECTURES=([LINUX]=x86_64-unknown-linux-musl [AARCH64]=aarch64-unknown-linux-musl)
 declare -A MULTI_PLATFORM_IMAGES=([tuliprox]="scratch-final" [tuliprox-alpine]="alpine-final")
+# Master releases also ship bundles for platforms without a Docker image.
+RELEASE_ONLY_TARGETS=()
+if [ "$BRANCH" = "master" ]; then
+    RELEASE_ONLY_TARGETS=(armv7-unknown-linux-musleabihf x86_64-pc-windows-gnu)
+fi
 
 # Version detection
 VERSION=$(grep -Po '^version\s*=\s*"\K[0-9\.]+' "${WORKING_DIR}/Cargo.toml")
@@ -75,14 +80,20 @@ create_release_bundle() {
     trap 'if [ -n "${bundle_root:-}" ] && [ -d "${bundle_root}" ]; then rm -rf "${bundle_root}"; fi' RETURN ERR INT
     mkdir -p "${bundle_root}/tuliprox"
 
-    cp "${binary_path}" "${bundle_root}/tuliprox/tuliprox"
-    chmod +x "${bundle_root}/tuliprox/tuliprox"
+    cp "${binary_path}" "${bundle_root}/tuliprox/"
+    chmod +x "${bundle_root}/tuliprox/$(basename "${binary_path}")"
     cp -r "${FRONTEND_BUILD_DIR}" "${bundle_root}/tuliprox/web"
     cp -r "${WORKING_DIR}/resources" "${bundle_root}/tuliprox/resources"
 
-    bundle_name="tuliprox-v${VERSION}-${architecture}.tar.gz"
-    bundle_path="${ARTIFACT_DIR}/${bundle_name}"
-    tar -C "${bundle_root}" -czf "${bundle_path}" tuliprox
+    if [[ "${architecture}" == *-windows-* ]]; then
+        bundle_name="tuliprox-v${VERSION}-${architecture}.zip"
+        bundle_path="${ARTIFACT_DIR}/${bundle_name}"
+        (cd "${bundle_root}" && zip -qr "${bundle_path}" tuliprox)
+    else
+        bundle_name="tuliprox-v${VERSION}-${architecture}.tar.gz"
+        bundle_path="${ARTIFACT_DIR}/${bundle_name}"
+        tar -C "${bundle_root}" -czf "${bundle_path}" tuliprox
+    fi
     write_checksum "${bundle_path}"
 }
 
@@ -118,9 +129,22 @@ if [ "$PHASE" != "publish" ]; then
         create_release_bundle "${ARCHITECTURE}" "${SOURCE_BIN_PATH}"
     done
 
+    for ARCHITECTURE in "${RELEASE_ONLY_TARGETS[@]}"; do
+        echo "🔨 Building release bundle for $ARCHITECTURE"
+        cross build -p tuliprox --release --target "$ARCHITECTURE" --locked
+
+        BIN_NAME="tuliprox"
+        if [[ "${ARCHITECTURE}" == *-windows-* ]]; then
+            BIN_NAME="tuliprox.exe"
+        fi
+        create_release_bundle "${ARCHITECTURE}" "target/${ARCHITECTURE}/release/${BIN_NAME}"
+    done
+
     echo "📦 Release bundles prepared in ${ARTIFACT_DIR}"
 
     echo "📋 Preparing Docker context..."
+    # Remove a context left by an earlier build-only run; cp -r would nest into it.
+    rm -rf "${DOCKER_DIR}/web" "${DOCKER_DIR}/resources"
     cp -r "${FRONTEND_BUILD_DIR}" "${DOCKER_DIR}/web"
     cp -r "resources" "${DOCKER_DIR}/resources"
 fi

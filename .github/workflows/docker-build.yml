@@ -12,11 +12,6 @@ on:
         description: Target branch
         options: [develop, experimental, master]
         default: develop
-      choice:
-        type: choice
-        description: Version bump
-        options: [none, major, minor, patch]
-        default: none
   push:
     branches: [develop, experimental, master]
 
@@ -61,58 +56,65 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           cache-targets: "true"
+          # Rare master releases build two extra targets; saving them would evict the develop caches.
+          save-if: ${{ github.ref_name != 'master' && github.event.inputs.branch != 'master' }}
 
       - name: Handle Version Bump
+        env:
+          RELEASE_BRANCH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref_name }}
         run: |
-          chmod +x ./bin/inc_version.sh
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            case "${{ github.ref_name }}" in
-              develop)
-                VERSION=$(grep -Po '^version\s*=\s*"\K[0-9\.]+' ./Cargo.toml | head -n1)
-                tagged_commit=$(git rev-parse --verify "refs/tags/v$VERSION^{commit}" 2>/dev/null || true)
-                if [[ "$tagged_commit" == "$(git rev-parse HEAD)" ]]; then
-                  echo "Reusing version v$VERSION already tagged at HEAD."
-                else
-                  ./bin/inc_version.sh
-                fi
-                ;;
-              experimental) echo "🔬 Experimental builds do not bump versions; keeping version from develop." ;;
-              master) echo "Master builds use the version already committed in the merged PR; skipping version bump." ;;
-              *) echo "Unsupported push branch: ${{ github.ref_name }}" >&2; exit 1 ;;
-            esac
-          else
-            if [[ "${{ github.event.inputs.branch }}" == "master" || "${{ github.event.inputs.branch }}" == "experimental" ]]; then
-              echo "Manual ${{ github.event.inputs.branch }} builds skip version bump."
-            else
-              case "${{ github.event.inputs.choice }}" in
-                major) ./bin/inc_version.sh m ;;
-                minor) ./bin/inc_version.sh p ;;
-                patch) ./bin/inc_version.sh ;;
-              esac
-            fi
+          # Version rules: develop always raises the patch (never 0); master always raises the minor (patch 0).
+          if [[ "$RELEASE_BRANCH" == "experimental" ]]; then
+            echo "🔬 Experimental builds do not bump versions; keeping version from develop."
+            exit 0
           fi
+          current=$(grep -Po '^version\s*=\s*"\K[0-9\.]+' ./Cargo.toml | head -n1)
+          head_commit=$(git rev-parse HEAD)
+          tag_commit() { git rev-parse -q --verify "refs/tags/v$1^{commit}" || true; }
+          # A tag on another commit belongs to an earlier release. A tag on HEAD is a re-run of this release.
+          tag_taken() {
+            local tagged
+            tagged=$(tag_commit "$1")
+            [[ -n "$tagged" && "$tagged" != "$head_commit" ]]
+          }
+          if [[ "$(tag_commit "$current")" == "$head_commit" ]]; then
+            echo "Reusing version v$current already tagged at HEAD."
+            exit 0
+          fi
+          IFS='.' read -r major minor patch <<< "$current"
+          case "$RELEASE_BRANCH" in
+            develop)
+              # Continue after the newest master release when develop still carries an older minor.
+              release=$(git tag -l 'v*.*.0' --sort=-v:refname | head -n1)
+              IFS='.' read -r release_major release_minor _ <<< "${release#v}"
+              if [[ -n "$release" ]] &&
+                 (( release_major > major || (release_major == major && release_minor > minor) )); then
+                major=$release_major
+                minor=$release_minor
+                patch=0
+              fi
+              patch=$((patch + 1))
+              while tag_taken "$major.$minor.$patch"; do
+                patch=$((patch + 1))
+              done
+              ;;
+            master)
+              minor=$((minor + 1))
+              patch=0
+              while tag_taken "$major.$minor.$patch"; do
+                minor=$((minor + 1))
+              done
+              ;;
+            *) echo "Unsupported release branch: $RELEASE_BRANCH" >&2; exit 1 ;;
+          esac
+          echo "🛠️ Set version v$major.$minor.$patch (was v$current)"
+          cargo set-version "$major.$minor.$patch"
 
       - name: Read project version
         id: version
         run: |
           VERSION=$(grep -Po '^version\s*=\s*"\K[0-9\.]+' ./Cargo.toml)
           echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
-
-      - name: Enforce zero patch for master releases
-        if: >-
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.branch == 'master') ||
-          (github.event_name == 'push' && github.ref == 'refs/heads/master')
-        run: |
-          VERSION="${{ steps.version.outputs.value }}"
-          IFS='.' read -r major minor patch <<< "${VERSION}"
-          if [[ -z "${major}" || -z "${minor}" || -z "${patch}" ]]; then
-            echo "🧨 Invalid semantic version: ${VERSION}" >&2
-            exit 1
-          fi
-          if [[ "${patch}" != "0" ]]; then
-            echo "🧨 Refusing master release for non-release version ${VERSION}. Patch component must be 0." >&2
-            exit 1
-          fi
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
@@ -156,21 +158,15 @@ jobs:
             fi
           done
       - name: Commit version bump
-        if: >-
-          (github.event_name == 'push' && github.ref == 'refs/heads/develop') ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.branch == 'develop' && github.event.inputs.choice != 'none')
         id: version_commit
         run: |
           git config user.name "euzu"
           git config user.email "euzu@proton.me"
           echo "base_commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           git add -- Cargo.toml Cargo.lock frontend/Cargo.toml
-          if git diff --cached --quiet; then
-            echo "did_commit=false" >> "$GITHUB_OUTPUT"
-          else
+          if ! git diff --cached --quiet; then
             VERSION=$(grep -Po '^version\s*=\s*"\K[0-9\.]+' ./Cargo.toml | head -n1)
             git commit --only -m "ci: bump version v$VERSION" -- Cargo.toml Cargo.lock frontend/Cargo.toml
-            echo "did_commit=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Prepare release tag
@@ -200,14 +196,28 @@ jobs:
           ./bin/build_docker.sh "$RELEASE_BRANCH" build
 
       - name: Verify release bundle artifacts
+        env:
+          RELEASE_BRANCH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref_name }}
+          VERSION: ${{ steps.version.outputs.value }}
         run: |
           ls -la artifacts
-          for arch in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
-            artifact="artifacts/tuliprox-v${{ steps.version.outputs.value }}-${arch}.tar.gz"
+          bundles=(x86_64-unknown-linux-musl.tar.gz aarch64-unknown-linux-musl.tar.gz)
+          if [[ "$RELEASE_BRANCH" == "master" ]]; then
+            bundles+=(armv7-unknown-linux-musleabihf.tar.gz x86_64-pc-windows-gnu.zip)
+          fi
+          for bundle in "${bundles[@]}"; do
+            artifact="artifacts/tuliprox-v${VERSION}-${bundle}"
             test -f "${artifact}"
             test -f "${artifact}.sha256"
-            for required_path in tuliprox/tuliprox tuliprox/web/ tuliprox/resources/; do
-              tar -tzf "${artifact}" | grep -qx "${required_path}"
+            if [[ "$artifact" == *.zip ]]; then
+              listing=$(unzip -Z1 "${artifact}")
+              binary=tuliprox/tuliprox.exe
+            else
+              listing=$(tar -tzf "${artifact}")
+              binary=tuliprox/tuliprox
+            fi
+            for required_path in "$binary" tuliprox/web/ tuliprox/resources/; do
+              grep -qx "${required_path}" <<< "${listing}"
             done
           done
           for sum_file in artifacts/*.sha256; do
@@ -246,7 +256,12 @@ jobs:
             exit 1
           fi
           expected_commit="${BASE_COMMIT:-$(git rev-parse HEAD)}"
-          remote_commit=$(git ls-remote --exit-code origin "refs/heads/$RELEASE_BRANCH" | awk '{print $1}')
+          # Keep ls-remote outside a pipeline so a failed lookup stops the step with its own error.
+          if ! remote_line=$(git ls-remote --exit-code origin "refs/heads/$RELEASE_BRANCH"); then
+            echo "Refusing to publish: cannot read $RELEASE_BRANCH from origin." >&2
+            exit 1
+          fi
+          remote_commit=${remote_line%%[[:space:]]*}
           if [[ "$remote_commit" != "$expected_commit" ]]; then
             echo "Refusing to publish: $RELEASE_BRANCH changed during the build. Start a new run from the current branch." >&2
             exit 1
@@ -280,10 +295,49 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.value }}
           name: v${{ steps.version.outputs.value }}
+          # Every verified bundle and checksum; GitHub attaches the source archives itself.
           files: |
-            artifacts/tuliprox-v${{ steps.version.outputs.value }}-x86_64-unknown-linux-musl.tar.gz
-            artifacts/tuliprox-v${{ steps.version.outputs.value }}-x86_64-unknown-linux-musl.tar.gz.sha256
-            artifacts/tuliprox-v${{ steps.version.outputs.value }}-aarch64-unknown-linux-musl.tar.gz
-            artifacts/tuliprox-v${{ steps.version.outputs.value }}-aarch64-unknown-linux-musl.tar.gz.sha256
+            artifacts/tuliprox-v${{ steps.version.outputs.value }}-*
           body_path: artifacts/RELEASE_NOTES_SHA256.md
           generate_release_notes: true
+
+      - name: Merge master release back into develop
+        if: >-
+          success() && (
+            (github.event_name == 'workflow_dispatch' && github.event.inputs.branch == 'master') ||
+            (github.event_name == 'push' && github.ref == 'refs/heads/master')
+          )
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          # Without the master version commit in develop, the next release pull request conflicts on the version lines.
+          git config user.name "euzu"
+          git config user.email "euzu@proton.me"
+          version_files=(Cargo.toml Cargo.lock frontend/Cargo.toml)
+          for attempt in 1 2 3; do
+            git fetch --quiet origin refs/heads/develop:refs/remotes/origin/develop
+            if git merge-base --is-ancestor "refs/tags/v$VERSION" origin/develop; then
+              echo "develop already contains v$VERSION."
+              exit 0
+            fi
+            git checkout --quiet -B release-sync origin/develop
+            if ! git merge --no-ff --no-commit "refs/tags/v$VERSION"; then
+              mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+              for file in "${conflicts[@]}"; do
+                if [[ ! " ${version_files[*]} " == *" $file "* ]]; then
+                  echo "Refusing to merge v$VERSION into develop: $file conflicts. Merge master into develop manually." >&2
+                  git merge --abort
+                  exit 1
+                fi
+              done
+            fi
+            # develop keeps its own version (patch never 0); its next build continues after this release.
+            git checkout origin/develop -- "${version_files[@]}"
+            git commit --quiet -m "ci: merge release v$VERSION into develop"
+            if git push origin HEAD:refs/heads/develop; then
+              exit 0
+            fi
+            echo "develop moved during the merge; retrying ($attempt of 3)."
+          done
+          echo "Cannot merge v$VERSION into develop. Merge master into develop manually." >&2
+          exit 1

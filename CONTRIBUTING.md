@@ -19,6 +19,11 @@ To force a reinstall of tooling or updating to the latest version, you can run:
 make -B install-tools
 ```
 
+### Privacy Pre-Push Hook
+
+CI scans every pull request with Gitleaks. To find secrets and personal data before you push, install Gitleaks and
+enable the pre-push hook as described in [`.githooks/README.md`](.githooks/README.md).
+
 ### Steps to Contribute
 
 1. **Fork the Repository**: Start by forking the Tuliprox repository to your GitHub account.

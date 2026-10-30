@@ -57,7 +57,7 @@ RUN mkdir -p frontend/src backend/app/src/tools tools/tuliprox-testkit/src && \
 # -----------------------------------------------------------------
 # Stage 1: Build the Rust binary for production
 # -----------------------------------------------------------------
-FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.4@sha256:79e3cf3994f70c6a318f003a94313d1b13a4de564e37998f9b0f7b1943153cf7 AS rust-build
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:main@sha256:e30ffbc1c5958b55ab2ed7263709f1ccc2fae1e2d49263553daa0c312117aecb AS rust-build
 
 COPY --from=rust-toolchain /usr/local/cargo /usr/local/cargo
 COPY --from=rust-toolchain /usr/local/rustup /usr/local/rustup

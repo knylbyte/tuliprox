@@ -63,6 +63,7 @@ current checkout must contain an executable `.githooks/pre-push` and the shared 
 Every push fetches the current `develop` from `https://github.com/euzu/tuliprox.git`
 and scans all branch commits absent from that upstream history. This applies to new
 and existing branches. A failed fetch or an unrelated history blocks the push.
+The baseline is stored in the hidden ref `refs/privacy-scan/develop`; `FETCH_HEAD` is not changed.
 
 Every commit in that range is scanned, including findings deleted later. Local
 output shows complete findings with file, line, commit, and matched text. All

@@ -73,10 +73,11 @@ while read -r local_ref local_oid remote_ref remote_oid extra || [[ -n "${local_
     # branch or local remote-tracking refs. Fetch it only once for all pushed refs.
     if [[ -z "$develop_commit" ]]; then
         printf 'Fetching the privacy scan baseline from euzu/tuliprox/develop...\n'
-        git fetch --quiet --no-tags --no-recurse-submodules \
-            https://github.com/euzu/tuliprox.git refs/heads/develop </dev/null ||
+        # Store the baseline in a private ref and leave FETCH_HEAD to the user's own fetches.
+        git fetch --quiet --no-tags --no-recurse-submodules --no-write-fetch-head \
+            https://github.com/euzu/tuliprox.git "+refs/heads/develop:refs/privacy-scan/develop" </dev/null ||
             fail "Cannot fetch euzu/tuliprox/develop. Check the connection and retry."
-        develop_commit=$(git rev-parse --verify 'FETCH_HEAD^{commit}' 2>/dev/null) ||
+        develop_commit=$(git rev-parse --verify 'refs/privacy-scan/develop^{commit}' 2>/dev/null) ||
             fail "The fetched upstream develop baseline does not resolve to a commit."
     fi
     git merge-base "$develop_commit" "$local_commit" >/dev/null 2>&1 ||
