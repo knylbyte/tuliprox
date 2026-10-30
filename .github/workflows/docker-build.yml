@@ -57,7 +57,7 @@ jobs:
         with:
           cache-targets: "true"
           # Rare master releases build two extra targets; saving them would evict the develop caches.
-          save-if: ${{ github.ref_name != 'master' && github.event.inputs.branch != 'master' }}
+          save-if: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref_name) != 'master' }}
 
       - name: Handle Version Bump
         env:
@@ -322,10 +322,16 @@ jobs:
             fi
             # develop keeps its own copy of the version files below. That is only safe while master changed
             # nothing in them except the release version lines; anything else needs a manual merge.
+            # Every changed line must differ only in `version = "..."` (package version or a workspace path
+            # dependency such as `shared = { version = "X", path = "../shared" }`), and the new value must be
+            # this release. A failing git diff stops the step instead of passing the gate.
             base=$(git merge-base origin/develop "refs/tags/v$VERSION")
-            if git diff -U0 "$base" "refs/tags/v$VERSION" -- "${version_files[@]}" |
-                grep -E '^[-+]' | grep -vE '^(\+\+\+|---) ' |
-                grep -vxE "\+version = \"${VERSION//./\\.}\"|-version = \"[0-9.]+\"" | grep -q .; then
+            changes=$(git diff -U0 "$base" "refs/tags/v$VERSION" -- "${version_files[@]}")
+            removed=$(grep -E '^-' <<< "$changes" | grep -vE '^--- ' |
+              sed -E 's/^-//; s/version = "[0-9.]+"/version = "V"/' | sort)
+            added=$(grep -E '^\+' <<< "$changes" | grep -vE '^\+\+\+ ' |
+              sed -E "s/^\+//; s/version = \"${VERSION//./\\.}\"/version = \"V\"/" | sort)
+            if [[ "$removed" != "$added" ]]; then
               echo "Refusing to merge v$VERSION into develop: master changed more than the version in" \
                 "${version_files[*]}. Merge master into develop manually." >&2
               exit 1

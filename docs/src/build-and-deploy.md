@@ -46,7 +46,9 @@ environment across different machines.
 * `make lint`: Runs clippy to find common mistakes and improve code quality.
 * `make lint-fix`: Automatically applies clippy suggestions (where possible).
 * `make markdown-lint`: Checks all .md files for formatting consistency.
-* `make i18n-check`: Reports every locale whose translation keys differ from `en.json`.
+* `make i18n-check`: Reports every locale whose translation keys differ from `en.json`. Requires
+  [jq](https://jqlang.org), which `make install-tools` does not install (for example `sudo apt install jq` or
+  `brew install jq`).
 * `make pre-merge-check`: Verifies a merged tree: architecture gates, clippy, locale keys, and all workspace tests.
 
 **Formatting**:

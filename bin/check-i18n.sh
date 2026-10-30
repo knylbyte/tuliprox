@@ -15,10 +15,11 @@ cd "$(dirname "$0")/.."
 command -v jq >/dev/null 2>&1 || { echo "check-i18n: jq is required (https://jqlang.org)" >&2; exit 1; }
 
 i18n_dir=frontend/public/assets/i18n
-leaf_keys() { jq -r 'paths(scalars) | map(tostring) | join(".")' "$1" | sort -u; }
+# tr drops the CRLF that jq writes on Windows.
+leaf_keys() { jq -r 'paths(scalars) | map(tostring) | join(".")' "$1" | tr -d '\r' | sort -u; }
 
 reference=$(leaf_keys "$i18n_dir/en.json")
-locales=$(jq -r '.languages[].code' "$i18n_dir/index.json" | grep -vx en)
+locales=$(jq -r '.languages[].code | select(. != "en")' "$i18n_dir/index.json" | tr -d '\r')
 
 status=0
 for locale in $locales; do
@@ -29,8 +30,9 @@ for locale in $locales; do
         continue
     fi
     keys=$(leaf_keys "$file")
-    missing=$(comm -23 <(echo "$reference") <(echo "$keys"))
-    extra=$(comm -13 <(echo "$reference") <(echo "$keys"))
+    # grep . keeps an empty locale from adding a blank key line.
+    missing=$(comm -23 <(echo "$reference") <(grep . <<<"$keys" || true))
+    extra=$(comm -13 <(echo "$reference") <(grep . <<<"$keys" || true))
     if [ -n "$missing" ]; then
         sed "s/^/check-i18n: $locale is missing /" <<<"$missing" >&2
         status=1

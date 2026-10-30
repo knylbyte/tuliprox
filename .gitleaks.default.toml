@@ -10,10 +10,10 @@ useDefault = true
 id = "private-home-path"
 description = "Absolute personal home directory"
 # Require an absolute path, not a nested directory or a lowercase /users API.
-# Unix prefixes are case-sensitive; Windows paths are case-insensitive.
+# Unix and MSYS (/c/Users) prefixes are case-sensitive; Windows paths are case-insensitive.
 # Capture the username because the built-in allowlist ignores full home paths.
 # Spell path separators in allowlist patterns as [/] to avoid matching this file.
-regex = '''(?m)(?:^|[^[:alnum:]_./\\\r\n-])(?i:file://)?(?:/(?:Users|home)/|(?i:[a-z]:[\\/]+Users[\\/]+))([^\\/\s"'<>|`]+)'''
+regex = '''(?m)(?:^|[^[:alnum:]_./\\\r\n-])(?i:file://)?(?:/(?:Users|home)/|/[a-zA-Z]/Users/|(?i:[a-z]:[\\/]+Users[\\/]+))([^\\/\s"'<>|`]+)'''
 secretGroup = 1
 
 [[rules.allowlists]]
