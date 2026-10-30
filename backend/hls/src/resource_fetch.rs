@@ -576,6 +576,11 @@ where
     ) -> BoxFuture<'static, Result<T, HlsOriginResourceFetchError>>,
 {
     let HlsOriginResourceRetryRun { target, clients, policy, identity } = run;
+    let cancellation = if let Some(session) = clients.session.as_ref() {
+        session.read().await.origin_work_cancellation.clone()
+    } else {
+        tokio_util::sync::CancellationToken::new()
+    };
     let work = match &clients.retry_work {
         Some(work) => Some(std::sync::Arc::clone(work)),
         None => match &clients.session {
@@ -724,11 +729,17 @@ where
 
         Err(HlsOriginResourceFetchError::Timeout)
     };
-    match operation_deadline {
-        Some(deadline) => {
-            tokio::time::timeout_at(deadline, run).await.unwrap_or(Err(HlsOriginResourceFetchError::Timeout))
+    let bounded = async {
+        match operation_deadline {
+            Some(deadline) => {
+                tokio::time::timeout_at(deadline, run).await.unwrap_or(Err(HlsOriginResourceFetchError::Timeout))
+            }
+            None => run.await,
         }
-        None => run.await,
+    };
+    tokio::select! {
+        () = cancellation.cancelled() => Err(HlsOriginResourceFetchError::ProviderUnavailable(HlsBoundAccountAcquireErrorKind::StoreRace)),
+        result = bounded => result,
     }
 }
 

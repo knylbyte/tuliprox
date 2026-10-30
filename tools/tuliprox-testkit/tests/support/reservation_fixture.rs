@@ -10,7 +10,10 @@ use std::{
     fmt::Write,
     path::PathBuf,
     process::Stdio,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU8, AtomicUsize, Ordering},
+        Arc, Mutex, OnceLock,
+    },
     time::{Duration, Instant},
 };
 use tokio::{net::TcpListener, sync::watch};
@@ -33,9 +36,16 @@ pub enum Case {
     Exhaustion,
     PendingExpiry,
     Preemption,
+    Recovery,
+    RecoveryCvr,
+    RecoveryError,
 }
 
 impl Case {
+    pub const fn is_recovery(self) -> bool { matches!(self, Self::Recovery | Self::RecoveryCvr | Self::RecoveryError) }
+
+    pub const fn uses_valid_ts(self) -> bool { matches!(self, Self::Preemption) || self.is_recovery() }
+
     pub const fn target(self) -> u32 {
         match self {
             Self::Start => 4,
@@ -43,7 +53,7 @@ impl Case {
             // Allow the normal temporary-failure threshold to settle before
             // Pending expires. Expiry is exercised independently below.
             Self::Exhaustion => 8,
-            Self::PendingExpiry => 2,
+            Self::PendingExpiry | Self::Recovery | Self::RecoveryCvr | Self::RecoveryError => 2,
             // The checked-in TS assets run for just over ten seconds.
             Self::Preemption => 12,
         }
@@ -51,7 +61,7 @@ impl Case {
 
     pub const fn timeout_ms(self) -> u64 {
         match self {
-            Self::Start | Self::Preemption => 3_000,
+            Self::Start | Self::Preemption | Self::Recovery | Self::RecoveryCvr | Self::RecoveryError => 3_000,
             Self::Success | Self::Exhaustion => 5_000,
             Self::PendingExpiry => 10_000,
         }
@@ -71,6 +81,8 @@ pub struct Origin {
     run: RunId,
     pub requests: Mutex<Vec<Request>>,
     pub release_retry: watch::Sender<bool>,
+    /// 0: initial three units, 1: 407, 2: recovered six units, 3: healthy warmup.
+    pub manifest_phase: AtomicU8,
     address: std::net::SocketAddr,
 }
 
@@ -90,7 +102,46 @@ pub fn preemption_segment(marker: u32, sequence: u64) -> Vec<u8> {
     )
 }
 
+fn short_channel_unavailable() -> &'static [u8] {
+    static MEDIA: OnceLock<Vec<u8>> = OnceLock::new();
+    MEDIA.get_or_init(|| {
+        use tuliprox_mpegts::transport_stream_buffer::TransportStreamBuffer;
+        let source = include_bytes!("../../../../test/fixtures/hls/channel_unavailable.ts");
+        for divisor in 2..=32 {
+            let end = (source.len() / 188 / divisor) * 188;
+            let bytes = source[..end].to_vec();
+            let inspected = TransportStreamBuffer::new(bytes.clone());
+            if inspected.duration_ms().is_some_and(|duration| (500..=2_000).contains(&duration))
+                && inspected.finite_hls_track_signature().is_some()
+            {
+                return bytes;
+            }
+        }
+        panic!("the existing channel-unavailable fixture needs a playable prefix fitting target duration 2");
+    })
+}
+
+pub fn origin_segment(case: Case, marker: u32, sequence: u64) -> Vec<u8> {
+    if case.is_recovery() {
+        tagged_transport_stream(short_channel_unavailable(), &format!("TPX-LIVE-{marker}-{sequence};"))
+    } else {
+        preemption_segment(marker, sequence)
+    }
+}
+
 fn custom_response_config(case: Case, paths: &FixturePaths) -> Result<String, TestkitError> {
+    if matches!(case, Case::RecoveryCvr) {
+        let responses = paths.root.join("responses");
+        std::fs::create_dir(&responses)?;
+        std::fs::write(
+            responses.join("channel_unavailable.ts"),
+            tagged_transport_stream(short_channel_unavailable(), "TPX-CVS-CHANNEL_UNAVAILABLE;"),
+        )?;
+        return Ok(format!(
+            "custom_stream_response_enabled: true\ncustom_stream_response_path: '{}'\n",
+            responses.display().to_string().replace('\'', "''")
+        ));
+    }
     if !matches!(case, Case::Preemption) {
         return Ok("custom_stream_response_enabled: false\n".to_owned());
     }
@@ -181,10 +232,18 @@ async fn origin(State(state): State<Arc<Origin>>, uri: Uri) -> Response {
     let marker = parts[1].parse::<u32>().unwrap();
     if parts[2] == "index.m3u8" {
         state.record(marker, None);
+        let phase = state.manifest_phase.load(Ordering::Acquire);
+        if state.case.is_recovery() && marker == SUBJECT && phase == 1 {
+            return StatusCode::PROXY_AUTHENTICATION_REQUIRED.into_response();
+        }
         let target = state.case.target();
-        let mut manifest =
-            format!("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:{target}\n#EXT-X-MEDIA-SEQUENCE:100\n");
-        for sequence in 0..3 {
+        let head = if state.case.is_recovery() && marker == SUBJECT && phase == 2 { 6 } else { 0 };
+        let mut manifest = format!(
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:{target}\n#EXT-X-MEDIA-SEQUENCE:{}\n",
+            100 + head
+        );
+        let count = if state.case.is_recovery() && marker == SUBJECT && phase != 0 { 6 } else { 3 };
+        for sequence in head..head + count {
             writeln!(manifest, "#EXTINF:{target}.0,\n{sequence}.ts").unwrap();
         }
         return ([(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")], manifest).into_response();
@@ -196,7 +255,11 @@ async fn origin(State(state): State<Arc<Origin>>, uri: Uri) -> Response {
     if marker == SUBJECT && matches!(state.case, Case::Exhaustion) && segment != 0 {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
-    if marker == SUBJECT && segment == 0 && !matches!(state.case, Case::Start | Case::Preemption) {
+    if marker == SUBJECT
+        && segment == 0
+        && !matches!(state.case, Case::Start | Case::Preemption)
+        && !state.case.is_recovery()
+    {
         if attempt == 1 {
             // Delay headers, not an already-exposed body. Every mode may retry this transfer.
             tokio::time::sleep(Duration::from_millis(state.case.timeout_ms() + 1_000)).await;
@@ -216,8 +279,8 @@ async fn origin(State(state): State<Arc<Origin>>, uri: Uri) -> Response {
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     }
-    if matches!(state.case, Case::Preemption) {
-        return ([(header::CONTENT_TYPE, "video/mp2t")], preemption_segment(marker, segment)).into_response();
+    if state.case.uses_valid_ts() {
+        return ([(header::CONTENT_TYPE, "video/mp2t")], origin_segment(state.case, marker, segment)).into_response();
     }
     let (prefix, tail) = segment_parts(&state.run, marker, segment).unwrap();
     let bytes = [prefix.as_ref(), tail.as_ref()].concat();
@@ -231,6 +294,7 @@ pub struct Fixture {
     entries: HashMap<String, VirtualIdMap>,
     log: PathBuf,
     holders: Vec<tokio::task::JoinHandle<()>>,
+    holder_bytes: Vec<Arc<AtomicUsize>>,
     process: Option<IsolatedSut>,
     origin_task: tokio::task::JoinHandle<()>,
     _paths: FixturePaths,
@@ -244,7 +308,15 @@ impl Drop for Fixture {
         }
         if self.process.is_some() {
             let log = std::fs::read_to_string(&self.log).unwrap_or_default();
-            for line in log.lines().rev().take(12).collect::<Vec<_>>().into_iter().rev() {
+            let terminal = log
+                .lines()
+                .filter(|line| line.contains("HLS ") && (line.contains("terminal") || line.contains("bundle")))
+                .rev()
+                .take(16)
+                .collect::<Vec<_>>();
+            for line in
+                terminal.into_iter().rev().chain(log.lines().rev().take(12).collect::<Vec<_>>().into_iter().rev())
+            {
                 let safe = line
                     .split_whitespace()
                     .map(|word| if word.contains('/') || word.contains('\\') { "<location>" } else { word })
@@ -268,8 +340,14 @@ impl Fixture {
         let origin_listener = TcpListener::bind("127.0.0.1:0").await?;
         let address = origin_listener.local_addr()?;
         let (release_retry, _) = watch::channel(false);
-        let origin_state =
-            Arc::new(Origin { case, run: run.clone(), requests: Mutex::new(Vec::new()), release_retry, address });
+        let origin_state = Arc::new(Origin {
+            case,
+            run: run.clone(),
+            requests: Mutex::new(Vec::new()),
+            release_retry,
+            manifest_phase: AtomicU8::new(0),
+            address,
+        });
         let origin_router = Router::new().fallback(origin).with_state(origin_state.clone());
         let origin_task = tokio::spawn(async move {
             axum::serve(origin_listener, origin_router).await.unwrap();
@@ -302,8 +380,8 @@ impl Fixture {
         let original = std::fs::read_to_string(&paths.config_file)?;
         let custom_response = custom_response_config(case, &paths)?;
         let config = format!(
-            "{custom_response}custom_stream_response_error_status: 503\nconnect_timeout_secs: 1\n{original}    origin_segment_timeout_ms: {}\n    origin_manifest_timeout_ms: 3000\n    initial_manifest_wait_timeout_secs: 25\n    max_segments_prefetch: 0\n    segment_repair:\n      max_level: off\n",
-            case.timeout_ms()
+            "{custom_response}custom_stream_response_error_status: {}\nconnect_timeout_secs: 1\n{original}    origin_segment_timeout_ms: {}\n    origin_manifest_timeout_ms: 3000\n    initial_manifest_wait_timeout_secs: 25\n    max_segments_prefetch: 0\n    segment_repair:\n      max_level: off\n",
+            if case.is_recovery() { 502 } else { 503 }, case.timeout_ms()
         );
         std::fs::write(&paths.config_file, config)?;
         let log = paths.root.join("sut.log");
@@ -330,20 +408,27 @@ impl Fixture {
             entries: HashMap::new(),
             log,
             holders: Vec::new(),
+            holder_bytes: Vec::new(),
             process: Some(process),
             origin_task,
         };
+        fixture.discover_users().await;
+        fixture.start_holders(limit).await?;
+        Ok(fixture)
+    }
+
+    async fn discover_users(&mut self) {
         for username in ["viewer", "other", "holder", "join"] {
             let deadline = Instant::now() + Duration::from_secs(15);
             loop {
                 if let Ok(response) = client("hls-reservation-discovery")
-                    .get(format!("{}/m3u?username={username}&password={}", fixture.base, fixture_password()))
+                    .get(format!("{}/m3u?username={username}&password={}", self.base, fixture_password()))
                     .send()
                     .await
                 {
                     if let Ok(body) = response.text().await {
                         if let Ok(map) = VirtualIdMap::from_m3u(&body) {
-                            fixture.entries.insert(username.to_owned(), map);
+                            self.entries.insert(username.to_owned(), map);
                             break;
                         }
                     }
@@ -352,20 +437,39 @@ impl Fixture {
                 tokio::time::sleep(Duration::from_millis(25)).await;
             }
         }
+    }
+
+    async fn start_holders(&mut self, limit: u16) -> Result<(), TestkitError> {
         for marker in 101..100 + u32::from(limit) {
             let mut holder =
-                client(&format!("hls-reservation-holder-{marker}")).get(fixture.entry("holder", marker)).send().await?;
+                client(&format!("hls-reservation-holder-{marker}")).get(self.entry("holder", marker)).send().await?;
             assert_eq!(holder.status(), StatusCode::OK, "holder admission");
-            assert!(!holder.chunk().await?.unwrap().is_empty());
-            fixture.holders.push(tokio::spawn(async move { while matches!(holder.chunk().await, Ok(Some(_))) {} }));
+            let first = holder.chunk().await?.unwrap();
+            assert!(!first.is_empty() && first.iter().all(|byte| *byte == 0x47));
+            let counter = Arc::new(AtomicUsize::new(first.len()));
+            self.holder_bytes.push(Arc::clone(&counter));
+            self.holders.push(tokio::spawn(async move {
+                while let Ok(Some(bytes)) = holder.chunk().await {
+                    assert!(bytes.iter().all(|byte| *byte == 0x47), "occupied-slot stream data must remain intact");
+                    counter.fetch_add(bytes.len(), Ordering::Release);
+                }
+            }));
         }
-        Ok(fixture)
+        Ok(())
     }
 
     pub fn entry(&self, username: &str, marker: u32) -> &str { self.entries[username].playback_url(marker).unwrap() }
 
     pub fn log_contains(&self, needle: &str) -> bool {
         std::fs::read_to_string(&self.log).unwrap_or_default().contains(needle)
+    }
+
+    pub fn log_count(&self, needle: &str) -> usize {
+        std::fs::read_to_string(&self.log).unwrap_or_default().lines().filter(|line| line.contains(needle)).count()
+    }
+
+    pub fn holder_progress(&self) -> Vec<usize> {
+        self.holder_bytes.iter().map(|counter| counter.load(Ordering::Acquire)).collect()
     }
 
     pub fn subject_log_contains(&self, needle: &str) -> bool {

@@ -513,7 +513,9 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
             .proxy
             .access_lease_response_snapshot(access_lease_id, &proxy_session_id, app_state.hls.proxy.now_ms())
             .await?;
-        if let Some(response) = super::hls_terminal_playback_response(&lease, &proxy_session_id, access_lease_id) {
+        if let Some(response) =
+            super::hls_terminal_playback_response(app_state, &lease, &proxy_session_id, access_lease_id)
+        {
             return Some(response);
         }
         if let Some(response) = hls_exhausted_startup_response(app_state, session, &lease).await {
@@ -714,9 +716,12 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                         )
                         .await
                     {
-                        if let Some(response) =
-                            super::hls_terminal_playback_response(&current, &proxy_session_id, access_lease_id)
-                        {
+                        if let Some(response) = super::hls_terminal_playback_response(
+                            app_state,
+                            &current,
+                            &proxy_session_id,
+                            access_lease_id,
+                        ) {
                             return Some(response);
                         }
                     }
@@ -798,7 +803,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                         )
                         .await?;
                     if let Some(terminal) =
-                        super::hls_terminal_playback_response(&current, &proxy_session_id, access_lease_id)
+                        super::hls_terminal_playback_response(app_state, &current, &proxy_session_id, access_lease_id)
                     {
                         return Some(terminal);
                     }

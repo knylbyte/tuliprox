@@ -842,6 +842,7 @@ pub(super) async fn log_hls_origin_binding_reacquire_failed(session: &HlsSession
 pub(super) async fn detach_unprotected_hls_origin_account_bindings(app_state: &Arc<AppState>, now_ms: u64) {
     let sessions = app_state.hls.proxy.sessions().list_sessions().await;
     for session in sessions {
+        app_state.hls.proxy.sync_recovery_binding_protection(&app_state.active_provider, &session, now_ms).await;
         let binding = {
             let mut session_guard = session.write().await;
             let Some(binding) = session_guard.origin_account_binding.clone() else {
@@ -1322,7 +1323,9 @@ pub(super) async fn find_hls_account_overlap_candidate(
         if !matches!(binding.binding_mode, HlsOriginAccountBindingMode::Active) {
             continue;
         }
-        if session_guard.activity.active_origin_work_count.load(std::sync::atomic::Ordering::Acquire) > 0 {
+        if session_guard.activity.active_origin_work_count.load(std::sync::atomic::Ordering::Acquire) > 0
+            || session_guard.origin_binding_recovery_protected(now_ms)
+        {
             continue;
         }
         let timing = session_guard
@@ -1338,7 +1341,7 @@ pub(super) async fn find_hls_account_overlap_candidate(
         let HlsAccountBindingProtection::SoftActive { reclaim_until_ms } = protection else {
             continue;
         };
-        let last_media_at_ms = session_guard.account_binding_activity().map_or(0, |(at, _)| at);
+        let last_media_at_ms = session_guard.effective_account_binding_activity(now_ms).map_or(0, |(at, _)| at);
         let capacity = hls_soft_overlap_capacity_for_target_duration(
             tuliprox_target_user_connection_capacity,
             origin_input_account_connection_capacity,

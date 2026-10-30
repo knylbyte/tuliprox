@@ -122,6 +122,8 @@ pub mod api {
     pub use super::media_reserve::{evaluate_lease_reserve, HlsLeaseReserveInput};
     #[cfg(any(test, feature = "test-support"))]
     pub use super::recovery_timing::HlsRecoveryTriggerBudgetMs;
+    #[cfg(any(test, feature = "test-support"))]
+    pub use super::timeline::HlsSegmentEncryption;
     pub use super::{
         availability::{
             commit_terminal_tail_if_lease_reserve_requires_cutover, hls_manifest_acceptance_directive_for_session,

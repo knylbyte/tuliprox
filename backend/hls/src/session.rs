@@ -281,6 +281,8 @@ pub struct HlsSession {
     pub origin_source: HlsOriginSource,
     pub origin_account_binding: Option<HlsOriginAccountBinding>,
     pub origin_account_io_lease: Option<Arc<HlsOriginAccountIoLease>>,
+    pub(crate) binding_inactivity: crate::availability::binding_protection::HlsBindingInactivity,
+    pub(crate) origin_work_cancellation: tokio_util::sync::CancellationToken,
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) origin_retry_barrier: Option<Arc<crate::resource_fetch::HlsResourceRetryBarrier>>,
     pub origin_account_rebind: HlsOriginAccountRebindState,
@@ -381,6 +383,8 @@ impl HlsSession {
             origin_source,
             origin_account_binding: None,
             origin_account_io_lease: None,
+            binding_inactivity: crate::availability::binding_protection::HlsBindingInactivity::default(),
+            origin_work_cancellation: tokio_util::sync::CancellationToken::new(),
             #[cfg(any(test, feature = "test-support"))]
             origin_retry_barrier: None,
             origin_account_rebind: HlsOriginAccountRebindState::default(),
@@ -548,7 +552,10 @@ impl HlsSession {
         self.pending_handoff_discontinuity_sequence.take()
     }
 
-    pub fn mark_for_gc_removal(&mut self) { self.gc_marked_for_removal = true; }
+    pub fn mark_for_gc_removal(&mut self) {
+        self.gc_marked_for_removal = true;
+        self.binding_inactivity.reset();
+    }
 
     pub fn clear_gc_removal_mark(&mut self) { self.gc_marked_for_removal = false; }
 
@@ -722,7 +729,7 @@ impl HlsSession {
     }
 
     pub fn account_binding_protection(&self, now_ms: u64) -> HlsAccountBindingProtection {
-        let activity = self.account_binding_activity();
+        let activity = self.effective_account_binding_activity(now_ms);
         classify_account_binding_protection(
             activity.map(|(at, _)| at),
             now_ms,
@@ -741,9 +748,18 @@ impl HlsSession {
     }
 
     pub fn account_reservation_remaining_ms(&self, now_ms: u64) -> Option<u64> {
-        self.account_binding_activity().map(|(at, timing)| {
+        self.effective_account_binding_activity(now_ms).map(|(at, timing)| {
             at.saturating_add(timing.reservation_ttl_secs().saturating_mul(1_000)).saturating_sub(now_ms)
         })
+    }
+
+    pub fn effective_account_binding_activity(&self, now_ms: u64) -> Option<(u64, HlsAccountOverlapTiming)> {
+        self.account_binding_activity()
+            .map(|(at, timing)| (at.saturating_add(self.binding_inactivity.excluded_ms(self, at, now_ms)), timing))
+    }
+
+    pub fn origin_binding_recovery_protected(&self, now_ms: u64) -> bool {
+        self.binding_inactivity.is_paused(self, now_ms)
     }
 
     pub(crate) fn has_usable_start_window(&self, now_ms: u64) -> bool {
@@ -1035,6 +1051,8 @@ impl HlsSession {
     }
 
     pub fn invalidate_queued_origin_work(&mut self) {
+        self.origin_work_cancellation = tokio_util::sync::CancellationToken::new();
+        self.binding_inactivity.reset();
         self.activity.origin_work_generation = self.activity.origin_work_generation.saturating_add(1);
         let queued_segment_seqs = self.segment_prefetch_queue.proxy_seqs();
         for proxy_seq in queued_segment_seqs {
@@ -1076,6 +1094,8 @@ impl fmt::Debug for HlsSession {
             .field("origin_source", &self.origin_source)
             .field("origin_account_binding", &self.origin_account_binding)
             .field("origin_account_io_lease", &self.origin_account_io_lease)
+            .field("binding_inactivity", &self.binding_inactivity)
+            .field("origin_work_cancellation", &self.origin_work_cancellation)
             .field("origin_account_rebind", &self.origin_account_rebind)
             .field("origin_account_prepare_lock", &self.origin_account_prepare_lock)
             .field("origin_account_runtime", &self.origin_account_runtime)

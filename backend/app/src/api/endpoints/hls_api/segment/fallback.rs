@@ -68,7 +68,8 @@ pub(in crate::api::endpoints::hls_api) async fn hls_runtime_custom_tail_response
         if let Some(lease) =
             app_state.hls.proxy.access_lease_response_snapshot(access_lease_id, proxy_session_id, now_ms).await
         {
-            if let Some(response) = hls_terminal_playback_response(&lease, proxy_session_id, access_lease_id) {
+            if let Some(response) = hls_terminal_playback_response(app_state, &lease, proxy_session_id, access_lease_id)
+            {
                 return response;
             }
         }
@@ -97,7 +98,8 @@ pub(in crate::api::endpoints::hls_api) async fn hls_runtime_or_standalone_custom
         HlsLeasePlaybackMode::TerminalTail(_)
         | HlsLeasePlaybackMode::TerminalCustomResponse(_)
         | HlsLeasePlaybackMode::TerminalUnavailable { .. } => {
-            if let Some(response) = hls_terminal_playback_response(&lease, proxy_session_id, access_lease_id) {
+            if let Some(response) = hls_terminal_playback_response(app_state, &lease, proxy_session_id, access_lease_id)
+            {
                 return response;
             }
         }

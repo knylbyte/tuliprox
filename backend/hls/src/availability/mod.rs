@@ -17,6 +17,7 @@ use super::{
     HlsLiveReserveDeadline, HlsOriginProgressDecision, ProxySessionId,
 };
 
+pub(crate) mod binding_protection;
 mod manifest_failure;
 mod recovery_pressure;
 mod reevaluation;

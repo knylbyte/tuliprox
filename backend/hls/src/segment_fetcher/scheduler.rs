@@ -502,6 +502,12 @@ impl HlsSegmentWorkerPool {
         if let Some(notifier) = notifier {
             notifier.notify_waiters();
         }
+        if let Some(io) = context.origin_io.as_ref() {
+            io.ctx
+                .hls_proxy
+                .sync_recovery_binding_protection(&io.ctx.active_provider, &context.session, finished_at_ms)
+                .await;
+        }
         if let (Some(coordinator), Some(proxy_session_id)) =
             (self.availability_reevaluations.as_ref(), completion.evidence_changed_for.as_ref())
         {

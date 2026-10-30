@@ -232,9 +232,26 @@ impl DelayedTerminalRefresh {
             self.lease().await.playback_mode,
             HlsLeasePlaybackMode::TerminalTail(_) | HlsLeasePlaybackMode::TerminalUnavailable { .. }
         ));
-        assert!(self.fixture.session.read().await.origin_refresh.in_flight);
         assert!(!*self.release.borrow());
+        self.assert_origin_stopped().await;
         self.fixture.app_state.hls.proxy.now_ms()
+    }
+
+    async fn assert_origin_stopped(&self) {
+        within_real_second(async {
+            loop {
+                let state = self.fixture.session.read().await;
+                if !state.origin_refresh.in_flight
+                    && state.activity.active_origin_work_count.load(std::sync::atomic::Ordering::Acquire) == 0
+                    && state.origin_account_io_lease.as_ref().is_none_or(|io| !io.is_active_or_acquiring())
+                {
+                    break;
+                }
+                drop(state);
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
     }
 
     async fn finish_refresh(&self, refresh: PendingRefresh) {
@@ -312,7 +329,7 @@ async fn terminal_notification_race(race: CommitSignalRace) {
     assert_eq!(response.status(), StatusCode::OK);
     assert!(String::from_utf8(response_body(response).await.to_vec()).unwrap().ends_with("#EXT-X-ENDLIST\n"));
     assert_eq!(fixture.app_state.hls.proxy.now_ms(), commit_at);
-    assert!(fixture.session.read().await.origin_refresh.in_flight);
+    controlled.assert_origin_stopped().await;
     assert_eq!(fixture.session.read().await.terminal_commit_observer_count_for_test(), 0);
     controlled.finish_refresh(refresh).await;
 }
@@ -467,14 +484,21 @@ async fn terminal_notification_unavailable_releases_waiter_before_origin_finishe
     let mut controlled = DelayedTerminalRefresh::new(shared::model::HlsStartupMode::Optimistic).await;
     let waiting = controlled.waiting_request().await;
     controlled.fixture.app_state.app_config.custom_stream_response.store(None);
+    let mut config = controlled.fixture.app_state.app_config.config.load_full().as_ref().clone();
+    config.custom_stream_response_enabled = false;
+    config.custom_stream_response_error_status = 502;
+    controlled.fixture.app_state.app_config.config.store(Arc::new(config));
     let commit_at = controlled.consume_reserve().await;
     let response = within_real_second(waiting).await.unwrap();
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
     assert!(response_body(response).await.is_empty());
     assert!(matches!(controlled.lease().await.playback_mode, HlsLeasePlaybackMode::TerminalUnavailable { .. }));
     assert_eq!(controlled.fixture.app_state.hls.proxy.now_ms(), commit_at);
-    assert!(controlled.fixture.session.read().await.origin_refresh.in_flight);
+    controlled.assert_origin_stopped().await;
     assert_eq!(controlled.fixture.session.read().await.terminal_commit_observer_count_for_test(), 0);
+    let replay =
+        get_response(Arc::clone(&controlled.fixture.app_state), &controlled.fixture.media_playlist_uri, None).await;
+    assert_eq!(replay.status(), StatusCode::BAD_GATEWAY, "the committed error status must survive polling");
     controlled.release.send_replace(true);
     within_real_second(async {
         while controlled.fixture.session.read().await.origin_refresh.in_flight {
@@ -541,7 +565,7 @@ async fn terminal_notification_replacement(replacement: RefreshWaitReplacement) 
     let response = within_real_second(waiting).await.unwrap();
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert!(response_body(response).await.is_empty());
-    assert!(fixture.session.read().await.origin_refresh.in_flight);
+    controlled.assert_origin_stopped().await;
     assert_eq!(fixture.session.read().await.terminal_commit_observer_count_for_test(), 0);
     controlled.finish_refresh(refresh).await;
 }
@@ -695,6 +719,7 @@ async fn delayed_terminal_response_before_refresh(mode: shared::model::HlsStartu
         .unwrap();
     let work = Arc::clone(&fixture.session.read().await.activity.active_origin_work_count);
     let progress_before = fixture.session.read().await.origin_control.progress_generation;
+    let success_before = fixture.session.read().await.origin_refresh.last_success_at_ms;
     assert!(work.load(std::sync::atomic::Ordering::Acquire) > 0);
     let io = fixture.session.read().await.origin_account_io_lease.clone().unwrap();
     assert!(io.is_active_or_acquiring());
@@ -718,7 +743,7 @@ async fn delayed_terminal_response_before_refresh(mode: shared::model::HlsStartu
     assert_eq!(manager.now_ms(), commit_at, "no virtual time after terminal commit");
     assert_eq!(response.status(), StatusCode::OK);
     assert!(!response.headers().contains_key(header::RETRY_AFTER));
-    assert!(fixture.session.read().await.origin_refresh.in_flight);
+    controlled.assert_origin_stopped().await;
     assert!(!*controlled.release.borrow());
     let body = String::from_utf8(response_body(response).await.to_vec()).unwrap();
     let last_live = previous.visible_segments.last().unwrap().uri.as_ref();
@@ -753,8 +778,8 @@ async fn delayed_terminal_response_before_refresh(mode: shared::model::HlsStartu
     .await;
     assert_eq!(work.load(std::sync::atomic::Ordering::Acquire), 0);
     assert!(!io.is_active_or_acquiring());
-    assert_eq!(fixture.session.read().await.origin_refresh.last_success_at_ms, Some(commit_at));
-    assert!(fixture.session.read().await.origin_control.progress_generation > progress_before);
+    assert_eq!(fixture.session.read().await.origin_refresh.last_success_at_ms, success_before);
+    assert_eq!(fixture.session.read().await.origin_control.progress_generation, progress_before);
     assert_eq!(manager.metrics().snapshot().refresh_started, starts);
     assert_eq!(
         super::terminal_tail::terminal_generation_for_lease(

@@ -313,9 +313,7 @@ pub async fn maybe_trigger_origin_refresh_with_outcome(
         return start_outcome;
     }
 
-    tokio::spawn(async move {
-        Box::pin(refresh_and_commit(request, fetch_started_at_ms)).await;
-    });
+    tokio::spawn(run_owned_refresh(request, fetch_started_at_ms));
     HlsOriginRefreshTriggerOutcome::Started
 }
 
@@ -326,13 +324,19 @@ pub async fn trigger_origin_refresh_sync(mut request: OriginRefreshRequest) -> b
         return false;
     }
 
-    let refresh = tokio::spawn(async move {
-        Box::pin(refresh_and_commit(request, fetch_started_at_ms)).await;
-    });
+    let refresh = tokio::spawn(run_owned_refresh(request, fetch_started_at_ms));
     if let Err(error) = refresh.await {
         error!("HLS owned origin refresh task failed: cancelled={} panic={}", error.is_cancelled(), error.is_panic());
     }
     true
+}
+
+async fn run_owned_refresh(request: OriginRefreshRequest, fetch_started_at_ms: u64) {
+    let cancellation = request.session.read().await.origin_work_cancellation.clone();
+    tokio::select! {
+        () = cancellation.cancelled() => {},
+        () = Box::pin(refresh_and_commit(request, fetch_started_at_ms)) => {},
+    }
 }
 
 async fn mark_origin_refresh_started(request: &mut OriginRefreshRequest, fetch_started_at_ms: u64) -> bool {
@@ -694,6 +698,12 @@ async fn refresh_and_commit(mut request: OriginRefreshRequest, fetch_started_at_
     };
     if let Some(owner) = request.work_owner.as_ref() {
         owner.disarm();
+    }
+    if let Some(io) = request.origin_io.as_ref() {
+        io.ctx
+            .hls_proxy
+            .sync_recovery_binding_protection(&io.ctx.active_provider, &request.session, fetch_finished_at_ms)
+            .await;
     }
     crate::origin::finish_failed_hls_start(
         request.origin_io.as_ref(),

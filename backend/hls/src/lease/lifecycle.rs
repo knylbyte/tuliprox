@@ -69,7 +69,7 @@ impl HlsLeaseManifestPublicationOutcome {
 impl HlsAccessLease {
     // Terminal playback only needs local media. Failed starts retain fallback
     // access without reopening origin preparation for pending or idle leases.
-    fn permits_origin_work(&self, now_ms: u64) -> bool {
+    pub(crate) fn permits_origin_work(&self, now_ms: u64) -> bool {
         if !matches!(self.playback_mode, HlsLeasePlaybackMode::Live) {
             return false;
         }

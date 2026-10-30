@@ -217,15 +217,20 @@ pub(in crate::api::endpoints::hls_api) async fn evaluate_hls_canonical_owner_han
         return hls_canonical_owner_failed(HlsCanonicalOwnerFailureReason::LeaseUnavailable);
     }
     match &lease.playback_mode {
-        HlsLeasePlaybackMode::TerminalTail(_) | HlsLeasePlaybackMode::TerminalCustomResponse(_) => {
-            let Some(response) =
-                hls_terminal_playback_response(&lease, context.proxy_session_id, context.access_lease_id)
-            else {
+        HlsLeasePlaybackMode::TerminalTail(_)
+        | HlsLeasePlaybackMode::TerminalCustomResponse(_)
+        | HlsLeasePlaybackMode::TerminalUnavailable { .. } => {
+            let Some(response) = hls_terminal_playback_response(
+                context.app_state,
+                &lease,
+                context.proxy_session_id,
+                context.access_lease_id,
+            ) else {
                 return hls_canonical_owner_failed(HlsCanonicalOwnerFailureReason::LeaseUnavailable);
             };
             return HlsCanonicalOwnerEvaluation::Resolved(HlsCanonicalOwnerResolution::Terminal(response));
         }
-        HlsLeasePlaybackMode::TerminalUnavailable { .. } | HlsLeasePlaybackMode::Ended => {
+        HlsLeasePlaybackMode::Ended => {
             return hls_canonical_owner_failed(HlsCanonicalOwnerFailureReason::LeaseUnavailable);
         }
         HlsLeasePlaybackMode::Live => {}
@@ -453,7 +458,7 @@ pub(in crate::api::endpoints::hls_api) async fn await_hls_terminal_or_refresh(
     let access_lease_id = &expected.lease_id;
     tokio::pin!(refresh);
     loop {
-        if let Some(response) = hls_terminal_playback_response(&lease, proxy_session_id, access_lease_id) {
+        if let Some(response) = hls_terminal_playback_response(app_state, &lease, proxy_session_id, access_lease_id) {
             return Some(response);
         }
         tokio::select! {

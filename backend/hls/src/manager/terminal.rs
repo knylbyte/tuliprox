@@ -729,7 +729,7 @@ impl HlsProxyManager {
         } else {
             None
         };
-        Self::finish_terminal_commit(leases, session, command, tail);
+        Self::finish_terminal_commit(leases, session, command, tail, now_ms);
         HlsTerminalCommitOutcome::Committed
     }
 
@@ -764,7 +764,7 @@ impl HlsProxyManager {
             return outcome;
         }
         session.live_window_demands.remove(lease_id);
-        Self::finish_terminal_commit(leases, session, command, None);
+        Self::finish_terminal_commit(leases, session, command, None, now_ms);
         HlsTerminalCommitOutcome::Committed
     }
 
@@ -773,6 +773,7 @@ impl HlsProxyManager {
         session: &mut super::super::HlsSession,
         command: &HlsTerminalCommitCommand,
         tail: Option<&crate::terminal_tail::HlsTerminalTailPlan>,
+        now_ms: u64,
     ) {
         let proxy_session_id = &command.key.proxy_session_id;
         let preparation = &command.preparation;
@@ -802,6 +803,7 @@ impl HlsProxyManager {
             );
         }
         session.notify_terminal_commit();
+        crate::availability::binding_protection::after_terminal_commit(leases, session, now_ms);
     }
 
     fn schedule_terminal_commit_retry(

@@ -1,4 +1,4 @@
-//! Native provider reservation matrix: four startup modes, provider limits 1/3, five lifecycle cases.
+//! Native provider reservation matrix: four startup modes, provider limits 1/3, eight lifecycle cases.
 //!
 //! Every case starts a real Tuliprox process and a loopback origin. At limit 3,
 //! two continuously drained TS streams occupy the other slots. An independent
@@ -22,7 +22,7 @@
 #[path = "support/reservation_fixture.rs"]
 mod fixture;
 
-use fixture::{client, preemption_segment, Case, Fixture, COMPETITOR, SUBJECT};
+use fixture::{client, origin_segment, Case, Fixture, COMPETITOR, SUBJECT};
 use reqwest::{StatusCode, Url};
 use std::time::{Duration, Instant};
 use tuliprox_testkit::{
@@ -67,16 +67,22 @@ async fn verify_media(
 ) -> Result<(), TestkitError> {
     let urls = media_urls(variant, body);
     assert!(!body.contains("#EXT-X-ENDLIST"), "live media must not be a custom-video fallback");
-    assert_eq!(urls.len(), 3, "all three successful origin objects must be published");
+    if fixture.origin.case.is_recovery() && marker == SUBJECT {
+        assert!((3..=6).contains(&urls.len()), "the mode's complete current window must be published");
+    } else {
+        assert_eq!(urls.len(), 3, "all successful origin objects must be published");
+    }
     let mut validator = FrameValidator::new(&fixture.run, marker);
     let mut frames = 0;
-    for (sequence, url) in urls.iter().enumerate() {
+    for url in &urls {
         let response = player.get(url.clone()).send().await?;
         assert_eq!(response.status(), StatusCode::OK, "media delivery");
         let bytes = response.bytes().await?;
-        if matches!(fixture.origin.case, Case::Preemption) {
+        if fixture.origin.case.uses_valid_ts() {
+            let sequence =
+                url.path_segments().unwrap().next_back().unwrap().strip_suffix(".ts").unwrap().parse::<u64>().unwrap();
             assert!(
-                bytes.as_ref() == preemption_segment(marker, u64::try_from(sequence).unwrap()),
+                bytes.as_ref() == origin_segment(fixture.origin.case, marker, sequence),
                 "live media must match the requested origin channel and segment"
             );
         } else {
@@ -86,7 +92,7 @@ async fn verify_media(
             }
         }
     }
-    if !matches!(fixture.origin.case, Case::Preemption) {
+    if !fixture.origin.case.uses_valid_ts() {
         assert_eq!(frames, 6, "complete synthetic origin data");
     }
     let first = player.get(urls[0].clone()).send().await?.bytes().await?;
@@ -406,9 +412,234 @@ async fn verify_retry(
             .await;
             competitor_after_release(fixture).await?;
         }
-        Case::Start | Case::Preemption => unreachable!(),
+        Case::Start | Case::Preemption | Case::Recovery | Case::RecoveryCvr | Case::RecoveryError => unreachable!(),
     }
     assert!(!fixture.log_contains("HLS origin account rebound:"), "no account rebind is needed");
+    Ok(())
+}
+
+async fn consume_recovery_buffer(
+    fixture: &Fixture,
+    player: &reqwest::Client,
+    variant: &Url,
+) -> Result<(), TestkitError> {
+    use std::sync::atomic::Ordering;
+    let initial = player.get(variant.clone()).send().await?;
+    assert_eq!(initial.status(), StatusCode::OK);
+    verify_media(fixture, player, variant, &initial.text().await?, SUBJECT).await?;
+    // Every mode first publishes three units. A healthy publication then adds
+    // three more, building a real client reserve beyond the normal 3T+1 window.
+    fixture.origin.manifest_phase.store(3, Ordering::Release);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let response = player.get(variant.clone()).send().await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.text().await?;
+        if body.contains("000005.ts") {
+            verify_media(fixture, player, variant, &body, SUBJECT).await?;
+            break;
+        }
+        assert!(Instant::now() < deadline, "healthy warmup must deliver six consecutive units");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    Ok(())
+}
+
+async fn verify_recovery(
+    fixture: &Fixture,
+    player: &reqwest::Client,
+    variant: &Url,
+    case: Case,
+    limit: u16,
+) -> Result<(), TestkitError> {
+    use std::sync::atomic::Ordering;
+    consume_recovery_buffer(fixture, player, variant).await?;
+    let initial_requests = fixture.origin.subject_segments().len();
+    let holder_before = fixture.holder_progress();
+    assert_eq!(initial_requests, 6, "the client consumes the entire offered window");
+    fixture.origin.manifest_phase.store(1, Ordering::Release);
+    let fault_started = Instant::now();
+    let capacity_status =
+        if matches!(case, Case::RecoveryCvr) { StatusCode::SERVICE_UNAVAILABLE } else { StatusCode::BAD_GATEWAY };
+    compete_between_refresh_jobs(fixture, player, variant, limit, capacity_status).await?;
+    // Resume normal polling only after the first completed job's idle-capacity
+    // assertion. The client cannot race the probe by starting the next job.
+    let polling = {
+        let player = player.clone();
+        let variant = variant.clone();
+        tokio::spawn(async move {
+            loop {
+                poll_recovery_manifest(&player, &variant).await.unwrap();
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        })
+    };
+    tokio::time::sleep_until((fault_started + Duration::from_millis(8_200)).into()).await;
+    assert!(fault_started.elapsed() > Duration::from_secs(7), "fault must outlast the normal 3T+1 reservation");
+    assert!(!polling.is_finished(), "the same client must keep polling during the fault");
+    assert_eq!(competitor_probe(fixture, 201).await?, capacity_status);
+    assert!(
+        fixture.origin.snapshot().iter().all(|request| request.marker != COMPETITOR),
+        "no denied competitor may reach the origin during the recovery"
+    );
+    assert!(fixture.log_count("result=failed error=") >= 2, "the fault must span multiple bounded jobs");
+    assert!(!fixture.subject_log_contains("reason=soft-window-elapsed"));
+    assert!(!fixture.subject_log_contains("reason=session-not-established"));
+    assert_eq!(
+        fixture.log_count("HLS origin account binding created:"),
+        1,
+        "recovery must keep its original account binding"
+    );
+    assert_eq!(
+        fixture.origin.subject_segments().len(),
+        initial_requests,
+        "polling cannot create client media progress"
+    );
+    assert_eq!(holder_before.len(), usize::from(limit - 1));
+    for (before, after) in holder_before.iter().zip(fixture.holder_progress()) {
+        assert!(after > *before, "the other occupied provider slots must continue delivering valid data");
+    }
+    polling.abort();
+    let _ = polling.await;
+    if matches!(case, Case::Recovery) {
+        fixture.origin.manifest_phase.store(2, Ordering::Release);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let recovered = loop {
+            let response = player.get(variant.clone()).send().await?;
+            assert_eq!(response.status(), StatusCode::OK, "the original lease must recover");
+            assert_eq!(response.url(), variant, "recovery must preserve the session and access-lease URL");
+            let body = response.text().await?;
+            if body.lines().any(|line| line.contains("000006.ts")) {
+                break body;
+            }
+            assert!(Instant::now() < deadline, "new media must become reachable before the existing recovery deadline");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        };
+        verify_media(fixture, player, variant, &recovered, SUBJECT).await?;
+        assert_eq!(fixture.log_count("HLS origin account binding created:"), 1);
+    } else {
+        verify_permanent_recovery_failure(fixture, player, variant, case, fault_started).await?;
+    }
+    assert!(fixture.holders_alive());
+    Ok(())
+}
+
+async fn compete_between_refresh_jobs(
+    fixture: &Fixture,
+    player: &reqwest::Client,
+    variant: &Url,
+    limit: u16,
+    expected: StatusCode,
+) -> Result<(), TestkitError> {
+    let starts = fixture.log_count("HLS origin manifest refresh started:");
+    let deadline = Instant::now() + Duration::from_secs(6);
+    while fixture.log_count("HLS origin manifest refresh started:") == starts {
+        poll_recovery_manifest(player, variant).await?;
+        assert!(Instant::now() < deadline, "the first fault refresh must start");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    // No more subject requests until this job has released I/O and the probe
+    // completes. Observe completion rather than trying to hit an idle interval.
+    wait_for(
+        || fixture.log_count("result=failed error=") > 0,
+        Duration::from_secs(6),
+        "the first bounded manifest refresh must fail",
+    )
+    .await;
+    let completed = fixture.log_count("HLS origin manifest refresh completed:");
+    assert_eq!(fixture.log_count("HLS origin manifest refresh started:"), completed);
+    let before = fixture.reserved_without_io(limit);
+    assert_eq!(competitor_probe(fixture, 1_000).await?, expected);
+    assert!(fixture.reserved_without_io(limit) > before, "the completed job must retain capacity without I/O");
+    assert_eq!(
+        fixture.log_count("HLS origin manifest refresh started:"),
+        completed,
+        "the next subject job must not overlap the idle-capacity probe"
+    );
+    Ok(())
+}
+
+async fn poll_recovery_manifest(player: &reqwest::Client, variant: &Url) -> Result<(), TestkitError> {
+    let response = player.get(variant.clone()).send().await?;
+    assert!(
+        matches!(response.status(), StatusCode::OK | StatusCode::BAD_GATEWAY)
+            || (response.status() == StatusCode::SERVICE_UNAVAILABLE
+                && response.headers().contains_key(reqwest::header::RETRY_AFTER))
+    );
+    let _ = response.bytes().await?;
+    Ok(())
+}
+
+async fn verify_permanent_recovery_failure(
+    fixture: &Fixture,
+    player: &reqwest::Client,
+    variant: &Url,
+    case: Case,
+    fault_started: Instant,
+) -> Result<(), TestkitError> {
+    // Stop all subject requests before terminal cutover. The server must
+    // decide, cancel its work and release capacity autonomously.
+    wait_for(
+        || {
+            fixture.log_contains("outcome=terminal_committed")
+                || fixture.log_contains("HLS autonomous terminal owner completed: outcome=committed")
+        },
+        Duration::from_secs(7),
+        "permanent failure must commit a terminal result without another request",
+    )
+    .await;
+    assert!(
+        fault_started.elapsed() < Duration::from_secs(15),
+        "terminal completion must use the existing reserve deadline"
+    );
+    let origin_before = fixture.origin.snapshot().iter().filter(|request| request.marker == SUBJECT).count();
+    let freed = Instant::now();
+    let probe = client("hls-recovery-terminal-capacity").get(fixture.entry("other", 103)).send().await?;
+    assert_eq!(probe.status(), StatusCode::OK, "terminal decision must release the provider immediately");
+    assert_eq!(probe.bytes().await?.as_ref(), &[0x47; 16_384]);
+    assert!(freed.elapsed() < Duration::from_secs(2));
+    let response = player.get(variant.clone()).send().await?;
+    assert_eq!(response.url(), variant);
+    assert!(
+        !response.headers().contains_key(reqwest::header::RETRY_AFTER),
+        "a committed terminal decision must be final"
+    );
+    if matches!(case, Case::RecoveryCvr) {
+        assert_eq!(response.status(), StatusCode::OK);
+        let terminal = response.text().await?;
+        assert!(terminal.ends_with("#EXT-X-ENDLIST\n"));
+        let urls: Vec<_> =
+            media_urls(variant, &terminal).into_iter().filter(|url| url.path().contains("/terminal/")).collect();
+        assert!(!urls.is_empty(), "a committed fallback must expose actual terminal media");
+        let mut scanner = WireMarkerScanner::default();
+        let mut delivered_kind = None;
+        for url in urls {
+            let response = player.get(url).send().await?;
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = response.bytes().await?;
+            assert!(!bytes.is_empty() && bytes.len().is_multiple_of(188));
+            assert!(bytes.as_chunks::<188>().0.iter().all(|packet| packet[0] == 0x47));
+            delivered_kind = scanner.push(&bytes)?.or(delivered_kind);
+        }
+        assert_eq!(
+            delivered_kind,
+            Some(CustomVideoKind::ChannelUnavailable),
+            "the delivered CVR must match the origin failure"
+        );
+    } else {
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY, "disabled CVR must use configured status 502");
+    }
+    let replay = player.get(variant.clone()).send().await?;
+    assert_eq!(
+        replay.status(),
+        if matches!(case, Case::RecoveryCvr) { StatusCode::OK } else { StatusCode::BAD_GATEWAY }
+    );
+    assert_eq!(
+        fixture.origin.snapshot().iter().filter(|request| request.marker == SUBJECT).count(),
+        origin_before,
+        "the terminal lease must never restart origin work"
+    );
+    competitor_after_release(fixture).await?;
     Ok(())
 }
 
@@ -425,6 +656,7 @@ async fn run(case: Case, mode: StartupMode, limit: u16) -> Result<(), TestkitErr
                 .await
                 .expect("preemption scenario exceeded its deadline")?,
             Case::Success | Case::Exhaustion | Case::PendingExpiry => verify_retry(&fixture, &player, &variant, case, limit).await?,
+            Case::Recovery | Case::RecoveryCvr | Case::RecoveryError => verify_recovery(&fixture, &player, &variant, case, limit).await?,
         }
         assert!(fixture.holders_alive(), "all preoccupied provider slots must remain occupied");
         println!("HLS_RESERVATION mode={mode} limit={limit} case={case:?} passed elapsed_ms={} subject_requests={} reserved_without_io={}",
@@ -464,6 +696,21 @@ macro_rules! matrix {
             #[ignore = "requires built SUT via TULIPROX_TESTKIT_SUT_BINARY"]
             async fn priority_preemption() -> Result<(), TestkitError> {
                 run(Case::Preemption, StartupMode::$mode, $limit).await
+            }
+            #[tokio::test]
+            #[ignore = "requires built SUT via TULIPROX_TESTKIT_SUT_BINARY"]
+            async fn recovery_success() -> Result<(), TestkitError> {
+                run(Case::Recovery, StartupMode::$mode, $limit).await
+            }
+            #[tokio::test]
+            #[ignore = "requires built SUT via TULIPROX_TESTKIT_SUT_BINARY"]
+            async fn recovery_cvr() -> Result<(), TestkitError> {
+                run(Case::RecoveryCvr, StartupMode::$mode, $limit).await
+            }
+            #[tokio::test]
+            #[ignore = "requires built SUT via TULIPROX_TESTKIT_SUT_BINARY"]
+            async fn recovery_error_502() -> Result<(), TestkitError> {
+                run(Case::RecoveryError, StartupMode::$mode, $limit).await
             }
         }
     };

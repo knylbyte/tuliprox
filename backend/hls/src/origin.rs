@@ -200,6 +200,17 @@ impl HlsOriginAccountIoLease {
         }?;
         Some((handle, permit))
     }
+
+    pub(crate) fn cancel(&self) {
+        if let Some((handle, permit)) = self.take_resource() {
+            if let Some(cancel) = &handle.cancel_token {
+                cancel.cancel();
+            }
+            permit.send(CleanupEvent::ReleaseProviderHandle { handle: Some(handle) });
+        }
+        self.acquiring.store(false, std::sync::atomic::Ordering::Release);
+        self.notify.notify_waiters();
+    }
 }
 
 impl fmt::Debug for HlsOriginAccountIoLease {
