@@ -4,8 +4,7 @@ use super::{
     effective_hls_url_failover_provider_for_fetch_url, hls_access_lease_timing_for_session, hls_access_lease_ttl_ms,
     hls_availability_reevaluation_registration_failure_response, hls_cache_configured,
     hls_canonical_owner_registration, hls_canonical_owner_request_deadline_ms, hls_canonical_retry_after_response,
-    hls_canonical_status_response, hls_effective_origin_acquire_policy,
-    hls_origin_account_reservation_ttl_secs_for_session, hls_pending_bootstrap_window_ms,
+    hls_canonical_status_response, hls_effective_origin_acquire_policy, hls_pending_bootstrap_window_ms,
     hls_provider_connections_exhausted_manifest_resolution, hls_runtime_or_standalone_custom_tail_response,
     hls_unpublished_lease_channel_unavailable_response, join_hls_canonical_manifest_owner,
     latest_shared_hls_manifest_rendered_at_ms, mark_hls_authorized_manifest_access,
@@ -329,7 +328,6 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
         safe_proxy_session_id(path_proxy_session_id),
         selected_account
     );
-    let reservation_ttl_secs = hls_origin_account_reservation_ttl_secs_for_session(&session).await;
     let previous_manifest_rendered_at_ms = latest_shared_hls_manifest_rendered_at_ms(&session).await;
     let entry_origin_manifest_commits = session.read().await.origin_manifest_commits();
     let handoff_previous_rendered_at_ms = maybe_mark_hls_provisioning_handoff_for_canonical_manifest(
@@ -376,7 +374,15 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
         None => HlsRuntimeBandwidthLearningContext::Eligible(origin.input),
     };
 
-    let origin_policy = hls_effective_origin_acquire_policy(&session).await;
+    let (origin_policy, reservation_ttl_secs, playback_kind, account_runtime) = {
+        let session = session.read().await;
+        (
+            session.effective_origin_acquire_policy_or_default(),
+            session.account_overlap_timing().reservation_ttl_secs(),
+            session.origin_playback_kind(),
+            session.origin_account_runtime.clone(),
+        )
+    };
     let mut preacquired_provider_handle = prepared_origin.preacquired_origin_account_handle;
     let mut origin_io = HlsOriginIoContext {
         ctx: hls_ctx.clone(),
@@ -388,8 +394,8 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
         preacquired_provider_handle: None,
         started_generation: None,
         prepared_account: None,
-        playback_kind: session.read().await.origin_playback_kind(),
-        account_runtime: session.read().await.origin_account_runtime.clone(),
+        playback_kind,
+        account_runtime,
     };
     if availability_reevaluation_owner_key.is_none() {
         if let Some(provider_handle) = preacquired_provider_handle.take() {

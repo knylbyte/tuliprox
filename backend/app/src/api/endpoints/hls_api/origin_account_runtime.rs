@@ -678,12 +678,18 @@ impl HlsOriginAccountRuntime for AppHlsOriginAccountRuntime {
             )
             .ok_or(HlsBoundAccountAcquireErrorKind::Unavailable)?;
             let snapshot = prepared.snapshot;
-            let (pending, origin_headers) = {
+            let (pending, origin_headers, reservation_ttl_secs, playback_kind, account_runtime) = {
                 let current = session.read().await;
                 if current.is_gc_marked_for_removal() || !snapshot.matches_session(&current) {
                     return Err(HlsBoundAccountAcquireErrorKind::StoreRace);
                 }
-                (current.origin_account_manifest_pending.is_some(), current.origin_request_headers.clone())
+                (
+                    current.origin_account_manifest_pending.is_some(),
+                    current.origin_request_headers.clone(),
+                    current.account_overlap_timing().reservation_ttl_secs(),
+                    current.origin_playback_kind(),
+                    current.origin_account_runtime.clone(),
+                )
             };
             drop(managed);
             if work == HlsOriginAccountWork::Media && pending {
@@ -693,12 +699,12 @@ impl HlsOriginAccountRuntime for AppHlsOriginAccountRuntime {
                     allow_grace: class.allows_grace(),
                     priority: policy.priority,
                     connection_kind: policy.connection_kind,
-                    reservation_ttl_secs: session.read().await.account_overlap_timing().reservation_ttl_secs(),
+                    reservation_ttl_secs,
                     preacquired_provider_handle: None,
                     started_generation: None,
                     prepared_account: None,
-                    playback_kind: session.read().await.origin_playback_kind(),
-                    account_runtime: session.read().await.origin_account_runtime.clone(),
+                    playback_kind,
+                    account_runtime,
                 };
                 let manifest_commit_requirement = tuliprox_hls::api::hls_manifest_commit_requirement(
                     session,
