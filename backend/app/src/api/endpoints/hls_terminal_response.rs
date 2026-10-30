@@ -56,6 +56,9 @@ pub(super) async fn hls_manifest_terminal_preflight(
             HlsManifestTerminalPreflight::FailClosed { reason: HlsTerminalFailedClosedReason::LeaseStateUnavailable }
         };
     };
+    if lease.state == HlsAccessLeaseState::Idle {
+        return HlsManifestTerminalPreflight::RefreshBeforeTerminalEvaluation;
+    }
     let (publication_late, capacity_recovery_blocks_ready_timeline) = {
         let session = session.read().await;
         let target_duration_ms =

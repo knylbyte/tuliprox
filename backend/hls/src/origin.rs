@@ -766,23 +766,18 @@ pub(crate) async fn finish_failed_hls_start_for_context(
     expected_generation: Option<u64>,
     expected_account: Option<&crate::origin_account_runtime::HlsOriginAccountSnapshot>,
 ) {
+    {
+        let state = session.read().await;
+        if settled_failed_hls_start_attempt(&state, expected_generation, expected_account).is_none() {
+            return;
+        }
+    }
     let mut leases = ctx.hls_proxy.segment_worker_pool().access_leases().write().await;
     let mut state = session.write().await;
-    if state.origin_playback_kind() != PlaybackKind::LiveHls
-        || expected_generation.is_some_and(|generation| generation != state.activity.origin_work_generation)
-        || expected_account.is_some_and(|snapshot| !snapshot.matches_session_identity(&state))
-        || state.activity.active_origin_work_count.load(std::sync::atomic::Ordering::Acquire) > 0
-        || state.active_segment_fetches > 0
-        || state.active_map_fetches > 0
-        || state.origin_refresh.in_flight
-    {
+    let Some(attempt) = settled_failed_hls_start_attempt(&state, expected_generation, expected_account) else {
         return;
-    }
-    let Some(attempt) = state.origin_refresh.attempt.clone() else { return };
+    };
     let kind = attempt.provider_failure();
-    if kind.is_none() && !state.start_segments_exhausted() {
-        return;
-    }
     // A retained usable window still serves shared clients, even if this
     // particular manifest attempt already closed with an error.
     if state.has_usable_start_window(ctx.hls_proxy.now_ms()) {
@@ -817,6 +812,25 @@ pub(crate) async fn finish_failed_hls_start_for_context(
     drop(state);
     drop(leases);
     ctx.hls_proxy.notify_session_evidence_changed(&proxy_id);
+}
+
+fn settled_failed_hls_start_attempt(
+    state: &HlsSession,
+    expected_generation: Option<u64>,
+    expected_account: Option<&crate::origin_account_runtime::HlsOriginAccountSnapshot>,
+) -> Option<Arc<crate::manifest_fetch::HlsManifestAttemptContext>> {
+    if state.origin_playback_kind() != PlaybackKind::LiveHls
+        || expected_generation.is_some_and(|generation| generation != state.activity.origin_work_generation)
+        || expected_account.is_some_and(|snapshot| !snapshot.matches_session_identity(state))
+        || state.activity.active_origin_work_count.load(std::sync::atomic::Ordering::Acquire) > 0
+        || state.active_segment_fetches > 0
+        || state.active_map_fetches > 0
+        || state.origin_refresh.in_flight
+    {
+        return None;
+    }
+    let attempt = state.origin_refresh.attempt.as_ref()?;
+    (attempt.provider_failure().is_some() || state.start_segments_exhausted()).then(|| Arc::clone(attempt))
 }
 
 pub fn hls_origin_account_status(ctx: &HlsCtx, binding: &HlsOriginAccountBinding) -> HlsOriginAccountStatus {
@@ -1323,6 +1337,79 @@ mod tests {
     };
     use crate::{build_proxy_session_id, HlsSession, HlsSessionKey, ProxySessionId};
     use std::sync::Arc;
+
+    #[tokio::test]
+    async fn healthy_start_cleanup_does_not_wait_for_the_global_lease_store() {
+        let ctx = crate::hls_ctx::HlsCtx::for_test(tuliprox_core::model::Config::default());
+        let leases = ctx.hls_proxy.segment_worker_pool().access_leases().write().await;
+        for with_attempt in [false, true] {
+            let mut state = HlsSession::new(HlsSessionKey::new(1, "healthy-cleanup"), b"secret", 1_000);
+            if with_attempt {
+                state.origin_refresh.attempt = Some(Arc::new(crate::HlsManifestAttemptContext::new(
+                    crate::HlsManifestCommitRequirement::CommittedManifestAllowed,
+                    true,
+                    None,
+                )));
+            }
+            let session = Arc::new(tokio::sync::RwLock::new(state));
+            tokio::time::timeout(
+                std::time::Duration::from_millis(100),
+                super::finish_failed_hls_start_for_context(&ctx, &session, None, None),
+            )
+            .await
+            .expect("healthy completion must not serialize on an unrelated session's lease-store lock");
+        }
+        drop(leases);
+    }
+
+    #[tokio::test]
+    async fn failed_start_cleanup_revalidates_after_waiting_for_the_lease_store() {
+        let ctx = crate::hls_ctx::HlsCtx::for_test(tuliprox_core::model::Config::default());
+        let mut state = HlsSession::new(HlsSessionKey::new(1, "superseded-cleanup"), b"secret", 1_000);
+        let binding =
+            HlsOriginAccountBinding::new(Arc::from("input"), Arc::from("old"), &state.proxy_session_id, 1_000);
+        state.origin_account_binding = Some(binding.clone());
+        let attempt = Arc::new(crate::HlsManifestAttemptContext::new(
+            crate::HlsManifestCommitRequirement::CommittedManifestAllowed,
+            false,
+            None,
+        ));
+        attempt.record_provider_failure(HlsBoundAccountAcquireErrorKind::Exhausted);
+        state.origin_refresh.attempt = Some(attempt);
+        let expected = crate::origin_account_runtime::HlsOriginAccountSnapshot::from_session(&state);
+        let session = Arc::new(tokio::sync::RwLock::new(state));
+        let leases = ctx.hls_proxy.segment_worker_pool().access_leases().write().await;
+        let cleanup = {
+            let ctx = ctx.clone();
+            let session = Arc::clone(&session);
+            tokio::spawn(async move {
+                super::finish_failed_hls_start_for_context(&ctx, &session, Some(expected.generation), Some(&expected))
+                    .await;
+            })
+        };
+        tokio::task::yield_now().await;
+        assert!(!cleanup.is_finished());
+        {
+            let mut state = tokio::time::timeout(std::time::Duration::from_secs(1), session.write())
+                .await
+                .expect("pre-check must release the session reader before waiting for leases");
+            state.invalidate_queued_origin_work();
+            state.origin_account_binding = Some(HlsOriginAccountBinding::rebound(
+                binding.input_name.clone(),
+                Arc::from("successor"),
+                binding.session_owner.clone(),
+                binding.generation + 1,
+                1_001,
+            ));
+        }
+        drop(leases);
+        cleanup.await.unwrap();
+        let state = session.read().await;
+        let current = state.origin_account_binding.as_ref().unwrap();
+        assert!(current.is_active());
+        assert_eq!(current.account_name.as_ref(), "successor");
+        assert!(!state.origin_refresh.attempt.as_ref().unwrap().failed());
+    }
 
     #[tokio::test]
     async fn account_io_wait_releases_the_session_write_lock_before_awaiting_notification() {

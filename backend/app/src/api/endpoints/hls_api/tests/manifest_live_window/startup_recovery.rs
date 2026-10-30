@@ -153,6 +153,13 @@ async fn exhausted_startup_with_enabled_custom_response_without_asset_keeps_hls_
     configure_custom_response(&app, true, StatusCode::SERVICE_UNAVAILABLE);
     app.app_config.custom_stream_response.store(None);
     let mut lease = app.hls.proxy.access_lease_response_snapshot(&id, &proxy, current_time_millis()).await.unwrap();
+    let attempt = Arc::new(tuliprox_hls::HlsManifestAttemptContext::new(
+        tuliprox_hls::api::HlsManifestCommitRequirement::CommittedManifestAllowed,
+        false,
+        None,
+    ));
+    attempt.finish(true);
+    lease.manifest_start_attempt = Some(attempt);
     for state in [HlsAccessLeaseState::Pending, HlsAccessLeaseState::Idle] {
         lease.state = state;
         let response = super::super::super::hls_exhausted_startup_response(&app, &session, &lease).await.unwrap();
@@ -194,6 +201,13 @@ async fn exhausted_idle_reentry_preserves_previous_lease_evidence() {
             before.state = HlsAccessLeaseState::Idle;
             before.active_until_ms = None;
             before.pending_deadline = None;
+            let attempt = Arc::new(tuliprox_hls::HlsManifestAttemptContext::new(
+                tuliprox_hls::api::HlsManifestCommitRequirement::CommittedManifestAllowed,
+                false,
+                None,
+            ));
+            attempt.finish(true);
+            before.manifest_start_attempt = Some(attempt);
             app.hls.proxy.prepare_access_lease(before.clone()).await;
             for entry in session.write().await.segments.values_mut() {
                 entry.status = SegmentCacheStatus::FailedPermanent {
@@ -204,19 +218,10 @@ async fn exhausted_idle_reentry_preserves_previous_lease_evidence() {
             configure_custom_response(&app, video, error_status);
             let response = tokio::time::timeout(
                 Duration::from_secs(1),
-                try_test_hls_cached_manifest_response(
-                    &app,
-                    &session,
-                    &id,
-                    HlsAccessLeaseState::Idle,
-                    &StripConfig { mode: HlsStripMode::Segments, value: 3 },
-                    None,
-                    super::super::HlsCachedManifestOptions::initial(Duration::from_secs(30)),
-                ),
+                super::super::super::hls_unpublished_lease_channel_unavailable_response(&app, &proxy, &id),
             )
             .await
-            .expect("idle re-entry must not wait for lease expiry")
-            .unwrap();
+            .expect("idle re-entry must not wait for lease expiry");
             assert_eq!(response.status(), if video { StatusCode::OK } else { error_status });
             let after = app.hls.proxy.access_lease_response_snapshot(&id, &proxy, current_time_millis()).await.unwrap();
             assert_eq!(after, before, "the fallback must preserve all previous lease evidence");

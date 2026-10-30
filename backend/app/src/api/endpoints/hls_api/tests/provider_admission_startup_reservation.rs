@@ -960,13 +960,25 @@ async fn terminal_start_cleanup_is_immediate_and_cannot_release_a_successor_bind
 
 #[tokio::test]
 async fn idle_reentry_capacity_failure_preserves_previous_publication_and_closes_without_gc() {
-    assert_idle_reentry_admission(1, true).await;
+    assert_idle_reentry_admission(1, true, HlsStartupMode::Conservative, false).await;
 }
 
 #[tokio::test]
 async fn admitted_idle_reentry_protects_the_manifest_segment_handoff_at_limits_one_and_three() {
     for limit in [1, 3] {
-        assert_idle_reentry_admission(limit, false).await;
+        assert_idle_reentry_admission(limit, false, HlsStartupMode::Conservative, false).await;
+    }
+}
+
+#[tokio::test]
+async fn idle_reentry_with_evicted_media_defers_fallback_until_refresh_finishes() {
+    for mode in [
+        HlsStartupMode::Conservative,
+        HlsStartupMode::FirstReady,
+        HlsStartupMode::Progressive,
+        HlsStartupMode::Optimistic,
+    ] {
+        assert_idle_reentry_admission(1, false, mode, true).await;
     }
 }
 
@@ -974,7 +986,7 @@ async fn admitted_idle_reentry_protects_the_manifest_segment_handoff_at_limits_o
     clippy::too_many_lines,
     reason = "Exercise a complete played session, idle readmission and its competing owner."
 )]
-async fn assert_idle_reentry_admission(limit: u16, exhaust: bool) {
+async fn assert_idle_reentry_admission(limit: u16, exhaust: bool, mode: HlsStartupMode, debounce: bool) {
     use std::sync::atomic::{AtomicU64, Ordering};
     let head = Arc::new(AtomicU64::new(100));
     let current = Arc::clone(&head);
@@ -991,7 +1003,7 @@ async fn assert_idle_reentry_admission(limit: u16, exhaust: bool) {
     .await;
     let input = provider(&origin.base_url, limit);
     let app = test_app_state_with_inputs(vec![Arc::new(input.clone())]);
-    enable_hls_cache_with_startup_mode(&app, HlsStartupMode::Conservative).await;
+    enable_hls_cache_with_startup_mode(&app, mode).await;
     create_active_hls_user_session(&app).await;
     let mut occupied = Vec::new();
     for index in 1..limit {
@@ -1064,10 +1076,12 @@ async fn assert_idle_reentry_admission(limit: u16, exhaust: bool) {
     {
         let mut state = session.write().await;
         let past = super::super::current_time_millis() - 100_000;
-        state.activity.last_authorized_media_at_ms = Some(past);
-        state.activity.last_delivered_media_at_ms = Some(past);
+        let activity = if debounce { super::super::current_time_millis() } else { past };
+        state.activity.last_authorized_media_at_ms = Some(activity);
+        state.activity.last_delivered_media_at_ms = Some(activity);
         state.origin_refresh.last_success_at_ms = Some(past);
-        state.origin_refresh.next_fetch_allowed_at_ms = 0;
+        state.origin_refresh.consecutive_failures = u32::from(debounce);
+        state.origin_refresh.next_fetch_allowed_at_ms = if debounce { activity + 60_000 } else { 0 };
         state.origin_control.last_origin_response_at_ms = Some(past);
         state.origin_control.last_media_progress_at_ms = Some(past);
         if let Some(manifest) = state.last_rendered_manifest.as_mut() {
@@ -1077,9 +1091,12 @@ async fn assert_idle_reentry_admission(limit: u16, exhaust: bool) {
         for segment in state.segments.values_mut() {
             segment.status = tuliprox_hls::api::SegmentCacheStatus::Expired;
         }
+        if debounce && mode == HlsStartupMode::Conservative {
+            state.segments.clear();
+        }
         let binding = state.origin_account_binding.as_mut().unwrap();
-        binding.pinned_at_ms = past;
-        binding.startup_protection.as_mut().unwrap().anchored_at_ms = past;
+        binding.pinned_at_ms = activity;
+        binding.startup_protection.as_mut().unwrap().anchored_at_ms = activity;
     }
     head.store(106, Ordering::Release);
     let config = app.app_config.config.load();
@@ -1088,12 +1105,46 @@ async fn assert_idle_reentry_admission(limit: u16, exhaust: bool) {
         custom_stream_response_error_status: 422,
         ..config.as_ref().clone()
     }));
+    if debounce {
+        let requests = origin.manifest_request_count();
+        let response =
+            tokio::time::timeout(Duration::from_secs(1), canonical_response_for_lease(&app, &input, &url, "warm"))
+                .await
+                .expect("debounced idle reentry must stay retryable without waiting for lease expiry");
+        assert_eq!(
+            response.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "{mode:?}: old cache exhaustion is not terminal"
+        );
+        assert!(response.headers().contains_key(axum::http::header::RETRY_AFTER));
+        assert_eq!(origin.manifest_request_count(), requests, "the existing refresh backoff remains effective");
+        let waiting = app
+            .hls
+            .proxy
+            .access_lease_response_snapshot(&id, &proxy, super::super::current_time_millis())
+            .await
+            .unwrap();
+        assert!(!waiting.manifest_start_attempt.as_ref().is_some_and(|attempt| attempt.failed()));
+        assert_eq!(waiting.last_manifest_snapshot, before.last_manifest_snapshot);
+        assert_eq!(waiting.playback_cursor, before.playback_cursor);
+        session.write().await.origin_refresh.next_fetch_allowed_at_ms = 0;
+    }
     let barrier = app.hls.proxy.segment_worker_pool().pause_next_origin_prepare_for_test();
     let request = {
         let app = Arc::clone(&app);
         let input = input.clone();
         let url = url.clone();
-        tokio::spawn(async move { canonical_response_for_lease(&app, &input, &url, "warm").await })
+        tokio::spawn(async move {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+            loop {
+                let response = canonical_response_for_lease(&app, &input, &url, "warm").await;
+                if !debounce || response.status() != StatusCode::SERVICE_UNAVAILABLE {
+                    return response;
+                }
+                assert!(tokio::time::Instant::now() < deadline, "{mode:?}: idle start must recover on the same lease");
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
     };
     tokio::time::timeout(Duration::from_secs(5), barrier.entered.notified())
         .await
@@ -1107,7 +1158,7 @@ async fn assert_idle_reentry_admission(limit: u16, exhaust: bool) {
         );
         app.active_provider.refresh_provider_reservation(&input.name, "foreign-playback", 60);
         app.active_provider.confirm_playback_activity("foreign-playback").unwrap();
-    } else {
+    } else if !debounce {
         let state = session.read().await;
         let start = binding.startup_protection.expect("readmitted start has accepted its first manifest");
         assert!(start.anchored_at_ms > state.activity.last_delivered_media_at_ms.unwrap());
@@ -1142,8 +1193,12 @@ async fn assert_idle_reentry_admission(limit: u16, exhaust: bool) {
         .expect("idle failure wakes without expiry")
         .unwrap();
     if !exhaust {
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::OK, "{mode:?}: admitted idle start must deliver current media");
         let body = String::from_utf8(response_body(response).await.to_vec()).unwrap();
+        if debounce {
+            let seq = super::manifest_media_sequence(&body);
+            assert!(session.read().await.segments[&seq].origin_key.host_local_sequence >= 106);
+        }
         let repeated = canonical_response_for_lease(&app, &input, &url, "warm").await;
         assert_eq!(repeated.status(), StatusCode::OK);
         assert_eq!(

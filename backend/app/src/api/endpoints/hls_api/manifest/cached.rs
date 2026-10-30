@@ -46,6 +46,11 @@ pub(in crate::api::endpoints::hls_api) async fn hls_exhausted_startup_response(
     let idle_reentry = lease.state == HlsAccessLeaseState::Idle
         && lease.playback_mode == tuliprox_hls::api::HlsLeasePlaybackMode::Live
         && lease.runtime_policy_revocation.is_none();
+    // Retained entries can have been evicted before this new start has even
+    // refreshed the origin. Only its settled failure makes exhaustion terminal.
+    if idle_reentry && !lease.manifest_start_attempt.as_ref().is_some_and(|attempt| attempt.failed()) {
+        return None;
+    }
     if !(lease.permits_unpublished_standalone_tail(reason) || idle_reentry) {
         return None;
     }

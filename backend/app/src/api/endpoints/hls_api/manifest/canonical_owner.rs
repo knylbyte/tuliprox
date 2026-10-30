@@ -500,9 +500,22 @@ pub(in crate::api::endpoints::hls_api) async fn trigger_hls_canonical_manifest_r
     session: &HlsSessionHandle,
     proxy_session_id: &ProxySessionId,
     access_lease_id: &HlsAccessLeaseId,
+    access_lease_state: HlsAccessLeaseState,
     refresh_request: OriginRefreshRequest,
     ordering: HlsManifestRefreshOrdering,
 ) -> Option<axum::response::Response> {
+    if access_lease_state == HlsAccessLeaseState::Idle {
+        // An idle viewer starts against current origin evidence, even when its
+        // former publication has no usable cache objects left. The cached path
+        // joins in-flight work; a debounce remains explicitly retryable.
+        let outcome = maybe_trigger_origin_refresh_with_outcome(refresh_request.clone()).await;
+        if matches!(outcome, HlsOriginRefreshTriggerOutcome::DebouncedUntil { .. })
+            && session.read().await.start_segments_exhausted()
+        {
+            return Some(hls_canonical_retry_after_response());
+        }
+        return hls_direct_refresh_follow_up(app_state, session, proxy_session_id, refresh_request, outcome).await;
+    }
     match ordering {
         HlsManifestRefreshOrdering::Background => {
             let outcome = maybe_trigger_origin_refresh_with_outcome(refresh_request.clone()).await;

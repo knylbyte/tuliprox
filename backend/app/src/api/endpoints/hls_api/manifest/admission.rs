@@ -491,6 +491,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
             &session,
             path_proxy_session_id,
             access_lease_id,
+            access_lease_state,
             refresh_request,
             refresh_ordering,
         )
@@ -538,6 +539,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
                 &session,
                 path_proxy_session_id,
                 access_lease_id,
+                access_lease_state,
                 refresh_request,
                 refresh_ordering,
             )
@@ -568,6 +570,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
                 &session,
                 path_proxy_session_id,
                 access_lease_id,
+                access_lease_state,
                 refresh_request,
                 refresh_ordering,
             )
