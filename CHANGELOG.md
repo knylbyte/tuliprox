@@ -4,6 +4,12 @@
 
 ## ⚠️ Breaking Changes
 
+- **The in-memory log ring buffer behind the Web-UI Live Logs now follows the root log filter.** Previously,
+  the ring buffer stored every record that passed the global maximum log level, exposing noisy dependency logs
+  and foreign-crate debug records even when stdout filtered them out. The ring buffer is now gated directly on the
+  root filter (`log.log_level` and module specifications), ensuring the Web UI stream matches stdout. This applies
+  unconditionally, whether external syslog shipping is enabled or not.
+
 - **Unused `media_server` options removed.** The input keys `media_server.playback` (`direct_play_only`,
   `allow_transcode`, `playback_info_policy`, `preflight_streams`), `media_server.image_policy`,
   `media_server.catalog.refresh_mode`, `media_server.catalog.refresh_on_startup`, `media_server.catalog.include_paths`
@@ -191,6 +197,25 @@
   id added.
 
 ## 🌟 New Features
+
+- **Mapper rules can be written in Rhai.** A mapper entry accepts an optional `type`: `dsl` (default, the existing
+  mapper language) or `rhai`. Rhai rules receive the channel as `item` (`item.group = "News"`, `item.chno = 42`,
+  `item["Caption"] = "Renamed"`) and the mapping environment as `ctx` (`ctx.regex`, `ctx.template`, `ctx.favourite`).
+  Scripts are compiled when the configuration loads, so syntax errors report the mapping id and rule name instead of
+  failing mid-refresh. Existing mapping files are unchanged and keep running as `dsl`. The embedded runtime lives in a
+  new workspace crate, `tuliprox-scripting`, so later features (filters, renames, messaging) can reuse it. Rhai's
+  module system is compiled out, so `import` is rejected when the configuration loads and a script cannot load other
+  files from disk. The documentation's Rhai examples are executed by the test suite. See
+  [Rhai scripts](docs/src/configuration/mapping-dsl.md#23-rhai-scripts-type-rhai).
+
+- **External log shipping via syslog and NDJSON (`log.syslog`).** Application log records can now be streamed
+  asynchronously over UDP to an external collector (such as Vector, rsyslog, Logstash, or Fluent Bit) without
+  blocking media processing. Supports RFC 5424, RFC 3164, and NDJSON wire formats, an optional independent remote
+  log level, bounded memory queues with drop-on-full semantics, and live configuration reloads without restart.
+  Configurable via `config.yml` or the Web UI under Config → Log. See
+  [Logging](docs/src/configuration/config.md#3-logging-log). Measured cost of the log call on the reference
+  machine (release, `syslog_hot_path_cost`): 437 ns/record with no sink and 837 ns/record with the sink enabled,
+  i.e. roughly 400 ns per shipped record, dominated by the datagram formatting and the queue hand-off.
 
 - **New mapper built-in functions: `title_case`, `slug`, `normalize_spaces`, `coalesce`, and `deunicode`.** Five new
   helper functions for playlist transformations in the mapper DSL:
@@ -1058,6 +1083,15 @@
 
 ## ⚙️ Optimizations
 
+- **No full database re-verification on in-place writes.** In-place database writes (stream/series info resolves, probes)
+  no longer re-verify the whole database file when its identity was already verified in this process.
+
+- **`get_series` no longer decodes episode details for the list.** The series catalog list response only needs
+  the series header fields. Reading stored series items now skips deserializing and interning season and episode details
+  via a scoped decode projection, reducing response latency on large series catalogs. Xtream list endpoints are served
+  from the memory cache when `use_memory_cache` is enabled, and the memory cache no longer holds series season/episode
+  details (series info is read from disk).
+
 - **Dependency updates.** `jsonwebtoken` 11, `quick-xml` 0.42, `tower-http` 0.7, `tokio-tungstenite` 0.30,
   `sysinfo` 0.39, `lol_html` 3, `lru` 0.19, `fancy-regex` 0.20 and `gloo-net` 0.7. The vendored `reqwest` moved to
   0.13.5 with the request-extension forwarding patch re-applied.
@@ -1231,6 +1265,25 @@
   metadata alone: it takes no scan slot and no file lock and does not open the database.
 
 ## 🐛 Fixes
+
+- **Image/resource proxy fails fast on upstream errors and limits per-host concurrency.** The image/resource proxy
+  no longer retries a failing upstream image three times (each failing image could block a browser slot for minutes),
+  fails after 15 s waiting for the response (the limit applies to waiting for the response, not to the image transfer),
+  and limits concurrent upstream fetches per host to 6 to avoid provider overload.
+
+- **Xtream list order stays sorted after stream or series info resolves.** Resolving VOD or series info updates the
+  target database in place, and every commit removed the sorted index, so later list requests returned items in
+  virtual-id order. The Xtream target write path now keeps the index (new or moved keys are merged in) and reads values
+  by primary key while the index is older than the database. Disk and memory cache list the same items in the same
+  `(source_ordinal, virtual_id)` order.
+
+- **Filters are no longer limited by the parser stack.** A filter that expanded to more than a few dozen terms was
+  rejected with `stack limit reached` on the static-musl build and left the container restarting. The parser dependency
+  no longer probes the stack on musl, and a filter is now stored flat and read, rendered, evaluated and dropped without
+  recursion, so a long `AND`/`OR` chain no longer needs stack. Existing filters keep their result, a rendered filter
+  keeps its grouping when it is written back to the configuration, and oversized filters are rejected with an error
+  naming the limit. The web UI filter view renders long chains without recursion, and the runtime watchdog drains
+  queued syslog records before it exits for a restart.
 
 - **Mapper arity errors name the function the user wrote.** A mapper script with the wrong number of arguments reported
   the internal enum variant (`Function accepts only one argument TitleCase`) instead of the function name

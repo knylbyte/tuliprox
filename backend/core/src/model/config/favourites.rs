@@ -1,7 +1,7 @@
 use crate::model::macros;
 use shared::{
-    foundation::{CompiledRegex, Filter},
-    model::{ConfigFavouritesDto, ItemField, XtreamCluster},
+    foundation::Filter,
+    model::{ConfigFavouritesDto, XtreamCluster},
 };
 use std::sync::Arc;
 
@@ -13,25 +13,13 @@ pub struct ConfigFavourites {
     pub match_as_ascii: bool,
 }
 
-impl ConfigFavourites {
-    fn default_filter() -> Filter {
-        Filter::FieldComparison(
-            ItemField::Group,
-            CompiledRegex {
-                restr: String::new(),
-                re: shared::model::REGEX_CACHE.get_or_compile(".*").expect("default regex '.*' must compile"),
-            },
-        )
-    }
-}
-
 macros::from_impl!(ConfigFavourites);
 impl From<&ConfigFavouritesDto> for ConfigFavourites {
     fn from(dto: &ConfigFavouritesDto) -> Self {
         Self {
             cluster: dto.cluster,
             group: dto.group.clone(),
-            filter: dto.t_filter.as_ref().map_or_else(Self::default_filter, Clone::clone),
+            filter: dto.t_filter.as_ref().map_or_else(Filter::default, Clone::clone),
             match_as_ascii: dto.match_as_ascii,
         }
     }

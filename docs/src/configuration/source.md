@@ -1562,7 +1562,7 @@ sources:
 | `curation`         | Object        |    No    |           | Optional target-wide catalog policy with Trakt and/or TMDB Trending sources. Mutually exclusive with legacy `output[].trakt`; see [target-wide curation](#target-wide-curation-curation).                                    |
 | `favourites`       | List          |    No    |           | Duplicates final transformed channels into dedicated favorite groups after processing is complete. This adds curated views without changing the original group structure.                                                    |
 | `watch`            | List          |    No    |           | Watch entries for this target: channel changes in matching groups and/or matching groups that appear or disappear. Changes are reported as Messaging events; see [Watch](#329-watch-watch).                                  |
-| `use_memory_cache` | Bool          |    No    | `false`   | If enabled, the final compiled playlist is cached in RAM. This reduces disk access and improves delivery speed, especially for M3U downloads, but increases memory consumption.                                              |
+| `use_memory_cache` | Bool          |    No    | `false`   | If enabled, the final playlist is cached in RAM to speed up M3U downloads and Xtream lists (in sorted-index order). Series season and episode details remain on disk to keep RAM usage lean.                                 |
 
 ---
 
@@ -1642,6 +1642,10 @@ Tuliprox supports the following filter expression types:
   `2` = HD/720p, `1` = SD/480p/576p, `0` = no recognized quality token.
 * Filters don't have operator precedence, so please use parentheses
 * You can apply Morgan’s Law `NOT (A) AND NOT (B)`is the same as `NOT( A OR B)`
+* A filter is limited to about 10000 terms in total, counted over the whole expression including nested groups. Larger
+  filters are rejected with an error naming the limit.
+* Parentheses may nest up to 256 levels. Deeper nesting is rejected before the filter is parsed.
+* A filter text is limited to 8 MB after templates are applied. Longer text is rejected before it is parsed.
 
 > **Note:**
 >
