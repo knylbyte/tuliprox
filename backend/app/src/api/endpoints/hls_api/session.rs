@@ -1855,19 +1855,27 @@ pub(super) async fn prepare_hls_transient_origin_io_for_authorized_resource_work
     if binding.is_detached() {
         return Err(HlsOriginRuntimeAcquireError::Fatal(StatusCode::SERVICE_UNAVAILABLE));
     }
-    let policy = hls_effective_origin_acquire_policy(session).await;
+    let (policy, reservation_ttl_secs, playback_kind, account_runtime) = {
+        let session = session.read().await;
+        (
+            session.effective_origin_acquire_policy_or_default(),
+            session.account_overlap_timing().reservation_ttl_secs(),
+            session.origin_playback_kind(),
+            session.origin_account_runtime.clone(),
+        )
+    };
     let origin_io = HlsOriginIoContext {
         ctx: app_state.hls_ctx(),
         client_addr: fingerprint.addr,
         allow_grace: HlsOriginWorkClass::Demand.allows_grace(),
         priority: policy.priority,
         connection_kind: policy.connection_kind,
-        reservation_ttl_secs: hls_origin_account_reservation_ttl_secs_for_session(session).await,
+        reservation_ttl_secs,
         preacquired_provider_handle: None,
         started_generation: None,
         prepared_account: None,
-        playback_kind: session.read().await.origin_playback_kind(),
-        account_runtime: session.read().await.origin_account_runtime.clone(),
+        playback_kind,
+        account_runtime,
     };
     let lease_guard =
         begin_hls_origin_account_io_bounded(&origin_io, session, &binding, hls_object_body_deadline(origin_timeout_ms))
