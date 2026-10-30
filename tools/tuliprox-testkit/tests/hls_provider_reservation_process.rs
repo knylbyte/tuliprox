@@ -1,4 +1,4 @@
-//! Native provider reservation matrix: four startup modes, provider limits 1/3, four lifecycle cases.
+//! Native provider reservation matrix: four startup modes, provider limits 1/3, five lifecycle cases.
 //!
 //! Every case starts a real Tuliprox process and a loopback origin. At limit 3,
 //! two continuously drained TS streams occupy the other slots. An independent
@@ -16,15 +16,17 @@
 //!
 //! Generated configuration, logs and processes belong to one temporary run.
 //! Reports contain generic labels/counters; failure log excerpts remove locations.
-//! CVR is disabled and the configured failure status is 503. Terminal failures
-//! must free capacity and stay terminal when the same access URL is polled again.
+//! Failure cases use configured status 503. Preemption enables the low-priority
+//! custom video and uses valid TS media with distinct null-packet wire markers.
+//! Terminal failures must free capacity and stay terminal on repeated access.
 #[path = "support/reservation_fixture.rs"]
 mod fixture;
 
-use fixture::{client, Case, Fixture, COMPETITOR, SUBJECT};
+use fixture::{client, preemption_segment, Case, Fixture, COMPETITOR, SUBJECT};
 use reqwest::{StatusCode, Url};
 use std::time::{Duration, Instant};
 use tuliprox_testkit::{
+    custom_video::{CustomVideoKind, WireMarkerScanner},
     frame::{FrameDecoder, FrameValidator},
     hls_probe::StartupMode,
     TestkitError,
@@ -68,16 +70,25 @@ async fn verify_media(
     assert_eq!(urls.len(), 3, "all three successful origin objects must be published");
     let mut validator = FrameValidator::new(&fixture.run, marker);
     let mut frames = 0;
-    for url in &urls {
+    for (sequence, url) in urls.iter().enumerate() {
         let response = player.get(url.clone()).send().await?;
         assert_eq!(response.status(), StatusCode::OK, "media delivery");
         let bytes = response.bytes().await?;
-        for frame in FrameDecoder::default().push(&bytes)? {
-            validator.validate(&frame)?;
-            frames += 1;
+        if matches!(fixture.origin.case, Case::Preemption) {
+            assert!(
+                bytes.as_ref() == preemption_segment(marker, u64::try_from(sequence).unwrap()),
+                "live media must match the requested origin channel and segment"
+            );
+        } else {
+            for frame in FrameDecoder::default().push(&bytes)? {
+                validator.validate(&frame)?;
+                frames += 1;
+            }
         }
     }
-    assert_eq!(frames, 6, "complete synthetic origin data");
+    if !matches!(fixture.origin.case, Case::Preemption) {
+        assert_eq!(frames, 6, "complete synthetic origin data");
+    }
     let first = player.get(urls[0].clone()).send().await?.bytes().await?;
     let retry = player.get(urls[0].clone()).send().await?.bytes().await?;
     assert_eq!(first, retry, "retry identity");
@@ -160,6 +171,83 @@ async fn competitor_after_release(fixture: &Fixture) -> Result<(), TestkitError>
     assert_eq!(response.status(), StatusCode::OK, "terminal cleanup must release the slot without lease/GC waiting");
     assert!(started.elapsed() < Duration::from_secs(2), "capacity release must be immediate");
     verify_media(fixture, &player, &variant, &response.text().await?, COMPETITOR).await
+}
+
+async fn verify_preemption(
+    fixture: &Fixture,
+    loser: &reqwest::Client,
+    loser_variant: &Url,
+) -> Result<(), TestkitError> {
+    let response = loser.get(loser_variant.clone()).send().await?;
+    assert_eq!(response.status(), StatusCode::OK, "lower-priority session starts first");
+    verify_media(fixture, loser, loser_variant, &response.text().await?, SUBJECT).await?;
+    assert_eq!(fixture.origin.subject_segments().len(), 3);
+    assert!(fixture.holders_alive(), "all other provider slots must be occupied");
+
+    let winner = client("hls-preemption-winner");
+    let winner_variant = master(fixture, &winner, "other", COMPETITOR).await?;
+    let response = winner.get(winner_variant.clone()).send().await?;
+    assert_eq!(response.status(), StatusCode::OK, "higher-priority session must obtain the occupied slot");
+    verify_media(fixture, &winner, &winner_variant, &response.text().await?, COMPETITOR).await?;
+    assert!(fixture.log_contains("HLS origin policy preempted:"), "must observe priority preemption, not expiry");
+    let loser_origin_requests = fixture.origin.snapshot().iter().filter(|request| request.marker == SUBJECT).count();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let terminal = loop {
+        let response = loser.get(loser_variant.clone()).send().await?;
+        assert_eq!(response.url(), loser_variant, "fallback stays on the lease URL without redirect");
+        assert!(!response.headers().contains_key(reqwest::header::LOCATION), "fallback must not redirect");
+        if response.status() == StatusCode::SERVICE_UNAVAILABLE {
+            // Preparing the finite TS bundle is asynchronous and explicitly retryable.
+            assert_eq!(response.headers().get(reqwest::header::RETRY_AFTER).unwrap(), "1");
+            assert!(Instant::now() < deadline, "fallback preparation must terminate");
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            continue;
+        }
+        assert_eq!(response.status(), StatusCode::OK, "loser receives an HLS fallback");
+        let body = response.text().await?;
+        if body.ends_with("#EXT-X-ENDLIST\n") {
+            break body;
+        }
+        assert!(Instant::now() < deadline, "preempted lease must reach its terminal fallback");
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    };
+    assert!(!terminal.contains("/cvs/hls/"), "active playback uses a lease-bound terminal tail");
+    let terminal_urls = media_urls(loser_variant, &terminal)
+        .into_iter()
+        .filter(|url| url.path().contains("/terminal/"))
+        .collect::<Vec<_>>();
+    assert!(!terminal_urls.is_empty(), "terminal manifest must publish fallback segments");
+    for url in &terminal_urls {
+        let response = loser.get(url.clone()).send().await?;
+        assert_eq!(response.status(), StatusCode::OK, "terminal segment delivery");
+        assert_eq!(response.url(), url, "terminal media must not redirect");
+        let bytes = response.bytes().await?;
+        assert!(!bytes.is_empty() && bytes.len().is_multiple_of(188), "complete MPEG-TS packets");
+        assert!(bytes.as_chunks::<188>().0.iter().all(|packet| packet[0] == 0x47), "MPEG-TS packet synchronization");
+        assert_eq!(
+            WireMarkerScanner::default().push(&bytes)?,
+            Some(CustomVideoKind::LowPriorityPreempted),
+            "delivered fallback must be low_priority_preempted"
+        );
+    }
+    let replay = loser.get(loser_variant.clone()).send().await?;
+    assert_eq!(replay.status(), StatusCode::OK);
+    assert_eq!(replay.text().await?, terminal, "preempted lease stays terminal");
+    assert_eq!(
+        fixture.origin.snapshot().iter().filter(|request| request.marker == SUBJECT).count(),
+        loser_origin_requests,
+        "preempted lease must not restart origin work"
+    );
+
+    let probe = client("hls-preemption-capacity-probe").get(fixture.entry("join", 103)).send().await?;
+    assert_eq!(probe.status(), StatusCode::SERVICE_UNAVAILABLE, "winner must still reserve the occupied slot");
+
+    let response = winner.get(winner_variant.clone()).send().await?;
+    assert_eq!(response.status(), StatusCode::OK, "loser cleanup must preserve the winner's reservation");
+    verify_media(fixture, &winner, &winner_variant, &response.text().await?, COMPETITOR).await?;
+    assert!(fixture.holders_alive(), "preemption must leave unrelated provider slots alive");
+    Ok(())
 }
 
 async fn verify_exhaustion(
@@ -318,7 +406,7 @@ async fn verify_retry(
             .await;
             competitor_after_release(fixture).await?;
         }
-        Case::Start => unreachable!(),
+        Case::Start | Case::Preemption => unreachable!(),
     }
     assert!(!fixture.log_contains("HLS origin account rebound:"), "no account rebind is needed");
     Ok(())
@@ -333,6 +421,9 @@ async fn run(case: Case, mode: StartupMode, limit: u16) -> Result<(), TestkitErr
         assert!(fixture.origin.snapshot().is_empty(), "master alone must not fetch origin manifests or media");
         match case {
             Case::Start => verify_start(&fixture, &player, &variant, limit).await?,
+            Case::Preemption => tokio::time::timeout(Duration::from_secs(30), verify_preemption(&fixture, &player, &variant))
+                .await
+                .expect("preemption scenario exceeded its deadline")?,
             Case::Success | Case::Exhaustion | Case::PendingExpiry => verify_retry(&fixture, &player, &variant, case, limit).await?,
         }
         assert!(fixture.holders_alive(), "all preoccupied provider slots must remain occupied");
@@ -368,6 +459,11 @@ macro_rules! matrix {
             #[ignore = "requires built SUT via TULIPROX_TESTKIT_SUT_BINARY"]
             async fn pending_expiry() -> Result<(), TestkitError> {
                 run(Case::PendingExpiry, StartupMode::$mode, $limit).await
+            }
+            #[tokio::test]
+            #[ignore = "requires built SUT via TULIPROX_TESTKIT_SUT_BINARY"]
+            async fn priority_preemption() -> Result<(), TestkitError> {
+                run(Case::Preemption, StartupMode::$mode, $limit).await
             }
         }
     };

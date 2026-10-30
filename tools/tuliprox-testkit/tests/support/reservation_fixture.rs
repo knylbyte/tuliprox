@@ -32,6 +32,7 @@ pub enum Case {
     Success,
     Exhaustion,
     PendingExpiry,
+    Preemption,
 }
 
 impl Case {
@@ -43,12 +44,14 @@ impl Case {
             // Pending expires. Expiry is exercised independently below.
             Self::Exhaustion => 8,
             Self::PendingExpiry => 2,
+            // The checked-in TS assets run for just over ten seconds.
+            Self::Preemption => 12,
         }
     }
 
     pub const fn timeout_ms(self) -> u64 {
         match self {
-            Self::Start => 3_000,
+            Self::Start | Self::Preemption => 3_000,
             Self::Success | Self::Exhaustion => 5_000,
             Self::PendingExpiry => 10_000,
         }
@@ -64,11 +67,56 @@ pub struct Request {
 }
 
 pub struct Origin {
-    case: Case,
+    pub case: Case,
     run: RunId,
     pub requests: Mutex<Vec<Request>>,
     pub release_retry: watch::Sender<bool>,
     address: std::net::SocketAddr,
+}
+
+fn tagged_transport_stream(source: &[u8], marker: &str) -> Vec<u8> {
+    // A null packet preserves valid audio/video and survives timestamp/CC rewriting.
+    assert!(marker.len() < 184);
+    let mut packet = [0xff; 188];
+    packet[..4].copy_from_slice(&[0x47, 0x1f, 0xff, 0x10]);
+    packet[4..4 + marker.len()].copy_from_slice(marker.as_bytes());
+    [source, packet.as_slice()].concat()
+}
+
+pub fn preemption_segment(marker: u32, sequence: u64) -> Vec<u8> {
+    tagged_transport_stream(
+        include_bytes!("../../../../test/fixtures/hls/channel_unavailable.ts"),
+        &format!("TPX-LIVE-{marker}-{sequence};"),
+    )
+}
+
+fn custom_response_config(case: Case, paths: &FixturePaths) -> Result<String, TestkitError> {
+    if !matches!(case, Case::Preemption) {
+        return Ok("custom_stream_response_enabled: false\n".to_owned());
+    }
+    let responses = paths.root.join("responses");
+    std::fs::create_dir(&responses)?;
+    std::fs::write(
+        responses.join("low_priority_preempted.ts"),
+        tagged_transport_stream(
+            include_bytes!("../../../../test/fixtures/hls/low_priority_preempted.ts"),
+            "TPX-CVS-LOW_PRIORITY_PREEMPTED;",
+        ),
+    )?;
+    let mut api: serde_json::Value = serde_saphyr::from_str(&std::fs::read_to_string(&paths.api_proxy_file)?).unwrap();
+    for user in api["user"][0]["credentials"].as_array_mut().unwrap() {
+        // Keep the occupied slots protected; only the subject has lower priority.
+        user["priority"] = serde_json::json!(match user["username"].as_str().unwrap() {
+            "viewer" => 10,
+            "holder" => -10,
+            _ => 0,
+        });
+    }
+    std::fs::write(&paths.api_proxy_file, serde_saphyr::to_string(&api).unwrap())?;
+    Ok(format!(
+        "custom_stream_response_enabled: true\ncustom_stream_response_path: '{}'\n",
+        responses.display().to_string().replace('\'', "''")
+    ))
 }
 
 impl Origin {
@@ -148,7 +196,7 @@ async fn origin(State(state): State<Arc<Origin>>, uri: Uri) -> Response {
     if marker == SUBJECT && matches!(state.case, Case::Exhaustion) && segment != 0 {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
-    if marker == SUBJECT && segment == 0 && !matches!(state.case, Case::Start) {
+    if marker == SUBJECT && segment == 0 && !matches!(state.case, Case::Start | Case::Preemption) {
         if attempt == 1 {
             // Delay headers, not an already-exposed body. Every mode may retry this transfer.
             tokio::time::sleep(Duration::from_millis(state.case.timeout_ms() + 1_000)).await;
@@ -167,6 +215,9 @@ async fn origin(State(state): State<Arc<Origin>>, uri: Uri) -> Response {
         if matches!(state.case, Case::Exhaustion) {
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
+    }
+    if matches!(state.case, Case::Preemption) {
+        return ([(header::CONTENT_TYPE, "video/mp2t")], preemption_segment(marker, segment)).into_response();
     }
     let (prefix, tail) = segment_parts(&state.run, marker, segment).unwrap();
     let bytes = [prefix.as_ref(), tail.as_ref()].concat();
@@ -249,8 +300,9 @@ impl Fixture {
             &FixtureInputPlan { input_type: FixtureInputType::M3u, stalker: &FixtureStalker::default() },
         )?;
         let original = std::fs::read_to_string(&paths.config_file)?;
+        let custom_response = custom_response_config(case, &paths)?;
         let config = format!(
-            "custom_stream_response_enabled: false\ncustom_stream_response_error_status: 503\nconnect_timeout_secs: 1\n{original}    origin_segment_timeout_ms: {}\n    origin_manifest_timeout_ms: 3000\n    initial_manifest_wait_timeout_secs: 25\n    max_segments_prefetch: 0\n    segment_repair:\n      max_level: off\n",
+            "{custom_response}custom_stream_response_error_status: 503\nconnect_timeout_secs: 1\n{original}    origin_segment_timeout_ms: {}\n    origin_manifest_timeout_ms: 3000\n    initial_manifest_wait_timeout_secs: 25\n    max_segments_prefetch: 0\n    segment_repair:\n      max_level: off\n",
             case.timeout_ms()
         );
         std::fs::write(&paths.config_file, config)?;
