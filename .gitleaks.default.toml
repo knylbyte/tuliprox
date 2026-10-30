@@ -13,7 +13,7 @@ description = "Absolute personal home directory"
 # Unix prefixes are case-sensitive; Windows paths are case-insensitive.
 # Capture the username because the built-in allowlist ignores full home paths.
 # Spell path separators in allowlist patterns as [/] to avoid matching this file.
-regex = '''(?m)(?:^|[^[:alnum:]_./\\\r\n-])(?:/(?:Users|home)/|(?i:[a-z]:[\\/]+Users[\\/]+))([^\\/\s"'<>|`]+)'''
+regex = '''(?m)(?:^|[^[:alnum:]_./\\\r\n-])(?i:file://)?(?:/(?:Users|home)/|(?i:[a-z]:[\\/]+Users[\\/]+))([^\\/\s"'<>|`]+)'''
 secretGroup = 1
 
 [[rules.allowlists]]

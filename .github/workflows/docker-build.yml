@@ -67,7 +67,15 @@ jobs:
           chmod +x ./bin/inc_version.sh
           if [[ "${{ github.event_name }}" == "push" ]]; then
             case "${{ github.ref_name }}" in
-              develop) ./bin/inc_version.sh ;;
+              develop)
+                VERSION=$(grep -Po '^version\s*=\s*"\K[0-9\.]+' ./Cargo.toml | head -n1)
+                tagged_commit=$(git rev-parse --verify "refs/tags/v$VERSION^{commit}" 2>/dev/null || true)
+                if [[ "$tagged_commit" == "$(git rev-parse HEAD)" ]]; then
+                  echo "Reusing version v$VERSION already tagged at HEAD."
+                else
+                  ./bin/inc_version.sh
+                fi
+                ;;
               experimental) echo "🔬 Experimental builds do not bump versions; keeping version from develop." ;;
               master) echo "Master builds use the version already committed in the merged PR; skipping version bump." ;;
               *) echo "Unsupported push branch: ${{ github.ref_name }}" >&2; exit 1 ;;
