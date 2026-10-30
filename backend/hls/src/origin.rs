@@ -103,6 +103,10 @@ pub struct HlsOriginAccountBinding {
     pub session_owner: String,
     pub playback_request_id: Option<PlaybackRequestId>,
     pub pinned_at_ms: u64,
+    /// Media-preparation deadline fixed by this binding's first successful manifest.
+    pub startup_media_deadline_ms: Option<u64>,
+    /// Fixed shared-live start anchor; neither polls nor duration changes renew it.
+    pub startup_protection: Option<HlsOriginStartProtection>,
     pub last_origin_io_at_ms: Option<u64>,
     pub last_reservation_refresh_at_ms: Option<u64>,
     pub binding_mode: HlsOriginAccountBindingMode,
@@ -305,10 +309,23 @@ impl Drop for PendingAcquireGuard {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HlsAccountOverlapTiming {
     pub target_duration_ms: u64,
     pub hard_active_window_ms: u64,
     pub soft_active_window_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HlsOriginStartProtection {
+    pub anchored_at_ms: u64,
+    pub timing: HlsAccountOverlapTiming,
+}
+
+impl HlsOriginStartProtection {
+    pub fn reservation_deadline_ms(self) -> u64 {
+        self.anchored_at_ms.saturating_add(self.timing.reservation_ttl_secs().saturating_mul(1_000))
+    }
 }
 
 impl HlsAccountOverlapTiming {
@@ -406,6 +423,8 @@ impl HlsOriginAccountBinding {
             session_owner: build_hls_origin_session_owner(proxy_session_id),
             playback_request_id: None,
             pinned_at_ms: now_ms,
+            startup_media_deadline_ms: None,
+            startup_protection: None,
             last_origin_io_at_ms: None,
             last_reservation_refresh_at_ms: None,
             binding_mode: HlsOriginAccountBindingMode::Active,
@@ -427,6 +446,8 @@ impl HlsOriginAccountBinding {
             session_owner,
             playback_request_id: None,
             pinned_at_ms: now_ms,
+            startup_media_deadline_ms: None,
+            startup_protection: None,
             last_origin_io_at_ms: None,
             last_reservation_refresh_at_ms: None,
             binding_mode: HlsOriginAccountBindingMode::Active,
@@ -476,6 +497,8 @@ impl fmt::Debug for HlsOriginAccountBinding {
             .field("session_owner", &"<redacted>")
             .field("playback_request_id", &self.playback_request_id)
             .field("pinned_at_ms", &self.pinned_at_ms)
+            .field("startup_media_deadline_ms", &self.startup_media_deadline_ms)
+            .field("startup_protection", &self.startup_protection)
             .field("last_origin_io_at_ms", &self.last_origin_io_at_ms)
             .field("last_reservation_refresh_at_ms", &self.last_reservation_refresh_at_ms)
             .field("binding_mode", &self.binding_mode)
@@ -538,6 +561,7 @@ pub enum HlsBoundAccountAcquireErrorKind {
 }
 
 impl HlsBoundAccountAcquireErrorKind {
+    pub const fn is_capacity_denial(self) -> bool { matches!(self, Self::Exhausted | Self::ReservedForOther) }
     pub fn allows_rebind(self) -> bool { matches!(self, Self::Missing | Self::Expired | Self::Blocked) }
 
     pub fn is_retryable_resource_failure(self) -> bool {
@@ -680,6 +704,108 @@ impl HlsOriginIoContext {
 
 pub fn build_hls_origin_session_owner(proxy_session_id: &ProxySessionId) -> String {
     format!("hls-cache:{}", proxy_session_id.0.replace('|', ""))
+}
+
+/// Establish the reservation at acceptance, while the manifest still owns I/O.
+pub(crate) fn reserve_hls_origin_start(session: &mut HlsSession, io: &HlsOriginIoContext, now_ms: u64) {
+    if session.origin_playback_kind() != PlaybackKind::LiveHls {
+        return;
+    }
+    let remaining = session.account_reservation_remaining_ms(now_ms).unwrap_or(0);
+    let Some(binding) = session.origin_account_binding.as_mut().filter(|binding| binding.is_active()) else { return };
+    if binding.startup_protection.is_none() {
+        return;
+    }
+    let Some(lease) = session.origin_account_io_lease.as_ref().filter(|lease| lease.matches_binding(binding)) else {
+        return;
+    };
+    let mut handle = lease.provider_handle.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Some(handle) = handle.as_mut() else { return };
+    if let Some(tag) =
+        io.ctx.active_provider.reserve_hls_start(&binding.session_owner, handle, Duration::from_millis(remaining))
+    {
+        binding.provider_binding_tag = Some(tag);
+        handle.binding_tag = Some(tag);
+    }
+}
+
+/// A terminal start belongs to the runtime, not the HTTP waiter. Never release a
+/// binding still needed by active shared playback or in-flight preparation.
+pub(crate) async fn finish_failed_hls_start(
+    io: Option<&HlsOriginIoContext>,
+    session: &HlsSessionHandle,
+    expected_generation: Option<u64>,
+) {
+    let Some(io) = io else { return };
+    let expected_account = io.prepared_account.as_ref().map(|snapshot| {
+        let mut snapshot = snapshot.clone();
+        // A committed terminal result may invalidate its own queued work. Keep
+        // the original account identity, fenced by the commit's resulting generation.
+        if let Some(generation) = expected_generation {
+            snapshot.generation = generation;
+        }
+        snapshot
+    });
+    finish_failed_hls_start_for_context(&io.ctx, session, expected_generation, expected_account.as_ref()).await;
+}
+
+pub(crate) async fn finish_failed_hls_start_for_context(
+    ctx: &HlsCtx,
+    session: &HlsSessionHandle,
+    expected_generation: Option<u64>,
+    expected_account: Option<&crate::origin_account_runtime::HlsOriginAccountSnapshot>,
+) {
+    let mut leases = ctx.hls_proxy.segment_worker_pool().access_leases().write().await;
+    let mut state = session.write().await;
+    if state.origin_playback_kind() != PlaybackKind::LiveHls
+        || expected_generation.is_some_and(|generation| generation != state.activity.origin_work_generation)
+        || expected_account.is_some_and(|snapshot| !snapshot.matches_session_identity(&state))
+        || state.activity.active_origin_work_count.load(std::sync::atomic::Ordering::Acquire) > 0
+        || state.active_segment_fetches > 0
+        || state.active_map_fetches > 0
+        || state.origin_refresh.in_flight
+    {
+        return;
+    }
+    let Some(attempt) = state.origin_refresh.attempt.clone() else { return };
+    let kind = attempt.provider_failure();
+    if kind.is_none() && !state.start_segments_exhausted() {
+        return;
+    }
+    // A retained usable window still serves shared clients, even if this
+    // particular manifest attempt already closed with an error.
+    if state.has_usable_start_window(ctx.hls_proxy.now_ms()) {
+        return;
+    }
+    if !attempt.failed() {
+        attempt.finish(true);
+    }
+    leases.fail_start_attempts(&state.proxy_session_id, &attempt, kind);
+    if state.activity.active_access_lease_count > 0
+        || leases.active_access_lease_count_for_session(&state.proxy_session_id, ctx.hls_proxy.now_ms()) > 0
+    {
+        let proxy_id = state.proxy_session_id.clone();
+        drop(state);
+        drop(leases);
+        ctx.hls_proxy.notify_session_evidence_changed(&proxy_id);
+        return;
+    }
+    let binding = state.origin_account_binding.clone();
+    state.invalidate_queued_origin_work();
+    if let Some(current) = state.origin_account_binding.as_mut() {
+        current.detach(HlsOriginAccountDetachedReason::Cleanup, ctx.hls_proxy.now_ms());
+    }
+    if let Some(binding) = binding {
+        ctx.active_provider.clear_identified_provider_reservation(
+            &binding.session_owner,
+            &binding.account_name,
+            binding.provider_binding_tag,
+        );
+    }
+    let proxy_id = state.proxy_session_id.clone();
+    drop(state);
+    drop(leases);
+    ctx.hls_proxy.notify_session_evidence_changed(&proxy_id);
 }
 
 pub fn hls_origin_account_status(ctx: &HlsCtx, binding: &HlsOriginAccountBinding) -> HlsOriginAccountStatus {
@@ -985,18 +1111,10 @@ async fn store_acquired_hls_origin_account_io_handle(
     // later detach/clear can prove it still targets this binding, not a successor.
     let provider_binding_tag = handle.binding_tag;
     let mut handle_guard = ManagedHandleGuard::new(handle, cleanup_permit);
-    if let Some(request_id) = playback_request_id {
-        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-            clear_pending_hls_origin_account_io_lease(session, &pending_guard.lease, deadline).await;
-            pending_guard.disarm();
-            return Err(HlsBoundAccountAcquireErrorKind::AcquireTimedOut);
-        }
-        let lease_ref = PlaybackLeaseRef { owner: &binding.session_owner, kind: origin_io.playback_kind, request_id };
-        origin_io.ctx.active_provider.refresh_playback_lease(
-            &binding.account_name,
-            &lease_ref,
-            origin_io.reservation_ttl_secs,
-        );
+    if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        clear_pending_hls_origin_account_io_lease(session, &pending_guard.lease, deadline).await;
+        pending_guard.disarm();
+        return Err(HlsBoundAccountAcquireErrorKind::AcquireTimedOut);
     }
 
     let lease = Arc::clone(&pending_guard.lease);
@@ -1017,6 +1135,23 @@ async fn store_acquired_hls_origin_account_io_handle(
             || !matches!(hls_origin_account_status(&origin_io.ctx, binding), HlsOriginAccountStatus::Known)
         {
             return None;
+        }
+
+        if let Some(request_id) = playback_request_id {
+            let lease_ref =
+                PlaybackLeaseRef { owner: &binding.session_owner, kind: origin_io.playback_kind, request_id };
+            let ttl_secs = if origin_io.playback_kind == PlaybackKind::LiveHls {
+                session_guard
+                    .account_reservation_remaining_ms(tuliprox_core::utils::current_time_millis())
+                    .map_or(origin_io.reservation_ttl_secs, |remaining| remaining.div_ceil(1_000))
+            } else {
+                origin_io.reservation_ttl_secs
+            };
+            // An expired start may reacquire regularly, but polling cannot revive its
+            // reservation. A zero refresh would release the request claim itself.
+            if ttl_secs > 0 {
+                origin_io.ctx.active_provider.refresh_playback_lease(&binding.account_name, &lease_ref, ttl_secs);
+            }
         }
 
         let (handle, permit) = handle_guard.take_resource()?;
@@ -1095,9 +1230,15 @@ pub async fn finish_hls_origin_account_io(
     let mut session = session.write().await;
 
     let now_ms = chrono::Utc::now().timestamp_millis().try_into().unwrap_or_default();
-    let confirmed_ttl_secs = session.activity.last_delivered_media_at_ms.map_or(0, |last| {
-        last.saturating_add(origin_io.reservation_ttl_secs.saturating_mul(1000)).saturating_sub(now_ms).div_ceil(1000)
-    });
+    let confirmed_ttl_secs = if session.origin_playback_kind() == PlaybackKind::LiveHls {
+        session.account_reservation_remaining_ms(now_ms).unwrap_or_default().div_ceil(1_000)
+    } else {
+        session.activity.last_delivered_media_at_ms.map_or(0, |last| {
+            last.saturating_add(origin_io.reservation_ttl_secs.saturating_mul(1000))
+                .saturating_sub(now_ms)
+                .div_ceil(1000)
+        })
+    };
 
     // Decrement directly on guard.lease, not session.origin_account_io_lease.
     // The session may have been rebound or replaced between I/O start and finish.

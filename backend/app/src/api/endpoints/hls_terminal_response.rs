@@ -259,7 +259,7 @@ pub(super) async fn resolve_hls_terminal_manifest_state(
         .await;
         match hls_terminal_endpoint_action(resolution) {
             HlsTerminalEndpointAction::ServeLive => {
-                let snapshot_now_ms = current_time_millis();
+                let snapshot_now_ms = app_state.hls.proxy.now_ms();
                 let current =
                     current_hls_terminal_lease(app_state, proxy_session_id, access_lease_id, snapshot_now_ms).await?;
                 if let Some(response) = hls_terminal_playback_response(&current, proxy_session_id, access_lease_id) {
@@ -280,9 +280,13 @@ pub(super) async fn resolve_hls_terminal_manifest_state(
                 reevaluations = reevaluations.saturating_add(1);
             }
             HlsTerminalEndpointAction::ReloadTerminal => {
-                let reloaded =
-                    current_hls_terminal_lease(app_state, proxy_session_id, access_lease_id, current_time_millis())
-                        .await?;
+                let reloaded = current_hls_terminal_lease(
+                    app_state,
+                    proxy_session_id,
+                    access_lease_id,
+                    app_state.hls.proxy.now_ms(),
+                )
+                .await?;
                 return match hls_terminal_playback_response(&reloaded, proxy_session_id, access_lease_id) {
                     Some(response) => Err(Box::new(response)),
                     None => Err(Box::new(hls_terminal_failed_closed_response(
@@ -296,7 +300,7 @@ pub(super) async fn resolve_hls_terminal_manifest_state(
                         HlsTerminalFailedClosedReason::RuntimeUnavailable,
                     )));
                 }
-                evaluation_now_ms = current_time_millis();
+                evaluation_now_ms = app_state.hls.proxy.now_ms();
                 let reloaded =
                     current_hls_terminal_lease(app_state, proxy_session_id, access_lease_id, evaluation_now_ms).await?;
                 let reloaded_session = current_hls_terminal_session(app_state, proxy_session_id).await?;
@@ -313,5 +317,3 @@ pub(super) async fn resolve_hls_terminal_manifest_state(
         }
     }
 }
-
-use tuliprox_core::utils::current_time_millis;

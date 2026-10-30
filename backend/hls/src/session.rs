@@ -26,7 +26,7 @@ use std::{
     fmt,
     sync::Arc,
 };
-use tokio::sync::Notify;
+use tokio::sync::{watch, Notify};
 
 /// Session mode selected for a shared HLS content session.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -281,6 +281,8 @@ pub struct HlsSession {
     pub origin_source: HlsOriginSource,
     pub origin_account_binding: Option<HlsOriginAccountBinding>,
     pub origin_account_io_lease: Option<Arc<HlsOriginAccountIoLease>>,
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) origin_retry_barrier: Option<Arc<crate::resource_fetch::HlsResourceRetryBarrier>>,
     pub origin_account_rebind: HlsOriginAccountRebindState,
     pub origin_account_prepare_lock: Arc<tokio::sync::Mutex<()>>,
     pub origin_account_runtime: Option<Arc<dyn crate::origin_account_runtime::HlsOriginAccountRuntime>>,
@@ -302,6 +304,7 @@ pub struct HlsSession {
     pub(crate) live_window_origin_work_generation: Option<u64>,
     pub live_window_strip: tuliprox_core::model::StripConfig,
     pub(crate) live_window_demands: HashMap<super::HlsAccessLeaseId, super::live_window::HlsLiveWindowDemand>,
+    pub(crate) last_warned_short_startup_window: Option<Vec<u64>>,
     pub last_rendered_manifest: Option<RenderedManifest>,
     manifest_commit_generation: u64,
     /// Origin manifests committed into this session.
@@ -349,10 +352,17 @@ pub struct HlsSession {
     fresh_manifest_commit_requirement_generation: u64,
     pub segment_failure_tracker: HlsSegmentFailureTracker,
     terminal_tail_protections: HashMap<HlsAccessLeaseId, HlsTerminalTailProtection>,
+    terminal_commit_tx: watch::Sender<()>,
     gc_marked_for_removal: bool,
 }
 
 impl HlsSession {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn pause_next_origin_retry_for_test(&mut self) -> Arc<crate::resource_fetch::HlsResourceRetryBarrier> {
+        let barrier = Arc::new(crate::resource_fetch::HlsResourceRetryBarrier::default());
+        self.origin_retry_barrier = Some(Arc::clone(&barrier));
+        barrier
+    }
     pub fn new(key: HlsSessionKey, reverse_proxy_rewrite_secret: &[u8], now_ms: u64) -> Self {
         let origin_source = HlsOriginSource::from_session_key(&key);
         Self::new_with_origin_source(key, origin_source, reverse_proxy_rewrite_secret, now_ms)
@@ -371,6 +381,8 @@ impl HlsSession {
             origin_source,
             origin_account_binding: None,
             origin_account_io_lease: None,
+            #[cfg(any(test, feature = "test-support"))]
+            origin_retry_barrier: None,
             origin_account_rebind: HlsOriginAccountRebindState::default(),
             origin_account_prepare_lock: Arc::new(tokio::sync::Mutex::new(())),
             origin_account_runtime: None,
@@ -392,6 +404,7 @@ impl HlsSession {
                 value: 0,
             },
             live_window_demands: HashMap::new(),
+            last_warned_short_startup_window: None,
             render_policy: RenderPolicy::default(),
             startup: None,
             last_rendered_manifest: None,
@@ -437,9 +450,18 @@ impl HlsSession {
             fresh_manifest_commit_requirement_generation: 0,
             segment_failure_tracker: HlsSegmentFailureTracker::default(),
             terminal_tail_protections: HashMap::new(),
+            terminal_commit_tx: watch::channel(()).0,
             gc_marked_for_removal: false,
         }
     }
+
+    /// Observes successful terminal commits; callers must revalidate their own lease.
+    pub fn subscribe_terminal_commits(&self) -> watch::Receiver<()> { self.terminal_commit_tx.subscribe() }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn terminal_commit_observer_count_for_test(&self) -> usize { self.terminal_commit_tx.receiver_count() }
+
+    pub(crate) fn notify_terminal_commit(&self) { self.terminal_commit_tx.send_replace(()); }
 
     pub fn next_manifest_commit_identity(&self, rendered_at_ms: u64) -> Option<HlsManifestCommitIdentity> {
         self.manifest_commit_generation
@@ -546,6 +568,7 @@ impl HlsSession {
         self.transient.invalidate_origin_resources();
         for segment in self.segments.values_mut() {
             if !matches!(segment.status, SegmentCacheStatus::Ready { .. }) {
+                segment.retained_resource_identity = segment.media_resource_identity();
                 segment.origin_fetch_ref = None;
                 if !matches!(segment.status, SegmentCacheStatus::Fetching { .. }) {
                     segment.status = SegmentCacheStatus::Discovered;
@@ -569,7 +592,25 @@ impl HlsSession {
             && !self.is_gc_marked_for_removal()
     }
 
-    pub fn replace_origin_account_binding(&mut self, binding: Option<HlsOriginAccountBinding>) {
+    /// Begins a new logical start only after the caller has admitted its account.
+    /// Ordinary binding replacement and manifest polling retain the old anchor.
+    pub fn restart_admitted_origin_account(&mut self, binding: HlsOriginAccountBinding) {
+        if let Some(previous) = self.origin_account_binding.as_mut() {
+            previous.startup_protection = None;
+        }
+        self.handoff_origin_account(binding);
+    }
+
+    pub fn replace_origin_account_binding(&mut self, mut binding: Option<HlsOriginAccountBinding>) {
+        if self.origin_playback_kind() == tuliprox_core::model::PlaybackKind::LiveHls {
+            if let (Some(current), Some(next)) = (&self.origin_account_binding, &mut binding) {
+                if current.session_owner == next.session_owner && next.startup_protection.is_none() {
+                    // Only an explicitly admitted restart consumes this anchor.
+                    // In particular, polling cannot revive TTL.
+                    next.startup_protection = current.startup_protection;
+                }
+            }
+        }
         let binding_changed = match (&self.origin_account_binding, &binding) {
             (Some(current), Some(next)) => {
                 current.input_name != next.input_name
@@ -681,11 +722,65 @@ impl HlsSession {
     }
 
     pub fn account_binding_protection(&self, now_ms: u64) -> HlsAccountBindingProtection {
+        let activity = self.account_binding_activity();
         classify_account_binding_protection(
-            self.activity.last_authorized_media_at_ms,
+            activity.map(|(at, _)| at),
             now_ms,
-            &self.account_overlap_timing(),
+            &activity.map_or_else(|| self.account_overlap_timing(), |(_, timing)| timing),
         )
+    }
+
+    /// The initial accepted window is frozen until authorized media supersedes it.
+    pub fn account_binding_activity(&self) -> Option<(u64, HlsAccountOverlapTiming)> {
+        if let Some(start) = self.origin_account_binding.as_ref().and_then(|binding| binding.startup_protection) {
+            if self.activity.last_authorized_media_at_ms.is_none_or(|media| media <= start.anchored_at_ms) {
+                return Some((start.anchored_at_ms, start.timing));
+            }
+        }
+        self.activity.last_authorized_media_at_ms.map(|at| (at, self.account_overlap_timing()))
+    }
+
+    pub fn account_reservation_remaining_ms(&self, now_ms: u64) -> Option<u64> {
+        self.account_binding_activity().map(|(at, timing)| {
+            at.saturating_add(timing.reservation_ttl_secs().saturating_mul(1_000)).saturating_sub(now_ms)
+        })
+    }
+
+    pub(crate) fn has_usable_start_window(&self, now_ms: u64) -> bool {
+        crate::HlsManifestRenderer::render(self, now_ms).is_ok_and(|manifest| {
+            self.live_origin_sequences()
+                .first()
+                .copied()
+                .or(self.publishable_origin_head_proxy_seq)
+                .is_none_or(|head| manifest.first_proxy_seq >= head)
+        })
+    }
+
+    /// Whether every candidate in the current startup window has failed.
+    pub fn start_segments_exhausted(&self) -> bool {
+        let origin = self.live_origin_sequences();
+        if !origin.is_empty() {
+            // Missing-head recovery may already have advanced the conservative
+            // head past the tail. The accepted origin window still proves exhaustion.
+            return origin.iter().all(|seq| self.live_startup_segment_failed(*seq));
+        }
+        self.publishable_origin_head_proxy_seq.zip(self.publishable_origin_tail_proxy_seq).is_some_and(
+            |(head, tail)| {
+                head <= tail
+                    && self.segments.range(head..=tail).next().is_some()
+                    && self.segments.range(head..=tail).all(|(seq, _)| self.live_startup_segment_failed(*seq))
+            },
+        )
+    }
+
+    pub(crate) fn record_start_provider_failure(&self, error: &crate::HlsOriginResourceFetchError) {
+        if self.origin_playback_kind() == tuliprox_core::model::PlaybackKind::LiveHls {
+            if let crate::HlsOriginResourceFetchError::ProviderUnavailable(kind) = error {
+                if let Some(attempt) = self.origin_refresh.attempt.as_ref() {
+                    attempt.record_provider_failure(*kind);
+                }
+            }
+        }
     }
 
     pub fn should_refresh_origin_reservation(&self, now_ms: u64) -> bool {
@@ -972,7 +1067,10 @@ impl HlsSession {
 
 impl fmt::Debug for HlsSession {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("HlsSession")
+        let mut debug = f.debug_struct("HlsSession");
+        #[cfg(any(test, feature = "test-support"))]
+        debug.field("origin_retry_barrier", &self.origin_retry_barrier);
+        debug
             .field("key", &self.key)
             .field("proxy_session_id", &self.proxy_session_id)
             .field("origin_source", &self.origin_source)
@@ -1005,6 +1103,7 @@ impl fmt::Debug for HlsSession {
             .field("live_window_origin_work_generation", &self.live_window_origin_work_generation)
             .field("live_window_strip", &self.live_window_strip)
             .field("live_window_demands", &self.live_window_demands)
+            .field("last_warned_short_startup_window", &self.last_warned_short_startup_window)
             .field("initial_prefetch_gap_segments", &self.initial_prefetch_gap_segments)
             .field("segment_prefetch_queue_len", &self.segment_prefetch_queue.len())
             .field("active_segment_fetches", &self.active_segment_fetches)
@@ -1041,6 +1140,7 @@ impl fmt::Debug for HlsSession {
             .field("fresh_manifest_commit_requirement_generation", &self.fresh_manifest_commit_requirement_generation)
             .field("segment_failure_tracker", &self.segment_failure_tracker)
             .field("terminal_tail_protections_len", &self.terminal_tail_protections.len())
+            .field("terminal_commit_tx", &self.terminal_commit_tx)
             .field("gc_marked_for_removal", &self.gc_marked_for_removal)
             .finish()
     }
@@ -1107,6 +1207,7 @@ mod tests {
             origin_byte_range: None,
             map_ref: None,
             encryption: None,
+            retained_resource_identity: None,
             origin_fetch_ref: None,
             status: SegmentCacheStatus::Ready { content_length, ready_at_ms: 1 },
             last_rendered_at_ms: Some(1),
