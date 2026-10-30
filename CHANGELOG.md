@@ -2031,7 +2031,9 @@
   ends in `.0`; after a master release it continues at `X.Y.1`. Every `master` build raises the minor version with
   patch 0. Both skip versions whose tag already exists, and a re-run of a tagged commit reuses its version. After a
   master release, CI merges the release into `develop` so the next release pull request does not conflict on the
-  version lines. The manual `Version bump` input of the Docker workflow is removed.
+  version lines; when master changed more than the version in `Cargo.toml`, `Cargo.lock` or `frontend/Cargo.toml`,
+  CI stops and asks for a manual merge. Pull request CI now also runs for pull requests into `master`. The manual
+  `Version bump` input of the Docker workflow is removed.
 
 - **GitHub releases are built by CI.** A merge into `master` publishes the release with one bundle per platform:
   `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl` and `armv7-unknown-linux-musleabihf` as `.tar.gz`, and
@@ -2039,6 +2041,10 @@
   `resources/`, the same files as the Docker image. Pull request CI checks the armv7 and Windows targets with
   `cross check`, so a target that no longer builds fails before the merge. The local `bin/release.sh`,
   `bin/inc_version.sh` and `bin/build_cross_toolchains_darwin_images.sh` are removed.
+
+- **`make pre-merge-check` and `make i18n-check`.** `pre-merge-check` runs the architecture gates, clippy, the
+  locale key check and the workspace tests on a merged tree. `i18n-check` (`bin/check-i18n.sh`) lists every missing
+  and extra translation key of every locale at once; duplicate keys stay covered by the frontend locale test.
 
 - **Pull requests get a Gitleaks privacy scan.** CI scans every pull request commit with `.gitleaks.default.toml`.
   The optional pre-push hook in `.githooks/` runs the same scan locally, plus private `.gitleaks.*.toml` rules; see

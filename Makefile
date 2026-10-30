@@ -257,6 +257,15 @@ architecture-check: ## Verify workspace dependency direction and Docker crate li
 	@echo "==> Checking Docker skeleton crate lists"
 	./bin/check-docker-crates.sh
 
+.PHONY: i18n-check
+i18n-check: ## Report every locale whose keys drift from en.json
+	@echo "==> Checking locale keys"
+	./bin/check-i18n.sh
+
+.PHONY: pre-merge-check
+pre-merge-check: ## Verify a merged tree: architecture, clippy, locale keys, workspace tests
+	@$(MAKE) --no-print-directory architecture-check lint i18n-check test
+
 .PHONY: doctor-check
 doctor-check: ## Verify the DVR doctor still matches the routes it reports on
 	@echo "==> Checking bin/dvr_doctor.sh"

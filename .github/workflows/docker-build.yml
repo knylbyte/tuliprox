@@ -320,6 +320,16 @@ jobs:
               echo "develop already contains v$VERSION."
               exit 0
             fi
+            # develop keeps its own copy of the version files below. That is only safe while master changed
+            # nothing in them except the release version lines; anything else needs a manual merge.
+            base=$(git merge-base origin/develop "refs/tags/v$VERSION")
+            if git diff -U0 "$base" "refs/tags/v$VERSION" -- "${version_files[@]}" |
+                grep -E '^[-+]' | grep -vE '^(\+\+\+|---) ' |
+                grep -vxE "\+version = \"${VERSION//./\\.}\"|-version = \"[0-9.]+\"" | grep -q .; then
+              echo "Refusing to merge v$VERSION into develop: master changed more than the version in" \
+                "${version_files[*]}. Merge master into develop manually." >&2
+              exit 1
+            fi
             git checkout --quiet -B release-sync origin/develop
             if ! git merge --no-ff --no-commit "refs/tags/v$VERSION"; then
               mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
