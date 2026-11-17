@@ -153,8 +153,8 @@ pub mod api {
         lifecycle::{HlsLifecycleEvent, HlsLifecycleEventKey},
         live_window::{HlsLiveWindowPlan, HlsLiveWindowView},
         manager::{
-            exec_hls_lifecycle, HlsMediaActivityCommitOutcome, HlsProxyManager, HlsRecoveryEntryCommit,
-            HlsRecoveryPoll, HlsRetainedPollOrigin, HlsRetainedPollOriginGuard,
+            exec_hls_lifecycle, HlsCachedEntryCommit, HlsMediaActivityCommitOutcome, HlsProxyManager, HlsRecoveryPoll,
+            HlsRetainedPollOrigin, HlsRetainedPollOriginGuard,
         },
         manifest_commit::{
             hls_cached_manifest_options_for_requirement, hls_committed_manifest_body_for_request,

@@ -542,6 +542,62 @@ async fn assert_fallback_warning(
 }
 
 #[tokio::test]
+async fn awaiting_media_progress_serves_the_committed_window_before_the_origin_finishes() {
+    let playback = Playback::start().await;
+    playback.age_only().await;
+    let now = playback.app.hls.proxy.now_ms();
+    let source = {
+        let mut state = playback.session.write().await;
+        state.origin_control.record_media_progress(now - 3_100, TARGET * 1_000);
+        state.last_normal_manifest_commit_identity().unwrap()
+    };
+    let held = playback.hold_refresh(FIRST, HlsManifestAcceptanceTrigger::None).await;
+    let id = "awaiting-media";
+    playback.prepare_lease(id).await;
+    let response = tokio::time::timeout(Duration::from_millis(750), playback.request(id)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK, "{:?}", playback.warnings(id));
+    assert!(!response.headers().contains_key(header::RETRY_AFTER));
+    let body = text(response).await;
+    let published = playback.lease(id).await.last_manifest_snapshot.unwrap();
+    assert_eq!(published.source_commit_identity, source);
+    assert!(playback.warnings(id)[0].contains("phase=awaiting_media_progress"));
+    let first = media_urls(&body)[0];
+    assert!(first.contains(id));
+    playback.assert_media(first).await;
+    playback.assert_held(&held).await;
+    held.finish().await;
+}
+
+#[tokio::test]
+async fn awaiting_media_progress_uses_the_configured_error_when_the_committed_window_is_unusable() {
+    let playback = Playback::start().await;
+    playback.age_only().await;
+    let now = playback.app.hls.proxy.now_ms();
+    {
+        let mut state = playback.session.write().await;
+        state.origin_control.record_media_progress(now - 3_100, TARGET * 1_000);
+        state.last_rendered_manifest.as_mut().unwrap().valid_until_ms = now - 1;
+    }
+    let held = playback.hold_refresh(FIRST, HlsManifestAcceptanceTrigger::None).await;
+    for (id, configured, expected) in [
+        ("awaiting-missing", StatusCode::NOT_FOUND, StatusCode::BAD_GATEWAY),
+        ("awaiting-retry", StatusCode::SERVICE_UNAVAILABLE, StatusCode::SERVICE_UNAVAILABLE),
+    ] {
+        let mut config = playback.app.app_config.config.load_full().as_ref().clone();
+        config.custom_stream_response_enabled = false;
+        config.custom_stream_response_error_status = configured.as_u16();
+        playback.app.app_config.config.store(Arc::new(config));
+        playback.prepare_lease(id).await;
+        let response = playback.request(id).await;
+        assert_eq!(response.status(), expected, "{:?}", playback.warnings(id));
+        assert!(!response.headers().contains_key(header::RETRY_AFTER));
+        assert!(playback.lease(id).await.last_manifest_snapshot.is_none());
+    }
+    playback.assert_held(&held).await;
+    held.finish().await;
+}
+
+#[tokio::test]
 async fn between_recovery_attempts_a_new_lease_uses_a_playable_window_without_hidden_reserve() {
     let playback = Playback::start().await;
     playback.retry_gap().await;
@@ -711,7 +767,7 @@ async fn assert_age_only_fallback(shape: MediaShape, id: &str) {
         .app
         .hls
         .proxy
-        .manifest_commit_requirement_with_recovery_entry_for_lease(
+        .manifest_commit_requirement_with_cached_entry_for_lease(
             &playback.session,
             HlsSessionStoreOutcome::Reused,
             None,
@@ -724,9 +780,9 @@ async fn assert_age_only_fallback(shape: MediaShape, id: &str) {
         requirement,
         HlsManifestCommitRequirement::FreshCommitRequired { reason: HlsFreshManifestRequiredReason::StaleEntryWindow }
     );
-    let options = HlsCachedManifestOptions::initial(Duration::ZERO).with_recovery_entry(recovery_entry);
-    assert!(options.permits_recovery_entry());
-    assert!(playback.session.read().await.recovery_entry_is_current(&lease, options, now));
+    let options = HlsCachedManifestOptions::initial(Duration::ZERO).with_cached_entry(recovery_entry);
+    assert!(options.permits_cached_entry());
+    assert!(playback.session.read().await.cached_entry_is_current(&lease, options, now));
     let commits = playback.session.read().await.origin_manifest_commits();
     let response = playback.request(id).await;
     assert_eq!(response.status(), StatusCode::OK, "age-only recovery entry: {:?}", playback.warnings(id));

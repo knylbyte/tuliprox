@@ -150,7 +150,7 @@ presence, media mode, access leases, origin work, cache readers, and the garbage
 ```mermaid
 stateDiagram-v2
     [*] --> Missing
-    Missing --> NormalCacheTimeline: First accepted canonical manifest
+    Missing --> NormalCacheTimeline: First authorized canonical manifest request creates the session
     NormalCacheTimeline --> NormalCacheTimeline: Normal manifest commit and segment cache
     NormalCacheTimeline --> TransientPassthrough: Manifest requires transient handling
     TransientPassthrough --> TransientPassthrough: Transient manifest/resource handling
@@ -251,13 +251,30 @@ still govern delivery. The epoch commit clears all host confirmations. Published
 bindings. This is a compatibility exception for the Origin. The client-facing media sequence stays monotone as
 specified in [RFC 8216 § 6.2.2](https://www.rfc-editor.org/rfc/rfc8216.html#section-6.2.2).
 
+### First lease publication while waiting for media progress
+
+`AwaitingMediaProgress` covers the open interval `0.5T < elapsed < 1.5T`, where `T` is the session target duration and
+`elapsed` is the time since the last accepted Origin manifest that advanced the media timeline. A successful refresh that
+returns the same media leaves the interval running. A commit with media progress starts the clock again.
+
+An authorized new live lease can receive HTTP 200 from the last valid committed window of the same shared session. Its
+visible segments and their KEY and MAP bindings must be deliverable. Tuliprox uses the lease's own URLs and applies its
+start window and strip policy. It can publish while an Origin request is still pending. At publication it checks the
+current session, media progress, time boundary, and bindings again.
+
+At `1.5T`, startup follows the regular publication lateness or recovery rules. Within the interval, if the committed
+window is unusable, the normal origin and member selection rules apply. A failed entry can receive the configured
+`channel_unavailable` response or `custom_stream_response_error_status` (default `502`). The unavailable response uses
+`502` for a configured `404` and sends the configured `503` without `Retry-After`.
+
 ### First lease publication during manifest recovery
 
 A new live lease first tries the regular entry window. While an established cacheable session is running manifest
 recovery, the first lease publication can use the session's last committed render when the regular window cannot
 start. That render may precede the latest Origin commit. The lease gets its own URLs and start view, including the
 configured strip policy. Publication rechecks the running recovery, source validity, lease authorization, local
-media bindings and the new lease's READY reserve. The fallback can bridge an age-based fresh-commit requirement.
+media bindings and positive guaranteed reserve for a lease that was already playing at recovery entry. The new lease
+can start from a playable visible window. The fallback can bridge an age-based fresh-commit requirement.
 Account and provisioning handoffs, reserve and terminal revalidation, and idle re-entry keep their own boundaries.
 
 The decision uses the recovery already in progress and can respond before it finishes. A temporarily unavailable

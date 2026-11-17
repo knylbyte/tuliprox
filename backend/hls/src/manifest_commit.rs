@@ -30,14 +30,19 @@ pub struct HlsCachedManifestOptions {
     policy: HlsCachedManifestPolicy,
     newer_than_rendered_at_ms: Option<u64>,
     after_origin_manifest_commits: Option<u64>,
-    pub(crate) recovery_entry: Option<HlsRecoveryEntryContext>,
+    pub(crate) cached_entry: Option<HlsCachedEntryContext>,
 }
 
 #[derive(Clone, Copy)]
-pub struct HlsRecoveryEntryContext {
-    pub(crate) generation: crate::manifest_acceptance::HlsManifestAcceptanceGeneration,
-    pub(crate) between_attempts: bool,
+pub struct HlsCachedEntryContext {
+    pub(crate) state: HlsCachedEntryState,
     pub(crate) permits_fallback: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum HlsCachedEntryState {
+    Recovery { generation: crate::manifest_acceptance::HlsManifestAcceptanceGeneration, between_attempts: bool },
+    AwaitingMediaProgress { progress_generation: u64 },
 }
 
 impl HlsCachedManifestOptions {
@@ -48,7 +53,7 @@ impl HlsCachedManifestOptions {
             policy: HlsCachedManifestPolicy::CommittedOnly,
             newer_than_rendered_at_ms: None,
             after_origin_manifest_commits: None,
-            recovery_entry: None,
+            cached_entry: None,
         }
     }
 
@@ -58,7 +63,7 @@ impl HlsCachedManifestOptions {
             policy: HlsCachedManifestPolicy::AllowInitialNoMediaYet,
             newer_than_rendered_at_ms: None,
             after_origin_manifest_commits: None,
-            recovery_entry: None,
+            cached_entry: None,
         }
     }
 
@@ -78,8 +83,8 @@ impl HlsCachedManifestOptions {
         self.newer_than_rendered_at_ms.is_some() || self.after_origin_manifest_commits.is_some()
     }
 
-    pub const fn with_recovery_entry(mut self, context: Option<HlsRecoveryEntryContext>) -> Self {
-        self.recovery_entry = context;
+    pub const fn with_cached_entry(mut self, context: Option<HlsCachedEntryContext>) -> Self {
+        self.cached_entry = context;
         self
     }
 }
@@ -199,7 +204,7 @@ impl crate::HlsProxyManager {
         lease_id: &crate::HlsAccessLeaseId,
         now_ms: u64,
     ) -> HlsManifestCommitRequirement {
-        self.manifest_commit_requirement_with_recovery_entry_for_lease(
+        self.manifest_commit_requirement_with_cached_entry_for_lease(
             session,
             session_outcome,
             handoff_previous_rendered_at_ms,
@@ -211,7 +216,7 @@ impl crate::HlsProxyManager {
         .0
     }
 
-    pub async fn manifest_commit_requirement_with_recovery_entry_for_lease(
+    pub async fn manifest_commit_requirement_with_cached_entry_for_lease(
         &self,
         session: &HlsSessionHandle,
         session_outcome: HlsSessionStoreOutcome,
@@ -219,7 +224,7 @@ impl crate::HlsProxyManager {
         new_playback_entry: bool,
         lease_id: &crate::HlsAccessLeaseId,
         now_ms: u64,
-    ) -> (HlsManifestCommitRequirement, Option<HlsRecoveryEntryContext>) {
+    ) -> (HlsManifestCommitRequirement, Option<HlsCachedEntryContext>) {
         let leases = if new_playback_entry { Some(self.access_leases().read().await) } else { None };
         let session = session.read().await;
         let idle_new_lease =
@@ -238,14 +243,23 @@ impl crate::HlsProxyManager {
             .as_ref()
             .and_then(|leases| leases.live_playback_lease(lease_id, &session.proxy_session_id, now_ms))
             .is_some_and(|lease| session.recovery_entry_boundaries_allow(lease));
-        let recovery_entry = (unpublished
+        let cached_entry = (unpublished
             && matches!(session_outcome, HlsSessionStoreOutcome::Reused)
             && handoff_previous_rendered_at_ms.is_none())
-        .then(|| session.recovery_entry_context(now_ms))
+        .then(|| {
+            session
+                .recovery_entry_context(now_ms)
+                .map(|(generation, between_attempts)| HlsCachedEntryState::Recovery { generation, between_attempts })
+                .or_else(|| {
+                    (!idle_new_lease)
+                        .then(|| session.awaiting_media_progress_generation(now_ms))
+                        .flatten()
+                        .map(|progress_generation| HlsCachedEntryState::AwaitingMediaProgress { progress_generation })
+                })
+        })
         .flatten()
-        .map(|(generation, between_attempts)| HlsRecoveryEntryContext {
-            generation,
-            between_attempts,
+        .map(|state| HlsCachedEntryContext {
+            state,
             permits_fallback: matches!(
                 requirement,
                 HlsManifestCommitRequirement::CommittedManifestAllowed
@@ -254,7 +268,7 @@ impl crate::HlsProxyManager {
                     }
             ),
         });
-        (requirement, recovery_entry)
+        (requirement, cached_entry)
     }
 }
 

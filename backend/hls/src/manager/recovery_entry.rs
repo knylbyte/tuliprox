@@ -8,8 +8,9 @@ use crate::{
         manifest_acceptance_episode_status, HlsManifestAcceptanceEpisodeStatus, HlsManifestAcceptanceGeneration,
         HlsManifestAcceptanceState,
     },
-    manifest_commit::HlsCachedManifestOptions,
+    manifest_commit::{HlsCachedEntryState, HlsCachedManifestOptions},
     media_reserve::{evaluate_lease_reserve, HlsLeaseManifestSnapshot, HlsLeaseReserveInput, HlsManifestDeliveryMode},
+    origin_progress::{awaiting_media_progress, HlsOriginPathCondition, HlsOriginProgressPhase},
     recovery_timing::HlsRecoveryTriggerBudgetMs,
     session::HlsRecoveryEntryLeases,
     terminal_tail::HlsLeasePlaybackMode,
@@ -18,7 +19,7 @@ use crate::{
 };
 use std::{cmp::Ordering, sync::Arc};
 
-pub enum HlsRecoveryEntryCommit {
+pub enum HlsCachedEntryCommit {
     Publication(Outcome),
     Unavailable(&'static str),
 }
@@ -64,15 +65,43 @@ impl HlsSession {
         .then_some((generation, true))
     }
 
-    pub fn recovery_entry_is_current(
+    pub(crate) fn awaiting_media_progress_generation(&self, now_ms: u64) -> Option<u64> {
+        let control = &self.origin_control;
+        let last_progress_at_ms = control.last_media_progress_at_ms?;
+        let target_duration_ms = control
+            .target_duration_snapshot_ms
+            .or_else(|| self.target_duration.map(|seconds| u64::from(seconds) * 1_000))?;
+        (matches!(self.mode, HlsSessionMode::NormalCacheTimeline)
+            && self.origin_playback_kind() == tuliprox_core::model::PlaybackKind::LiveHls
+            && self.published_live_origin_baseline.is_some()
+            && !self.is_gc_marked_for_removal()
+            && matches!(
+                control.progress_phase,
+                HlsOriginProgressPhase::Fresh | HlsOriginProgressPhase::AwaitingMediaProgress
+            )
+            && matches!(
+                control.path_condition,
+                HlsOriginPathCondition::ProgressExpected | HlsOriginPathCondition::RetryableFetchFailure
+            )
+            && awaiting_media_progress(now_ms.saturating_sub(last_progress_at_ms), target_duration_ms))
+        .then_some(control.progress_generation)
+    }
+
+    pub fn cached_entry_is_current(
         &self,
         lease: &HlsAccessLease,
         options: HlsCachedManifestOptions,
         now_ms: u64,
     ) -> bool {
         self.recovery_entry_boundaries_allow(lease)
-            && options.recovery_entry.is_some_and(|context| {
-                self.recovery_entry_context(now_ms).is_some_and(|(id, _)| id == context.generation)
+            && options.cached_entry.is_some_and(|context| match context.state {
+                HlsCachedEntryState::Recovery { generation, .. } => {
+                    self.recovery_entry_context(now_ms).is_some_and(|(id, _)| id == generation)
+                }
+                HlsCachedEntryState::AwaitingMediaProgress { progress_generation } => {
+                    !self.idle_for_origin_reentry(now_ms)
+                        && self.awaiting_media_progress_generation(now_ms) == Some(progress_generation)
+                }
             })
     }
 
@@ -87,8 +116,7 @@ impl HlsSession {
             && self.pending_handoff_discontinuity_sequence.is_none()
             && !matches!(
                 self.origin_control.progress_phase,
-                crate::origin_progress::HlsOriginProgressPhase::Terminal
-                    | crate::origin_progress::HlsOriginProgressPhase::TerminalPartial
+                HlsOriginProgressPhase::Terminal | HlsOriginProgressPhase::TerminalPartial
             )
     }
 
@@ -195,15 +223,19 @@ pub(super) fn recovery_entry_segment_ready(
 }
 
 impl HlsCachedManifestOptions {
-    pub fn recovery_entry_requested(self) -> bool { self.recovery_entry.is_some() }
+    pub fn cached_entry_requested(self) -> bool { self.cached_entry.is_some() }
 
-    pub fn permits_recovery_entry(self) -> bool { self.recovery_entry.is_some_and(|context| context.permits_fallback) }
+    pub fn permits_cached_entry(self) -> bool { self.cached_entry.is_some_and(|context| context.permits_fallback) }
 
-    pub fn recovery_entry_phase(self) -> &'static str {
-        if self.recovery_entry.is_some_and(|context| context.between_attempts) {
-            "between_attempts"
-        } else {
-            "in_flight"
+    pub fn awaiting_media_progress_entry(self) -> bool {
+        self.cached_entry.is_some_and(|entry| matches!(entry.state, HlsCachedEntryState::AwaitingMediaProgress { .. }))
+    }
+
+    pub fn cached_entry_phase(self) -> &'static str {
+        match self.cached_entry.map(|entry| entry.state) {
+            Some(HlsCachedEntryState::AwaitingMediaProgress { .. }) => "awaiting_media_progress",
+            Some(HlsCachedEntryState::Recovery { between_attempts: true, .. }) => "between_attempts",
+            _ => "in_flight",
         }
     }
 }
@@ -316,7 +348,7 @@ impl HlsProxyManager {
         let leases = self.access_leases.read().await;
         let mut session = session.write().await;
         let now_ms = self.now_ms();
-        if !session.recovery_entry_is_current(lease, options, now_ms) {
+        if !session.cached_entry_is_current(lease, options, now_ms) {
             return Err("recovery_context_changed");
         }
         self.require_established_live_reserve(&leases, &mut session, now_ms)
@@ -413,7 +445,7 @@ impl HlsProxyManager {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn commit_recovery_entry_manifest(
+    pub async fn commit_cached_entry_manifest(
         &self,
         lease_id: &HlsAccessLeaseId,
         session_id: &ProxySessionId,
@@ -421,8 +453,8 @@ impl HlsProxyManager {
         mut snapshot: HlsLeaseManifestSnapshot,
         resources: HlsPublishedTransientResourceIds,
         options: HlsCachedManifestOptions,
-    ) -> HlsRecoveryEntryCommit {
-        let rejected = |reason| HlsRecoveryEntryCommit::Publication(Outcome::Rejected(reason));
+    ) -> HlsCachedEntryCommit {
+        let rejected = |reason| HlsCachedEntryCommit::Publication(Outcome::Rejected(reason));
         let Some(current) = self.sessions.hold_current_proxy_session(session_id).await else {
             return rejected(Reject::SessionMismatch);
         };
@@ -441,8 +473,8 @@ impl HlsProxyManager {
         });
         if !guard.has_source_binding()
             || guard.entry_strip_policy().is_none()
-            || !options.permits_recovery_entry()
-            || !session.recovery_entry_is_current(&lease, options, now_ms)
+            || !options.permits_cached_entry()
+            || !session.cached_entry_is_current(&lease, options, now_ms)
             || !session.live_entry_snapshot_allowed_for_lease(&lease, Some(&snapshot))
             || now_ms > source.valid_until_ms
             || snapshot.delivery_mode != crate::media_reserve::HlsManifestDeliveryMode::NormalCacheTimeline
@@ -465,11 +497,13 @@ impl HlsProxyManager {
             Err(Reject::ManifestGenerationUnavailable) => return rejected(Reject::SnapshotChanged),
             Err(reason) => return rejected(reason),
         };
-        if let Err(reason) = self.require_established_live_reserve(&leases, &mut session, now_ms) {
-            return HlsRecoveryEntryCommit::Unavailable(reason);
+        if !options.awaiting_media_progress_entry() {
+            if let Err(reason) = self.require_established_live_reserve(&leases, &mut session, now_ms) {
+                return HlsCachedEntryCommit::Unavailable(reason);
+            }
         }
         if !self.recovery_entry_bindings_ready(&session, &snapshot) {
-            return HlsRecoveryEntryCommit::Unavailable("missing_window_bindings");
+            return HlsCachedEntryCommit::Unavailable("missing_window_bindings");
         }
         snapshot.delivered_at_ms = now_ms;
         let outcome = leases.commit_manifest_publication_with_resources(
@@ -481,6 +515,9 @@ impl HlsProxyManager {
             now_ms,
         );
         if outcome.is_committed() {
+            if options.awaiting_media_progress_entry() {
+                session.origin_control.progress_phase = HlsOriginProgressPhase::AwaitingMediaProgress;
+            }
             session.record_live_window_publication_with_resources(
                 lease_id,
                 guard.lease_issued_at_ms(),
@@ -488,6 +525,6 @@ impl HlsProxyManager {
                 resources,
             );
         }
-        HlsRecoveryEntryCommit::Publication(outcome)
+        HlsCachedEntryCommit::Publication(outcome)
     }
 }

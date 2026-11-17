@@ -371,6 +371,7 @@ const fn progress_phase_log_value(phase: HlsOriginProgressPhase) -> &'static str
     match phase {
         HlsOriginProgressPhase::Cold => "cold",
         HlsOriginProgressPhase::Fresh => "fresh",
+        HlsOriginProgressPhase::AwaitingMediaProgress => "awaiting_media_progress",
         HlsOriginProgressPhase::PublicationLate => "publication_late",
         HlsOriginProgressPhase::RecoveryRequired => "recovery_required",
         HlsOriginProgressPhase::Recovering => "recovering",

@@ -21,7 +21,12 @@ use super::{
     HlsOriginRuntimeAcquireError, HlsOriginRuntimeNoAccountReason, HlsOriginWorkKind, HlsProviderExhaustedResolution,
     HlsRuntimeBandwidthLearningContext, PreparedHlsOriginRuntime,
 };
-use crate::{api::model::AppState, auth::Fingerprint, model::ConfigInputFlags, utils::request};
+use crate::{
+    api::model::{get_custom_stream_response_error_status, AppState, CustomVideoStreamType},
+    auth::Fingerprint,
+    model::ConfigInputFlags,
+    utils::request,
+};
 use axum::{
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
@@ -389,10 +394,10 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
         now_ms,
     )
     .await;
-    let (manifest_commit_requirement, recovery_entry) = app_state
+    let (manifest_commit_requirement, cached_entry) = app_state
         .hls
         .proxy
-        .manifest_commit_requirement_with_recovery_entry_for_lease(
+        .manifest_commit_requirement_with_cached_entry_for_lease(
             &session,
             session_outcome,
             handoff_previous_rendered_at_ms,
@@ -410,16 +415,22 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
         manifest_boundary_rendered_at_ms,
         entry_origin_manifest_commits,
     )
-    .with_recovery_entry(recovery_entry);
+    .with_cached_entry(cached_entry);
+    let awaiting_media_progress = cached_manifest_options.awaiting_media_progress_entry();
     let bandwidth_learning = match context.known_bitrate_bps {
         Some(_) => HlsRuntimeBandwidthLearningContext::Disabled,
         None => HlsRuntimeBandwidthLearningContext::Eligible(origin.input),
     };
-    if cached_manifest_options.recovery_entry_requested() {
-        // The regular candidate still has priority. A shared recovery window
+    if cached_manifest_options.cached_entry_requested() {
+        // The regular candidate still has priority. A committed cache window
         // can be published before scheduling or joining another origin request.
         let mut immediate = cached_manifest_options;
         immediate.wait_timeout = Duration::ZERO;
+        if awaiting_media_progress {
+            immediate = immediate
+                .requiring_newer_manifest(previous_manifest_rendered_at_ms)
+                .requiring_origin_commit_after(entry_origin_manifest_commits);
+        }
         if let Some(response) = try_hls_cached_manifest_response(
             app_state,
             Some(fingerprint),
@@ -433,9 +444,13 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
         )
         .await
         {
-            if response.extensions().get::<HlsProvisionalRecoveryEntryResponse>().is_none()
-                || !session.read().await.origin_refresh.is_due(now_ms)
-            {
+            let use_response = if awaiting_media_progress {
+                response.status() == StatusCode::OK
+            } else {
+                response.extensions().get::<HlsProvisionalRecoveryEntryResponse>().is_none()
+                    || !session.read().await.origin_refresh.is_due(now_ms)
+            };
+            if use_response {
                 return Some(finish_hls_recovery_entry_response(response));
             }
             // An unplayable fallback must not prevent the normal refresh path from spending a due retry.
@@ -508,7 +523,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
         };
         let registration =
             register_hls_availability_reevaluation(hls_ctx, Arc::clone(&session), owner_key, refresh_request);
-        return Some(match hls_canonical_owner_registration(registration) {
+        let response = match hls_canonical_owner_registration(registration) {
             HlsCanonicalOwnerRegistration::Join(registration) => {
                 let strip = app_state.hls.proxy.strip();
                 join_hls_canonical_manifest_owner(
@@ -534,7 +549,17 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
             HlsCanonicalOwnerRegistration::FailClosed(failure) => {
                 hls_availability_reevaluation_registration_failure_response(failure)
             }
-        });
+        };
+        return Some(
+            finish_shared_entry_response(
+                app_state,
+                path_proxy_session_id,
+                access_lease_id,
+                awaiting_media_progress,
+                Some(response),
+            )
+            .await,
+        );
     }
     if handoff_previous_rendered_at_ms.is_some() {
         touch_initial_manifest_access_lease_window(
@@ -662,7 +687,16 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
                         return Some(live_response);
                     }
                 }
-                return Some(response);
+                return Some(
+                    finish_shared_entry_response(
+                        app_state,
+                        path_proxy_session_id,
+                        access_lease_id,
+                        awaiting_media_progress,
+                        Some(response),
+                    )
+                    .await,
+                );
             }
             touch_initial_manifest_access_lease_window(
                 app_state,
@@ -687,12 +721,60 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
             )
             .await
             {
-                return Some(finish_hls_recovery_entry_response(response));
+                return Some(
+                    finish_shared_entry_response(
+                        app_state,
+                        path_proxy_session_id,
+                        access_lease_id,
+                        awaiting_media_progress,
+                        Some(response),
+                    )
+                    .await,
+                );
             }
         }
     }
 
-    Some(hls_unpublished_lease_channel_unavailable_response(app_state, path_proxy_session_id, access_lease_id).await)
+    Some(
+        finish_shared_entry_response(app_state, path_proxy_session_id, access_lease_id, awaiting_media_progress, None)
+            .await,
+    )
+}
+
+async fn finish_shared_entry_response(
+    app_state: &Arc<AppState>,
+    proxy_session_id: &ProxySessionId,
+    lease_id: &HlsAccessLeaseId,
+    awaiting_media_progress: bool,
+    response: Option<axum::response::Response>,
+) -> axum::response::Response {
+    if awaiting_media_progress
+        && response
+            .as_ref()
+            .is_none_or(|response| matches!(response.status(), StatusCode::NOT_FOUND | StatusCode::SERVICE_UNAVAILABLE))
+    {
+        let now_ms = app_state.hls.proxy.now_ms();
+        if let Some(lease) =
+            app_state.hls.proxy.access_lease_response_snapshot(lease_id, proxy_session_id, now_ms).await
+        {
+            if lease.permits_unpublished_standalone_tail(HlsRuntimeCustomTailReason::ChannelUnavailable) {
+                let configured = get_custom_stream_response_error_status(&app_state.app_config);
+                let status = if configured == StatusCode::NOT_FOUND { StatusCode::BAD_GATEWAY } else { configured };
+                let response = super::hls_custom_video_manifest_response_for_lease(
+                    app_state,
+                    &lease,
+                    CustomVideoStreamType::ChannelUnavailable,
+                    status,
+                )
+                .await;
+                return if response.status().is_success() { response } else { status.into_response() };
+            }
+        }
+    }
+    match response {
+        Some(response) => finish_hls_recovery_entry_response(response),
+        None => hls_unpublished_lease_channel_unavailable_response(app_state, proxy_session_id, lease_id).await,
+    }
 }
 
 fn spawn_retained_poll_refresh(

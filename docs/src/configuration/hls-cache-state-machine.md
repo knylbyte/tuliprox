@@ -90,6 +90,8 @@ stateDiagram-v2
     Activated --> Idle: active_until <= now
     Activated --> Expired: valid_until <= now
     Activated --> Denied: Admission exhausted
+    Activated --> PolicyRevoking: Runtime policy revokes published playback
+    PolicyRevoking --> Denied: Revocation completes
 
     Idle --> Idle: Manifest touch extends valid_until
     Idle --> Activated: Later resource request
@@ -113,6 +115,8 @@ stateDiagram-v2
 | `Activated` | `Activated` | Media access or an active manifest touch slides the active and valid windows. |
 | `Activated` | `Idle` | `active_until_ms <= now_ms` while `valid_until_ms > now_ms`. The bound stream reservation is released. |
 | `Activated` | `Expired` | `valid_until_ms <= now_ms`. Cleanup releases the stream reservation if it is still active. |
+| `Activated` | `PolicyRevoking` | A runtime policy revokes a published live lease. Tuliprox prepares the response for that lease. |
+| `PolicyRevoking` | `Denied` | Tuliprox completes the revocation and serves any committed finite response. |
 | `Idle` | `Idle` | A valid manifest request extends `valid_until_ms` without restarting media activity. |
 | `Idle` | `Activated` | A later segment, MAP, or transient resource request reactivates the lease. |
 | `Idle` | `Expired` | `valid_until_ms <= now_ms`. |
@@ -126,16 +130,24 @@ stateDiagram-v2
 | `Pending` | Yes | No | Yes |
 | `Activated` | Yes | Yes | Yes |
 | `Idle` | Yes | No | No |
+| `PolicyRevoking` | Published or terminal response only | No | No |
 | `Expired` | No | No | No |
 | `Denied` | No | No | No |
 
 A session snapshot counts `Activated` leases as active. It uses `Pending` and `Activated` leases to derive the effective
-origin acquire policy. `Idle` leases can still recover their own playback path if a later media request arrives before
-validity expires, but they do not keep prefetch work active.
+origin acquire policy. An `Idle` lease can resume on a media request before its validity expires. Origin prefetch requires
+current demand. The lease also has a playback mode. `Live` delivers the live timeline, `TerminalTail` appends a finite
+ending, `TerminalCustomResponse` serves the committed fallback playlist, `TerminalUnavailable` serves an error for a
+committed terminal decision, and `Ended` marks playback that has finished.
+
+For group failover, a valid `Activated` lease in `Live` mode protects the session's bound member when runtime failover
+is disabled. A session with only `Pending` or `Idle` leases can still select a member under the start policy.
+See [HLS group failover](./failover-groups.md#hls-behavior).
 
 ## HlsSession state model
 
-`HlsSession` is not represented by one single lifecycle enum. Its effective state is composed from several layers.
+`HlsSession` tracks several states at once. For example, an origin in `Recovering` can have an `Activated` viewer and a
+second viewer whose lease is still `Pending`.
 
 | Layer | Stored as | Meaning |
 | :--- | :--- | :--- |
@@ -144,13 +156,14 @@ validity expires, but they do not keep prefetch work active.
 | Media mode | `HlsSessionMode` | Normal cache timeline or transient passthrough. |
 | Activity | `HlsSessionActivity` | Last authorized manifest/media access, active lease count, active origin work count, and work generation. |
 | Origin binding | Origin account binding state | Provider account/session owner binding for upstream work. |
+| Origin progress | `HlsOriginProgressPhase` | Recent media progress, ongoing recovery, or terminal playback decisions. |
 | Cache state | Segment, MAP, transient object maps | Ready, fetching, failed, and temporary object state. |
 | GC flag | `gc_marked_for_removal` | Guard used while session cleanup is in progress. |
 
 ```mermaid
 stateDiagram-v2
     [*] --> Missing
-    Missing --> NormalCacheTimeline: First accepted canonical manifest
+    Missing --> NormalCacheTimeline: First authorized canonical manifest request creates the session
     NormalCacheTimeline --> NormalCacheTimeline: Normal origin manifest commit
     NormalCacheTimeline --> TransientPassthrough: Origin manifest requires transient handling
     TransientPassthrough --> TransientPassthrough: Transient manifest commit
@@ -236,10 +249,23 @@ The first new segment receives a discontinuity and the next proxy sequence. Publ
 
 | Phase | Meaning | Availability effect |
 | :--- | :--- | :--- |
-| `PublicationLate` | No publication progress has been observed for `1.5 * TARGETDURATION`. | Lateness evidence only. By itself it neither switches host nor closes admission nor cuts over a lease. |
-| `RecoveryRequired` | Degraded origin evidence and lease reserve/ETA show that recovery work must start. | Opens one generation-bound acceptance episode and temporarily closes new admission while existing leases use their remaining READY reserve. |
-| `Critical` | At least one live lease has reached its reserve/transition boundary without committed recovery. | Prepares that lease's safe cross-host handoff or terminal media. Availability CSV publication still requires known reserve exhaustion. |
-| `NoAdmission` | Operator shorthand for the closed startup-admission gate; it is not a separate stored origin enum. | New leases are not admitted from insufficient READY startup media. Existing leases are evaluated independently and are not terminalized as a group. |
+| `Cold` | The session has yet to observe media progress. | The initial manifest and media must become available for startup. |
+| `Fresh` | The origin is making expected progress or a recovery commit restored progress. | Normal entry and playback apply. |
+| `AwaitingMediaProgress` | More than `0.5T` and less than `1.5T` have elapsed since the last committed media progress. | An authorized new lease can start from the last valid committed window while its visible media are fully available. |
+| `PublicationLate` | At least `1.5T` has elapsed since the last committed media progress. | Lateness is evidence for the recovery decision. |
+| `RecoveryRequired` | The origin is degraded and playback reserve, recovery ETA, and the transition margin call for recovery. | Recovery is requested and ordinary admission can close while viewers use their remaining READY reserve. |
+| `Recovering` | Tuliprox has opened a manifest acceptance episode for the session. Hard origin errors can also trigger this phase directly. | Tuliprox validates candidates for the same stream. The recovery entry fallback has its own eligibility checks. |
+| `Critical` | At least one lease has reached its transition boundary before recovery committed. | Tuliprox evaluates that lease for a safe transition. A terminal fallback for origin failure still requires proven reserve exhaustion. |
+| `TerminalPartial` | Tuliprox committed a terminal decision for a lease while other leases can still play live. | The terminal response applies to the affected lease. |
+| `Terminal` | All leases considered by the terminal commit have an ending, an unavailable decision, or have ended. | The session remains eligible for normal cleanup. |
+
+`T` is the session target duration. At exactly `0.5T` the regular entry path applies. At exactly `1.5T` the
+`AwaitingMediaProgress` entry window closes and publication lateness applies. The elapsed time is measured from the last
+accepted manifest that advanced the media timeline. An unchanged playlist leaves that timestamp in place.
+See [first lease publication while waiting for media progress](./shared-hls-runtime-flow.md#first-lease-publication-while-waiting-for-media-progress).
+
+Admission is a separate decision. The `NoAdmission` label describes a closed gate when the start window cannot be
+admitted. Recovery, a committed terminal decision, and an origin binding change take precedence over the waiting window.
 
 An acceptance episode owns an immutable candidate plan, timing budget, workload binding, generation, and deadline. The
 first attempt executes the complete configured burst. For the current `beast` profile that means six slots with two

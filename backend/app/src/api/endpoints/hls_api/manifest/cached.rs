@@ -19,11 +19,11 @@ use std::{sync::Arc, time::Duration};
 use tuliprox_hls::api::{
     derive_hls_lease_manifest_snapshot, derive_hls_recovery_entry_snapshot, hls_committed_manifest_body_for_request,
     hls_should_wait_for_initial_manifest_commit, safe_hls_access_lease_id, safe_proxy_session_id, safe_session_key,
-    HlsAccessLease, HlsAccessLeaseId, HlsAccessLeaseState, HlsBandwidthPersistenceOutcome, HlsCachedManifestOptions,
-    HlsCommittedManifestBody, HlsLeaseManifestSnapshot, HlsLeaseManifestSnapshotInput,
-    HlsLeaseManifestUriMaterialization, HlsManifestLimitViolation, HlsPublishedTransientResourceIds,
-    HlsRecoveryEntryCommit, HlsSessionHandle, HlsStartupAdmissionDecision, HlsStartupAdmissionOriginState,
-    HlsStartupAdmissionRejection, HlsStartupAdmissionSnapshot, ProxySessionId,
+    HlsAccessLease, HlsAccessLeaseId, HlsAccessLeaseState, HlsBandwidthPersistenceOutcome, HlsCachedEntryCommit,
+    HlsCachedManifestOptions, HlsCommittedManifestBody, HlsLeaseManifestSnapshot, HlsLeaseManifestSnapshotInput,
+    HlsLeaseManifestUriMaterialization, HlsManifestLimitViolation, HlsPublishedTransientResourceIds, HlsSessionHandle,
+    HlsStartupAdmissionDecision, HlsStartupAdmissionOriginState, HlsStartupAdmissionRejection,
+    HlsStartupAdmissionSnapshot, ProxySessionId,
 };
 
 type HlsPreparedManifest =
@@ -280,25 +280,25 @@ async fn reject_recovery_entry(
     response
 }
 
-async fn prepare_recovery_entry(
+async fn prepare_cached_entry(
     app_state: &AppState,
     session: &HlsSessionHandle,
     view: &HlsCachedManifestViewContext<'_>,
     lease: &HlsAccessLease,
     options: HlsCachedManifestOptions,
 ) -> Result<Option<HlsPreparedManifest>, &'static str> {
-    if !options.recovery_entry_requested() {
+    if !options.cached_entry_requested() {
         return Ok(None);
     }
     let state = session.read().await;
     let now_ms = app_state.hls.proxy.now_ms();
-    if !state.recovery_entry_is_current(lease, options, now_ms) {
+    if !state.cached_entry_is_current(lease, options, now_ms) {
         return Err("recovery_context_changed");
     }
     let (rendered, plan) =
         tuliprox_hls::api::HlsManifestRenderer::render_recovery_entry_window(&state, view.strip, now_ms)
             .map_err(|_| "no_renderable_window")?;
-    if !options.permits_recovery_entry() {
+    if !options.permits_cached_entry() {
         return Err("freshness_boundary");
     }
     let (materialized, stripped) = if let Some(plan) = &plan {
@@ -321,7 +321,9 @@ async fn prepare_recovery_entry(
         return Err("missing_window_bindings");
     }
     drop(state);
-    app_state.hls.proxy.check_recovery_entry_reserve(session, lease, options).await?;
+    if !options.awaiting_media_progress_entry() {
+        app_state.hls.proxy.check_recovery_entry_reserve(session, lease, options).await?;
+    }
     let resources = HlsPublishedTransientResourceIds::from_manifest_body(&materialized.body);
     Ok(Some((materialized, snapshot, resources, now_ms)))
 }
@@ -902,7 +904,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
         }
         let cached = read_hls_cached_manifest(session, options, started_at_ms, app_state.hls.proxy.now_ms()).await;
         let fast_start = session.read().await.uses_fast_start_live_window();
-        if fast_start || !cached.wait_for_initial_commit || options.recovery_entry_requested() {
+        if fast_start || !cached.wait_for_initial_commit || options.cached_entry_requested() {
             let mut retained_plan = None;
             let mut retained_origin_generation = false;
             let mut regular_wait_reason = None;
@@ -1053,7 +1055,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
             }
             let mut recovery_entry_reason = None;
             if prepared.is_none() {
-                match prepare_recovery_entry(app_state, session, &view, &lease, options).await {
+                match prepare_cached_entry(app_state, session, &view, &lease, options).await {
                     Ok(Some(fallback)) => {
                         let fresh_pending = options.requires_newer_manifest()
                             && (regular_wait_reason == Some("origin_freshness_or_identity")
@@ -1122,7 +1124,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                     match app_state
                         .hls
                         .proxy
-                        .commit_recovery_entry_manifest(
+                        .commit_cached_entry_manifest(
                             access_lease_id,
                             &proxy_session_id,
                             publication_guard,
@@ -1132,8 +1134,8 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                         )
                         .await
                     {
-                        HlsRecoveryEntryCommit::Publication(outcome) => outcome,
-                        HlsRecoveryEntryCommit::Unavailable(reason) => {
+                        HlsCachedEntryCommit::Publication(outcome) => outcome,
+                        HlsCachedEntryCommit::Unavailable(reason) => {
                             if publication_retries < 8 {
                                 publication_retries += 1;
                                 continue;
@@ -1308,10 +1310,15 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                 }
                 if let Some(reason) = recovery_entry_reason {
                     let candidate = HlsEntryCandidate::from(&committed_snapshot);
+                    let (kind, phase) = if options.awaiting_media_progress_entry() {
+                        ("cached", "phase")
+                    } else {
+                        ("recovery", "recovery")
+                    };
                     warn_entry(format_args!(
-                        "HLS recovery entry published: session={} proxy_session={} lease={} recovery={} reason={reason} commit={} first={} last={} status={}",
+                        "HLS {kind} entry published: session={} proxy_session={} lease={} {phase}={} reason={reason} commit={} first={} last={} status={}",
                         safe_session, safe_proxy_session_id(&proxy_session_id),
-                        safe_hls_access_lease_id(access_lease_id), options.recovery_entry_phase(),
+                        safe_hls_access_lease_id(access_lease_id), options.cached_entry_phase(),
                         candidate.commit, candidate.first, candidate.last,
                         response.status().as_u16(),
                     ));

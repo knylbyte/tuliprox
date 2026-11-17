@@ -8,6 +8,7 @@ const PUBLICATION_LATENESS_DENOMINATOR: u64 = 2;
 pub enum HlsOriginProgressPhase {
     Cold,
     Fresh,
+    AwaitingMediaProgress,
     PublicationLate,
     RecoveryRequired,
     Recovering,
@@ -64,6 +65,10 @@ pub fn publication_late_after_ms(target_duration_ms: u64) -> u64 {
     )
 }
 
+pub(crate) fn awaiting_media_progress(publication_age_ms: u64, target_duration_ms: u64) -> bool {
+    publication_age_ms > target_duration_ms / 2 && publication_age_ms < publication_late_after_ms(target_duration_ms)
+}
+
 pub fn evaluate_origin_progress(snapshot: HlsOriginProgressSnapshot) -> HlsOriginProgressDecision {
     let publication_age_ms = snapshot.last_media_progress_at_ms.map_or(0, |last| snapshot.now_ms.saturating_sub(last));
     let publication_late_after_ms = publication_late_after_ms(snapshot.target_duration_ms);
@@ -81,6 +86,14 @@ pub fn evaluate_origin_progress(snapshot: HlsOriginProgressSnapshot) -> HlsOrigi
         !snapshot.recovery_committed && (condition.opens_episode_immediately() || recovery_required);
     let next_phase = if snapshot.last_media_progress_at_ms.is_none() {
         HlsOriginProgressPhase::Cold
+    } else if !snapshot.recovery_committed
+        && !start_acceptance_episode
+        && !critical
+        && matches!(condition, HlsOriginPathCondition::ProgressExpected | HlsOriginPathCondition::RetryableFetchFailure)
+        && matches!(snapshot.phase, HlsOriginProgressPhase::Fresh | HlsOriginProgressPhase::AwaitingMediaProgress)
+        && awaiting_media_progress(publication_age_ms, snapshot.target_duration_ms)
+    {
+        HlsOriginProgressPhase::AwaitingMediaProgress
     } else if snapshot.recovery_committed || !condition.is_degraded() {
         HlsOriginProgressPhase::Fresh
     } else if critical {
@@ -88,6 +101,7 @@ pub fn evaluate_origin_progress(snapshot: HlsOriginProgressSnapshot) -> HlsOrigi
             HlsOriginProgressPhase::TerminalPartial | HlsOriginProgressPhase::Terminal => snapshot.phase,
             HlsOriginProgressPhase::Cold
             | HlsOriginProgressPhase::Fresh
+            | HlsOriginProgressPhase::AwaitingMediaProgress
             | HlsOriginProgressPhase::PublicationLate
             | HlsOriginProgressPhase::RecoveryRequired
             | HlsOriginProgressPhase::Recovering
@@ -101,6 +115,8 @@ pub fn evaluate_origin_progress(snapshot: HlsOriginProgressSnapshot) -> HlsOrigi
         }
     } else if publication_late {
         HlsOriginProgressPhase::PublicationLate
+    } else if snapshot.phase == HlsOriginProgressPhase::AwaitingMediaProgress {
+        HlsOriginProgressPhase::Fresh
     } else {
         snapshot.phase
     };
@@ -163,6 +179,21 @@ mod tests {
             session_cutover_evaluation_required: reserve_ms <= 10_000,
             recovery_committed: false,
             now_ms,
+        }
+    }
+
+    #[test]
+    fn awaiting_media_progress_uses_strict_time_boundaries() {
+        for (age_ms, expected) in [
+            (5_000, HlsOriginProgressPhase::Fresh),
+            (5_001, HlsOriginProgressPhase::AwaitingMediaProgress),
+            (14_999, HlsOriginProgressPhase::AwaitingMediaProgress),
+            (15_000, HlsOriginProgressPhase::PublicationLate),
+        ] {
+            let decision = evaluate_origin_progress(snapshot(age_ms, 30_000));
+            assert_eq!(decision.next_phase, expected, "age={age_ms}");
+            assert!(!decision.start_acceptance_episode);
+            assert!(!decision.close_admission);
         }
     }
 
