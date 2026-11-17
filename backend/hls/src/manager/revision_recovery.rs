@@ -1,8 +1,9 @@
 use crate::{
     lease::{HlsRevisionRecoveryGuard, HlsRevisionRecoveryOutcome},
-    HlsAccessLeaseId, HlsMediaLeaseIdentity, HlsProxyManager, ProxySessionId,
+    HlsAccessLeaseId, HlsMediaLeaseIdentity, HlsProxyManager, HlsSegmentCache, HlsSession, MapCacheStatus,
+    ProxySessionId, SegmentEntry, TransientPassthroughState,
 };
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
 /// Manager-owned resources used by fetch completion, even when an origin I/O
 /// context is absent. Sharing this handle avoids a second lease cleanup path.
@@ -81,6 +82,32 @@ fn validate_retained_live_window(
     Ok(())
 }
 
+pub(super) fn local_file_has_length(path: &Path, expected_length: u64) -> bool {
+    std::fs::metadata(path).is_ok_and(|file| file.is_file() && file.len() == expected_length)
+}
+
+pub(super) fn local_segment_dependencies_ready(
+    cache: &HlsSegmentCache,
+    session: &HlsSession,
+    entry: &SegmentEntry,
+) -> bool {
+    let map_ready = entry.map_ref.is_none_or(|id| {
+        session.maps.get(&id).is_some_and(|map| {
+            matches!(map.status, MapCacheStatus::Ready { content_length, .. }
+                if local_file_has_length(&cache.object_path(&map.cache_key), content_length))
+        })
+    });
+    map_ready
+        && entry.encryption.as_ref().is_none_or(|encryption| {
+            let key = TransientPassthroughState::transient_object_key(
+                &session.proxy_session_id,
+                &encryption.resource_id,
+                encryption.resource_extension.clone(),
+            );
+            local_file_has_length(&cache.object_path(&key), 16)
+        })
+}
+
 fn validate_retained_generation_reserve(
     cache: &crate::HlsSegmentCache,
     session: &crate::HlsSession,
@@ -111,28 +138,8 @@ fn validate_retained_generation_reserve(
             return Err(Reject::RevisionConflict);
         };
         let entry = &session.segments[&segment.proxy_seq];
-        if let Some(map_id) = entry.map_ref {
-            let Some(map) = session.maps.get(&map_id) else { return Err(Reject::RevisionConflict) };
-            let crate::MapCacheStatus::Ready { content_length, .. } = map.status else {
-                return Err(Reject::RevisionConflict);
-            };
-            if !std::fs::metadata(cache.object_path(&map.cache_key))
-                .is_ok_and(|file| file.is_file() && file.len() == content_length)
-            {
-                return Err(Reject::RevisionConflict);
-            }
-        }
-        if let Some(encryption) = &entry.encryption {
-            let key = crate::TransientPassthroughState::transient_object_key(
-                &session.proxy_session_id,
-                &encryption.resource_id,
-                encryption.resource_extension.clone(),
-            );
-            if !std::fs::metadata(cache.object_path(&key)).is_ok_and(|file| file.is_file() && file.len() == 16) {
-                return Err(Reject::RevisionConflict);
-            }
-        }
-        if !std::fs::metadata(&metadata.path).is_ok_and(|file| file.is_file() && file.len() == metadata.size)
+        if !local_segment_dependencies_ready(cache, session, entry)
+            || !local_file_has_length(&metadata.path, metadata.size)
             || !segment.map_ref_ready
             || unit.duration_ms != segment.duration_ms
             || !unit.required_map_ready
@@ -272,15 +279,19 @@ impl HlsProxyManager {
         }
         let mut leases = self.access_leases.write().await;
         let mut session = current.session().write().await;
-        if leases
+        // A continuation can wait behind another publisher. Check its lease
+        // and local dependencies at the transaction time.
+        let now_ms = if retained_request.is_some() || expected.recovery_entry_snapshot_generation().is_some() {
+            now_ms.max(self.now_ms())
+        } else {
+            now_ms
+        };
+        let Some(lease) = leases
             .response_snapshot(lease_id, session_id, now_ms)
-            .is_none_or(|lease| !session.live_entry_snapshot_allowed_for_lease(&lease, Some(&snapshot)))
-        {
+            .filter(|lease| session.live_entry_snapshot_allowed_for_lease(lease, Some(&snapshot)))
+        else {
             return Outcome::Rejected(Reject::ManifestGenerationUnavailable);
-        }
-        // A retained request may have waited for these locks. Recheck its
-        // deadline at the transaction without moving behind the request observation.
-        let now_ms = if retained_request.is_some() { now_ms.max(self.now_ms()) } else { now_ms };
+        };
         if !leases.media_identity_is_current(lease_id, session_id, expected.media_identity(), now_ms)
             || session.is_gc_marked_for_removal()
         {
@@ -298,6 +309,11 @@ impl HlsProxyManager {
             Ok(expected) => expected,
             Err(reason) => return Outcome::Rejected(reason),
         };
+        if let Err(reason) =
+            self.validate_recovery_entry_continuation(&leases, &session, &lease, expected, &snapshot, now_ms)
+        {
+            return Outcome::Rejected(reason);
+        }
         if retained_request.is_some() && expected.entry_strip_policy().is_none() {
             if let Some(current) =
                 leases.response_snapshot(lease_id, session_id, now_ms).and_then(|lease| lease.last_manifest_snapshot)
@@ -344,8 +360,9 @@ impl HlsProxyManager {
             if let Some(window) = &publication.window_plan {
                 let plan = &window.plan;
                 let view_matches = leases.response_snapshot(lease_id, session_id, now_ms).is_some_and(|lease| {
-                    session.plan_live_window(crate::live_window::HlsLiveWindowView::for_lease(&lease)).as_ref()
-                        == Some(plan)
+                    session
+                        .plan_live_window_for_lease_snapshot(&lease)
+                        .is_some_and(|current| plan.matches_view(&current))
                 });
                 if !retained {
                     if !plan.is_current(&session) {
@@ -354,6 +371,21 @@ impl HlsProxyManager {
                     if !view_matches {
                         // Activation can change Entry to Active after preparation.
                         // Replan against the current lease without accepting the old view.
+                        return Outcome::Rejected(Reject::SnapshotChanged);
+                    }
+                    session.prepare_live_window_discontinuity(plan);
+                    if snapshot.discontinuity_sequence
+                        != session.rendered_discontinuity_sequence(snapshot.first_proxy_seq, plan.previous_window)
+                        || snapshot.visible_segments.iter().any(|unit| {
+                            session.segments.get(&unit.proxy_seq).is_some_and(|entry| {
+                                session.rendered_discontinuity_before(
+                                    snapshot.first_proxy_seq,
+                                    entry,
+                                    plan.previous_window,
+                                ) != unit.discontinuity_before
+                            })
+                        })
+                    {
                         return Outcome::Rejected(Reject::SnapshotChanged);
                     }
                 }
@@ -398,17 +430,19 @@ impl HlsProxyManager {
         {
             return Outcome::Rejected(Reject::RevisionConflict);
         }
-        let published = snapshot
-            .startup_revisions
-            .as_ref()
-            .and_then(|publication| publication.window_plan.as_ref())
-            .map(|_| snapshot.clone());
+        let mut published = snapshot.clone();
+        // Retention starts from successful publication, which can follow rendering.
+        published.delivered_at_ms = now_ms;
+        let retention_resources = resources.clone();
         let outcome = leases
             .commit_manifest_publication_with_resources(lease_id, session_id, expected, snapshot, resources, now_ms);
         if outcome.is_committed() {
-            if let Some(snapshot) = published {
-                session.record_live_window_publication(lease_id, expected.lease_issued_at_ms(), &snapshot);
-            }
+            session.record_live_window_publication_with_resources(
+                lease_id,
+                expected.lease_issued_at_ms(),
+                &published,
+                retention_resources,
+            );
         }
         outcome
     }

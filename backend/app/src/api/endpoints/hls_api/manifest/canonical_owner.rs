@@ -356,19 +356,19 @@ pub(in crate::api::endpoints::hls_api) async fn join_hls_canonical_manifest_owne
     resolution.into_response()
 }
 
-pub(in crate::api::endpoints::hls_api) async fn hls_direct_refresh_follow_up(
+async fn hls_direct_refresh_follow_up(
     app_state: &Arc<AppState>,
     session: &HlsSessionHandle,
     proxy_session_id: &ProxySessionId,
     refresh_request: OriginRefreshRequest,
     outcome: HlsOriginRefreshTriggerOutcome,
-) -> Option<axum::response::Response> {
+) -> bool {
     match outcome {
         HlsOriginRefreshTriggerOutcome::Started
         | HlsOriginRefreshTriggerOutcome::AttemptCompleted
         | HlsOriginRefreshTriggerOutcome::SessionUnavailable
         | HlsOriginRefreshTriggerOutcome::InFlight
-        | HlsOriginRefreshTriggerOutcome::DebouncedUntil { .. } => return None,
+        | HlsOriginRefreshTriggerOutcome::DebouncedUntil { .. } => return true,
         HlsOriginRefreshTriggerOutcome::RecoveryPressureSuperseded => {
             warn!("HLS direct origin refresh evidence superseded; scheduling current availability reevaluation");
         }
@@ -379,21 +379,31 @@ pub(in crate::api::endpoints::hls_api) async fn hls_direct_refresh_follow_up(
     let Some(owner_key) = app_state.hls.proxy.availability_reevaluation_owner_key(session, proxy_session_id).await
     else {
         warn!("HLS direct origin refresh follow-up unavailable: reason=session_superseded");
-        return Some(hls_canonical_retry_after_response());
+        return false;
     };
     match register_hls_availability_reevaluation(app_state.hls_ctx(), Arc::clone(session), owner_key, refresh_request) {
         HlsAvailabilityReevaluationRegistration::Scheduled
         | HlsAvailabilityReevaluationRegistration::AlreadyOwned
-        | HlsAvailabilityReevaluationRegistration::Superseded => None,
+        | HlsAvailabilityReevaluationRegistration::Superseded => true,
         HlsAvailabilityReevaluationRegistration::CapacityExceeded => {
             warn!("HLS direct origin refresh follow-up unavailable: reason=capacity_exceeded");
-            Some(hls_canonical_retry_after_response())
+            false
         }
         HlsAvailabilityReevaluationRegistration::RuntimeUnavailable => {
             warn!("HLS direct origin refresh follow-up unavailable: reason=runtime_unavailable");
-            Some(hls_canonical_retry_after_response())
+            false
         }
     }
+}
+
+pub(super) async fn trigger_hls_background_manifest_refresh(
+    app_state: &Arc<AppState>,
+    session: &HlsSessionHandle,
+    proxy_session_id: &ProxySessionId,
+    refresh_request: OriginRefreshRequest,
+) -> bool {
+    let outcome = maybe_trigger_origin_refresh_with_outcome(refresh_request.clone()).await;
+    hls_direct_refresh_follow_up(app_state, session, proxy_session_id, refresh_request, outcome).await
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -425,19 +435,7 @@ pub(in crate::api::endpoints::hls_api) async fn current_hls_refresh_lease(
         .access_lease_response_snapshot(access_lease_id, proxy_session_id, app_state.hls.proxy.now_ms())
         .await
         .ok_or_else(unavailable)?;
-    let terminal_transition = expected.playback_mode == HlsLeasePlaybackMode::Live
-        && matches!(
-            lease.playback_mode,
-            HlsLeasePlaybackMode::TerminalTail(_)
-                | HlsLeasePlaybackMode::TerminalCustomResponse(_)
-                | HlsLeasePlaybackMode::TerminalUnavailable { .. }
-        );
-    let expected_admission = if terminal_transition {
-        expected.admission_generation.checked_add(1)
-    } else {
-        Some(expected.admission_generation)
-    };
-    if lease.issued_at_ms != expected.issued_at_ms || Some(lease.admission_generation) != expected_admission {
+    if !lease.matches_manifest_response_authorization(expected) {
         return Err(unavailable());
     }
     if !sessions.get_by_proxy_session_id(proxy_session_id).await.is_some_and(|current| Arc::ptr_eq(session, &current)) {
@@ -514,12 +512,13 @@ pub(in crate::api::endpoints::hls_api) async fn trigger_hls_canonical_manifest_r
         {
             return Some(hls_canonical_retry_after_response());
         }
-        return hls_direct_refresh_follow_up(app_state, session, proxy_session_id, refresh_request, outcome).await;
+        return (!hls_direct_refresh_follow_up(app_state, session, proxy_session_id, refresh_request, outcome).await)
+            .then(hls_canonical_retry_after_response);
     }
     match ordering {
         HlsManifestRefreshOrdering::Background => {
-            let outcome = maybe_trigger_origin_refresh_with_outcome(refresh_request.clone()).await;
-            hls_direct_refresh_follow_up(app_state, session, proxy_session_id, refresh_request, outcome).await
+            (!trigger_hls_background_manifest_refresh(app_state, session, proxy_session_id, refresh_request).await)
+                .then(hls_canonical_retry_after_response)
         }
         HlsManifestRefreshOrdering::AwaitBeforeTerminalEvaluation => {
             let initial = app_state

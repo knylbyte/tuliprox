@@ -121,6 +121,7 @@ async fn gc_expires_control_bytes_but_keeps_the_last_live_anchor_through_termina
         let mut state = fixture.session.write().await;
         let mut entry = state.segments[&40].clone();
         entry.proxy_seq = 39;
+        entry.access = Arc::new(crate::CacheAccessState::new());
         entry.cache_key = control.clone();
         entry.origin_key.host_local_sequence = 39;
         state.segments.insert(39, entry);

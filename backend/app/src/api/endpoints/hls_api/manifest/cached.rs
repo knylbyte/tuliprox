@@ -17,12 +17,13 @@ use log::{debug, error, trace, warn};
 use shared::utils::sanitize_sensitive_info;
 use std::{sync::Arc, time::Duration};
 use tuliprox_hls::api::{
-    derive_hls_lease_manifest_snapshot, hls_committed_manifest_body_for_request,
-    hls_should_wait_for_initial_manifest_commit, hls_startup_admission_allows_snapshot, safe_hls_access_lease_id,
-    safe_proxy_session_id, HlsAccessLeaseId, HlsAccessLeaseState, HlsBandwidthPersistenceOutcome,
-    HlsCachedManifestOptions, HlsCommittedManifestBody, HlsLeaseManifestSnapshot, HlsLeaseManifestSnapshotInput,
-    HlsLeaseManifestUriMaterialization, HlsManifestLimitViolation, HlsPublishedTransientResourceIds, HlsSessionHandle,
-    ProxySessionId,
+    derive_hls_lease_manifest_snapshot, derive_hls_recovery_entry_snapshot, hls_committed_manifest_body_for_request,
+    hls_should_wait_for_initial_manifest_commit, safe_hls_access_lease_id, safe_proxy_session_id, safe_session_key,
+    HlsAccessLease, HlsAccessLeaseId, HlsAccessLeaseState, HlsBandwidthPersistenceOutcome, HlsCachedManifestOptions,
+    HlsCommittedManifestBody, HlsLeaseManifestSnapshot, HlsLeaseManifestSnapshotInput,
+    HlsLeaseManifestUriMaterialization, HlsManifestLimitViolation, HlsPublishedTransientResourceIds,
+    HlsRecoveryEntryCommit, HlsSessionHandle, HlsStartupAdmissionDecision, HlsStartupAdmissionOriginState,
+    HlsStartupAdmissionRejection, HlsStartupAdmissionSnapshot, ProxySessionId,
 };
 
 type HlsPreparedManifest =
@@ -33,6 +34,11 @@ type HlsPreparedManifest =
 pub(in crate::api::endpoints::hls_api) enum HlsManifestPublicationStage {
     Guard,
     EntryWait,
+    RetainedPoll,
+    RetainedOriginExhausted,
+    RetainedOriginPrepareLock,
+    RetainedOriginAllocated,
+    RetainedOriginBeforeRefresh,
     #[default]
     Commit,
 }
@@ -43,24 +49,72 @@ pub(in crate::api::endpoints::hls_api) struct HlsManifestPublicationBarrier {
     pub stage: HlsManifestPublicationStage,
     pub prepared: tokio::sync::Notify,
     pub resume: tokio::sync::Notify,
+    pub finished: tokio::sync::Notify,
 }
 
 #[cfg(test)]
 tokio::task_local! {
     pub(in crate::api::endpoints::hls_api) static HLS_MANIFEST_PUBLICATION_BARRIER:
         std::cell::RefCell<Option<Arc<HlsManifestPublicationBarrier>>>;
+    pub(in crate::api::endpoints::hls_api) static HLS_ENTRY_WARNINGS:
+        Arc<std::sync::Mutex<Vec<String>>>;
 }
 
 #[cfg(test)]
-async fn hls_manifest_publication_checkpoint(stage: HlsManifestPublicationStage) {
-    if let Ok(Some(barrier)) = HLS_MANIFEST_PUBLICATION_BARRIER.try_with(|slot| {
-        let mut slot = slot.borrow_mut();
-        if slot.as_ref().is_some_and(|barrier| barrier.stage == stage) {
-            slot.take()
-        } else {
-            None
+pub(super) fn take_hls_manifest_publication_barrier(
+    stage: HlsManifestPublicationStage,
+) -> Option<Arc<HlsManifestPublicationBarrier>> {
+    HLS_MANIFEST_PUBLICATION_BARRIER
+        .try_with(|slot| {
+            let mut slot = slot.borrow_mut();
+            if slot.as_ref().is_some_and(|barrier| barrier.stage == stage) {
+                slot.take()
+            } else {
+                None
+            }
+        })
+        .ok()
+        .flatten()
+}
+
+#[cfg(test)]
+pub(super) fn take_retained_origin_barrier() -> Option<Arc<HlsManifestPublicationBarrier>> {
+    [
+        HlsManifestPublicationStage::RetainedOriginExhausted,
+        HlsManifestPublicationStage::RetainedOriginPrepareLock,
+        HlsManifestPublicationStage::RetainedOriginAllocated,
+        HlsManifestPublicationStage::RetainedOriginBeforeRefresh,
+    ]
+    .into_iter()
+    .find_map(take_hls_manifest_publication_barrier)
+}
+
+#[cfg(test)]
+pub(in crate::api::endpoints::hls_api) async fn observe_retained_origin_prepare_lock<T>(
+    lock: impl std::future::Future<Output = T>,
+) -> T {
+    let barrier = take_hls_manifest_publication_barrier(HlsManifestPublicationStage::RetainedOriginPrepareLock);
+    let mut lock = std::pin::pin!(lock);
+    std::future::poll_fn(|cx| {
+        let result = lock.as_mut().poll(cx);
+        if result.is_pending() {
+            if let Some(barrier) = &barrier {
+                barrier.prepared.notify_one();
+            }
         }
-    }) {
+        result
+    })
+    .await
+}
+
+#[cfg(test)]
+pub(in crate::api::endpoints::hls_api) async fn retained_origin_allocated_checkpoint() {
+    hls_manifest_publication_checkpoint(HlsManifestPublicationStage::RetainedOriginAllocated).await;
+}
+
+#[cfg(test)]
+pub(super) async fn hls_manifest_publication_checkpoint(stage: HlsManifestPublicationStage) {
+    if let Some(barrier) = take_hls_manifest_publication_barrier(stage) {
         barrier.prepared.notify_one();
         barrier.resume.notified().await;
     }
@@ -119,6 +173,189 @@ enum HlsLiveWindowPreparation {
     RetainedOriginGeneration { lease: Box<tuliprox_hls::api::HlsAccessLease> },
     NoRenderableWindow { lease: Box<tuliprox_hls::api::HlsAccessLease>, plan: tuliprox_hls::api::HlsLiveWindowPlan },
     Unavailable(&'static str),
+}
+
+#[derive(Clone, Copy)]
+struct HlsEntryCandidate {
+    commit: u64,
+    first: u64,
+    last: u64,
+}
+
+impl From<&HlsLeaseManifestSnapshot> for HlsEntryCandidate {
+    fn from(snapshot: &HlsLeaseManifestSnapshot) -> Self {
+        Self {
+            commit: snapshot.source_commit_identity.commit_generation(),
+            first: snapshot.first_proxy_seq,
+            last: snapshot.last_proxy_seq,
+        }
+    }
+}
+
+fn warn_entry(args: std::fmt::Arguments<'_>) {
+    #[cfg(test)]
+    let _ = HLS_ENTRY_WARNINGS.try_with(|warnings| {
+        let message = args.to_string();
+        eprintln!("WARN {message}");
+        warnings.lock().unwrap().push(message);
+    });
+    warn!("{args}");
+}
+
+fn log_entry_admission_rejection(
+    safe_session: &str,
+    view: &HlsCachedManifestViewContext<'_>,
+    candidate: HlsEntryCandidate,
+    admission: HlsStartupAdmissionSnapshot,
+    response: &axum::response::Response,
+) {
+    let (reason, measured, required) = match admission.decision {
+        HlsStartupAdmissionDecision::Reject(HlsStartupAdmissionRejection::InsufficientVisibleReadyMedia) => (
+            "insufficient_visible_ready_media",
+            admission.visible_contiguous_ready_duration_ms,
+            admission.minimum_visible_ready_duration_ms,
+        ),
+        HlsStartupAdmissionDecision::Reject(HlsStartupAdmissionRejection::InsufficientDegradedReserve) => (
+            "insufficient_degraded_reserve",
+            admission.prospective_lease_reserve_ms,
+            admission.degraded_reserve_threshold_ms.saturating_add(1),
+        ),
+        HlsStartupAdmissionDecision::Reject(HlsStartupAdmissionRejection::TransientOriginDegraded) => {
+            ("transient_origin_degraded", 0, 0)
+        }
+        HlsStartupAdmissionDecision::Admit => return,
+    };
+    warn_entry(format_args!(
+        "HLS entry admission rejected: session={} proxy_session={} lease={} reason={reason} commit={} first={} last={} measured_ms={measured} required_ms={required} status={} retry_after={}",
+        safe_session, safe_proxy_session_id(view.proxy_session_id),
+        safe_hls_access_lease_id(view.access_lease_id), candidate.commit, candidate.first, candidate.last,
+        response.status().as_u16(), response.headers().get(axum::http::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok()).unwrap_or("none"),
+    ));
+}
+
+#[derive(Clone)]
+pub(super) struct HlsProvisionalRecoveryEntryResponse(String);
+
+pub(super) fn finish_hls_recovery_entry_response(mut response: axum::response::Response) -> axum::response::Response {
+    if let Some(HlsProvisionalRecoveryEntryResponse(message)) =
+        response.extensions_mut().remove::<HlsProvisionalRecoveryEntryResponse>()
+    {
+        warn_entry(format_args!("{message}"));
+    }
+    response
+}
+
+async fn reject_recovery_entry(
+    app_state: &Arc<AppState>,
+    safe_session: &str,
+    view: &HlsCachedManifestViewContext<'_>,
+    reason: &'static str,
+    provisional: bool,
+) -> axum::response::Response {
+    let current = app_state
+        .hls
+        .proxy
+        .access_lease_response_snapshot(view.access_lease_id, view.proxy_session_id, app_state.hls.proxy.now_ms())
+        .await;
+    if let Some(response) = current.as_ref().and_then(|lease| {
+        super::hls_terminal_playback_response(app_state, lease, view.proxy_session_id, view.access_lease_id)
+    }) {
+        return response;
+    }
+    let mut response = hls_cached_manifest_temporarily_unavailable();
+    let message = format!(
+        "HLS recovery entry unavailable: session={} proxy_session={} lease={} reason={reason} status={} retry_after={}",
+        safe_session,
+        safe_proxy_session_id(view.proxy_session_id),
+        safe_hls_access_lease_id(view.access_lease_id),
+        response.status().as_u16(),
+        response.headers().get(axum::http::header::RETRY_AFTER).and_then(|value| value.to_str().ok()).unwrap_or("none"),
+    );
+    if provisional && current.is_some() {
+        response.extensions_mut().insert(HlsProvisionalRecoveryEntryResponse(message));
+    } else {
+        warn_entry(format_args!("{message}"));
+    }
+    response
+}
+
+async fn prepare_recovery_entry(
+    app_state: &AppState,
+    session: &HlsSessionHandle,
+    view: &HlsCachedManifestViewContext<'_>,
+    lease: &HlsAccessLease,
+    options: HlsCachedManifestOptions,
+) -> Result<Option<HlsPreparedManifest>, &'static str> {
+    if !options.recovery_entry_requested() {
+        return Ok(None);
+    }
+    let state = session.read().await;
+    let now_ms = app_state.hls.proxy.now_ms();
+    if !state.recovery_entry_is_current(lease, options, now_ms) {
+        return Err("recovery_context_changed");
+    }
+    let (rendered, plan) =
+        tuliprox_hls::api::HlsManifestRenderer::render_recovery_entry_window(&state, view.strip, now_ms)
+            .map_err(|_| "no_renderable_window")?;
+    if !options.permits_recovery_entry() {
+        return Err("freshness_boundary");
+    }
+    let (materialized, stripped) = if let Some(plan) = &plan {
+        (materialize_fast_window(view, &rendered.body, plan.visible.len(), plan.effective_strip_segments, false), 0)
+    } else {
+        let materialized = view.materialize(&rendered.body, "normal", HlsManifestWindowPolicy::ApplyLiveWindow);
+        let stripped = stripped_tail_segments(&materialized);
+        (materialized, stripped)
+    };
+    let snapshot = observe_hls_lease_manifest_snapshot_derivation(
+        app_state,
+        view.proxy_session_id,
+        view.access_lease_id,
+        derive_hls_recovery_entry_snapshot(&state, plan.as_ref(), &rendered, &materialized.body, stripped, now_ms),
+    )
+    .ok()
+    .flatten()
+    .ok_or("missing_window_bindings")?;
+    if !app_state.hls.proxy.recovery_entry_bindings_ready(&state, &snapshot) {
+        return Err("missing_window_bindings");
+    }
+    drop(state);
+    app_state.hls.proxy.check_recovery_entry_reserve(session, lease, options).await?;
+    let resources = HlsPublishedTransientResourceIds::from_manifest_body(&materialized.body);
+    Ok(Some((materialized, snapshot, resources, now_ms)))
+}
+
+fn materialize_fast_window(
+    view: &HlsCachedManifestViewContext<'_>,
+    body: &str,
+    visible_segments: usize,
+    effective: usize,
+    startup_recovery: bool,
+) -> HlsMaterializedSharedManifest {
+    use tuliprox_hls::initial_strip::{HlsInitialStripOutcome as Outcome, HlsInitialStripSkipReason as Skip};
+    HlsMaterializedSharedManifest {
+        initial_strip_exception: startup_recovery.then_some("startup-recovery"),
+        body: super::materialize_hls_access_manifest(body, view.access_lease_id, view.server_path),
+        mode: "normal",
+        initial_strip_outcome: hls_access_manifest_uses_startup_view(view.access_lease_state).then_some(
+            if view.strip.value == 0 {
+                Outcome::Skipped { reason: Skip::StripDisabled, visible_segments }
+            } else if effective == 0 && !startup_recovery {
+                Outcome::Skipped { reason: Skip::NotEnoughSegments, visible_segments }
+            } else {
+                Outcome::Applied {
+                    mode: match view.strip.mode {
+                        shared::model::HlsStripMode::Segments => "segments",
+                        shared::model::HlsStripMode::Seconds => "seconds",
+                    },
+                    configured: view.strip.value,
+                    effective,
+                    visible_segments,
+                }
+            },
+        ),
+    }
 }
 
 /// Retained bytes are never reconstructed from the successor's metadata. The
@@ -227,36 +464,13 @@ async fn prepare_live_window_response(
             }
             Err(_) => HlsLiveWindowPreparation::Unavailable("render_invalid_state"),
             Ok(rendered) => {
-                let materialized = HlsMaterializedSharedManifest {
-                    initial_strip_exception: plan.is_startup_recovery().then_some("startup-recovery"),
-                    body: super::materialize_hls_access_manifest(
-                        &rendered.body,
-                        view.access_lease_id,
-                        view.server_path,
-                    ),
-                    mode: "normal",
-                    initial_strip_outcome: lease.uses_entry_view().then_some(if view.strip.value == 0 {
-                        tuliprox_hls::initial_strip::HlsInitialStripOutcome::Skipped {
-                            reason: tuliprox_hls::initial_strip::HlsInitialStripSkipReason::StripDisabled,
-                            visible_segments: plan.visible.len(),
-                        }
-                    } else if plan.effective_strip_segments == 0 && !plan.is_startup_recovery() {
-                        tuliprox_hls::initial_strip::HlsInitialStripOutcome::Skipped {
-                            reason: tuliprox_hls::initial_strip::HlsInitialStripSkipReason::NotEnoughSegments,
-                            visible_segments: plan.visible.len(),
-                        }
-                    } else {
-                        tuliprox_hls::initial_strip::HlsInitialStripOutcome::Applied {
-                            mode: match view.strip.mode {
-                                shared::model::HlsStripMode::Segments => "segments",
-                                shared::model::HlsStripMode::Seconds => "seconds",
-                            },
-                            configured: view.strip.value,
-                            effective: plan.effective_strip_segments,
-                            visible_segments: plan.visible.len(),
-                        }
-                    }),
-                };
+                let materialized = materialize_fast_window(
+                    view,
+                    &rendered.body,
+                    plan.visible.len(),
+                    plan.effective_strip_segments,
+                    plan.is_startup_recovery(),
+                );
                 match observe_hls_lease_manifest_snapshot_derivation(
                     app_state,
                     view.proxy_session_id,
@@ -544,7 +758,10 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
 ) -> Option<axum::response::Response> {
     let started_at = tokio::time::Instant::now();
     let started_at_ms = app_state.hls.proxy.now_ms();
-    let proxy_session_id = session.read().await.proxy_session_id.clone();
+    let (proxy_session_id, safe_session) = {
+        let state = session.read().await;
+        (state.proxy_session_id.clone(), safe_session_key(&state.key))
+    };
     let Some(initial_publication_guard) = app_state
         .hls
         .proxy
@@ -685,10 +902,11 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
         }
         let cached = read_hls_cached_manifest(session, options, started_at_ms, app_state.hls.proxy.now_ms()).await;
         let fast_start = session.read().await.uses_fast_start_live_window();
-        if fast_start || !cached.wait_for_initial_commit {
+        if fast_start || !cached.wait_for_initial_commit || options.recovery_entry_requested() {
             let mut retained_plan = None;
             let mut retained_origin_generation = false;
-            let prepared = if fast_start {
+            let mut regular_wait_reason = None;
+            let mut prepared = if fast_start {
                 let preparation = prepare_live_window_response(
                     app_state,
                     session,
@@ -714,28 +932,8 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                 match selection {
                     Ok(prepared) => Some(prepared),
                     Err(reason) => {
-                        log_hls_manifest_wait_transition(
-                            &mut last_wait_reason,
-                            reason,
-                            session,
-                            access_lease_id,
-                            started_at,
-                            options.wait_timeout,
-                        )
-                        .await;
-                        if wait_for_hls_startup_evidence(started_at, options.wait_timeout).await {
-                            continue;
-                        }
-                        if access_lease_state == HlsAccessLeaseState::Pending && lease.last_manifest_snapshot.is_none()
-                        {
-                            return None;
-                        }
-                        debug!(
-                            "HLS live window unavailable: proxy_session={} lease={} status=503 reason={reason}",
-                            safe_proxy_session_id(&proxy_session_id),
-                            safe_hls_access_lease_id(access_lease_id),
-                        );
-                        return Some(hls_cached_manifest_temporarily_unavailable());
+                        regular_wait_reason = Some(reason);
+                        None
                     }
                 }
             } else if let Some(transient) = cached.transient_body {
@@ -826,52 +1024,124 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                 let Ok(snapshot) = snapshot else {
                     return Some(hls_cached_manifest_temporarily_unavailable());
                 };
-                let Some(snapshot) = snapshot else {
+                if let Some(snapshot) = snapshot {
+                    Some((materialized, snapshot, published_resource_ids, delivered_at_ms))
+                } else {
                     if !lease.uses_entry_view() {
                         return None;
                     }
-                    log_hls_manifest_wait_transition(
-                        &mut last_wait_reason,
-                        "missing_revision_or_head_readiness",
-                        session,
-                        access_lease_id,
-                        started_at,
-                        options.wait_timeout,
-                    )
-                    .await;
-                    if wait_for_hls_startup_evidence(started_at, options.wait_timeout).await {
-                        continue;
-                    }
-                    return Some(hls_cached_manifest_temporarily_unavailable());
-                };
-                Some((materialized, snapshot, published_resource_ids, delivered_at_ms))
+                    regular_wait_reason = Some("missing_revision_or_head_readiness");
+                    None
+                }
             } else {
                 None
             };
-            if let Some((materialized, snapshot, published_resource_ids, delivered_at_ms)) = prepared {
-                if lease.uses_entry_view()
-                    && !hls_startup_admission_allows_snapshot(&app_state.hls_ctx(), session, &snapshot, delivered_at_ms)
-                        .await
-                {
-                    log_hls_manifest_wait_transition(
-                        &mut last_wait_reason,
-                        "admission_rejected",
-                        session,
-                        access_lease_id,
-                        started_at,
-                        options.wait_timeout,
-                    )
-                    .await;
-                    if wait_for_hls_startup_evidence(started_at, options.wait_timeout).await {
-                        continue;
-                    }
-                    return Some(hls_cached_manifest_temporarily_unavailable());
+            let mut regular_admission = None;
+            if let Some((_, snapshot, _, delivered_at_ms)) = prepared.as_ref().filter(|_| lease.uses_entry_view()) {
+                let hls = app_state.hls_ctx();
+                let admission = hls.hls_proxy.startup_admission_for_snapshot(
+                    &*session.read().await,
+                    snapshot,
+                    *delivered_at_ms,
+                    false,
+                );
+                if !admission.is_some_and(|admission| admission.decision == HlsStartupAdmissionDecision::Admit) {
+                    regular_admission = admission.map(|admission| (snapshot.into(), admission));
+                    regular_wait_reason = Some("admission_rejected");
+                    prepared = None;
                 }
+            }
+            let mut recovery_entry_reason = None;
+            if prepared.is_none() {
+                match prepare_recovery_entry(app_state, session, &view, &lease, options).await {
+                    Ok(Some(fallback)) => {
+                        let fresh_pending = options.requires_newer_manifest()
+                            && (regular_wait_reason == Some("origin_freshness_or_identity")
+                                || regular_wait_reason.is_none());
+                        recovery_entry_reason =
+                            Some(if fresh_pending { "fresh_commit_pending" } else { "regular_window_unavailable" });
+                        prepared = Some(fallback);
+                        retained_plan = None;
+                        retained_origin_generation = false;
+                    }
+                    Ok(None) => {}
+                    Err(reason) => {
+                        return Some(
+                            reject_recovery_entry(
+                                app_state,
+                                &safe_session,
+                                &view,
+                                reason,
+                                reason != "recovery_context_changed",
+                            )
+                            .await,
+                        );
+                    }
+                }
+            }
+            if let Some(reason) = regular_wait_reason.filter(|_| prepared.is_none()) {
+                log_hls_manifest_wait_transition(
+                    &mut last_wait_reason,
+                    reason,
+                    session,
+                    access_lease_id,
+                    started_at,
+                    options.wait_timeout,
+                )
+                .await;
+                if wait_for_hls_startup_evidence(started_at, options.wait_timeout).await {
+                    continue;
+                }
+                if let Some((candidate, admission)) = regular_admission {
+                    let response = hls_cached_manifest_temporarily_unavailable();
+                    if admission.origin_state == HlsStartupAdmissionOriginState::Degraded {
+                        log_entry_admission_rejection(&safe_session, &view, candidate, admission, &response);
+                    }
+                    return Some(response);
+                }
+                if reason != "admission_rejected"
+                    && fast_start
+                    && access_lease_state == HlsAccessLeaseState::Pending
+                    && lease.last_manifest_snapshot.is_none()
+                {
+                    return None;
+                }
+                debug!(
+                    "HLS live window unavailable: proxy_session={} lease={} status=503 reason={reason}",
+                    safe_proxy_session_id(&proxy_session_id),
+                    safe_hls_access_lease_id(access_lease_id),
+                );
+                return Some(hls_cached_manifest_temporarily_unavailable());
+            }
+            if let Some((materialized, snapshot, published_resource_ids, _)) = prepared {
                 let startup_snapshot = snapshot.clone();
                 #[cfg(test)]
                 hls_manifest_publication_checkpoint(HlsManifestPublicationStage::Commit).await;
                 let admission_at_ms = app_state.hls.proxy.now_ms();
-                let outcome = if retained_plan.is_some() || retained_origin_generation {
+                let outcome = if recovery_entry_reason.is_some() {
+                    match app_state
+                        .hls
+                        .proxy
+                        .commit_recovery_entry_manifest(
+                            access_lease_id,
+                            &proxy_session_id,
+                            publication_guard,
+                            snapshot,
+                            published_resource_ids,
+                            options,
+                        )
+                        .await
+                    {
+                        HlsRecoveryEntryCommit::Publication(outcome) => outcome,
+                        HlsRecoveryEntryCommit::Unavailable(reason) => {
+                            if publication_retries < 8 {
+                                publication_retries += 1;
+                                continue;
+                            }
+                            return Some(reject_recovery_entry(app_state, &safe_session, &view, reason, true).await);
+                        }
+                    }
+                } else if retained_plan.is_some() || retained_origin_generation {
                     app_state
                         .hls
                         .proxy
@@ -931,6 +1201,11 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                     {
                         publication_retries += 1;
                         continue;
+                    }
+                    if recovery_entry_reason.is_some() {
+                        return Some(
+                            reject_recovery_entry(app_state, &safe_session, &view, "publication_rejected", false).await,
+                        );
                     }
                     if wait_for_hls_startup_evidence(started_at, options.wait_timeout).await {
                         continue;
@@ -998,7 +1273,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                         publication_guard.entry_generation(),
                     )
                     .await;
-                if fast_start {
+                if fast_start || recovery_entry_reason.is_some() {
                     let current_session =
                         app_state.hls.proxy.sessions().get_by_proxy_session_id(&proxy_session_id).await?;
                     if !Arc::ptr_eq(&current_session, session) {
@@ -1030,6 +1305,16 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cached_manifest_response
                             continue;
                         }
                     }
+                }
+                if let Some(reason) = recovery_entry_reason {
+                    let candidate = HlsEntryCandidate::from(&committed_snapshot);
+                    warn_entry(format_args!(
+                        "HLS recovery entry published: session={} proxy_session={} lease={} recovery={} reason={reason} commit={} first={} last={} status={}",
+                        safe_session, safe_proxy_session_id(&proxy_session_id),
+                        safe_hls_access_lease_id(access_lease_id), options.recovery_entry_phase(),
+                        candidate.commit, candidate.first, candidate.last,
+                        response.status().as_u16(),
+                    ));
                 }
                 return Some(response);
             }

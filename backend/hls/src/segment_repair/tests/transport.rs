@@ -27,6 +27,7 @@ fn repair_prewarm_candidates_include_only_ready_clear_origin_ts_media() {
             origin_byte_range: None,
             map_ref: None,
             encryption: None,
+            occurrence_identity: None,
             retained_resource_identity: None,
             origin_fetch_ref: None,
             status: SegmentCacheStatus::Ready { content_length: 1_024, ready_at_ms: 1 },
@@ -35,6 +36,7 @@ fn repair_prewarm_candidates_include_only_ready_clear_origin_ts_media() {
         },
     );
     let snapshot = HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
         source_commit_identity: HlsManifestCommitIdentity::new(1),

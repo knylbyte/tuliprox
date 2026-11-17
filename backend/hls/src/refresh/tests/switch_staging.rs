@@ -276,7 +276,7 @@ async fn different_host_single_candidate_retries_do_not_prove_acceptance() {
         segment_worker_pool: Arc::new(HlsSegmentWorkerPool::default()),
         map_worker_pool: Arc::new(HlsMapWorkerPool::default()),
         origin_manifest_timeout_ms: 2_000,
-        manifest_recovery_burst: HlsManifestRecoveryBurstConfig::default(),
+        manifest_recovery_burst: HlsManifestRecoveryBurstConfig { level: HlsManifestRecoveryBurstLevel::Off },
         strip: StripConfig { mode: HlsStripMode::Segments, value: 0 },
         retry_policy: no_delay_policy(),
         reverse_proxy_rewrite_secret: b"secret".to_vec(),
@@ -286,6 +286,7 @@ async fn different_host_single_candidate_retries_do_not_prove_acceptance() {
         refresh_identity: None,
         acceptance_directive: HlsManifestAcceptanceDirective::none(),
         access_lease_id: None,
+        retained_poll_origin: None,
         disabled_headers: None,
         now_ms: 100,
         origin_io: None,
@@ -489,15 +490,18 @@ async fn host_switch_conflict_runs_one_full_plan_then_only_bounded_follow_ups() 
         refresh_identity: None,
         acceptance_directive: HlsManifestAcceptanceDirective::none(),
         access_lease_id: None,
+        retained_poll_origin: None,
         disabled_headers: None,
         now_ms: 100,
         origin_io: None,
         post_refresh_runtime: None,
     };
 
+    let expected_requests =
+        request.retry_policy.attempt_count() + request.manifest_recovery_burst.level.extra_candidates();
     assert!(trigger_origin_refresh_sync(request).await);
 
-    assert_eq!(candidate_hits.load(Ordering::SeqCst), 5);
+    assert_eq!(candidate_hits.load(Ordering::SeqCst), expected_requests);
     let session = session.read().await;
     assert_eq!(session.origin_seq_highwater, Some(100));
     let episode = session.origin_control.acceptance_episode.as_ref().expect("held acceptance episode");
@@ -696,7 +700,7 @@ fn switch_staging_rejects_map_fetch_outside_fixture_envelope_before_network() {
     let identity = super::super::super::manifest_acceptance::HlsManifestRecoveryCandidateIdentity::from_candidate(
         0,
         Some("candidate.example"),
-        &switch_manifest_body(true),
+        &switch_manifest_body(502, true),
     );
     assert_eq!(
         episode.select_candidate(episode.generation, identity),
@@ -738,7 +742,7 @@ async fn staged_cross_host_aes_candidate_with_generation_local_ready_key_commits
     let session = test_session();
     prepare_cross_host_baseline(&session).await;
     let now_ms = current_time_millis();
-    let candidate = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:500\n#EXT-X-TARGETDURATION:4\n\
+    let candidate = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:502\n#EXT-X-TARGETDURATION:4\n\
         #EXT-X-KEY:METHOD=AES-128,URI=\"key.php\"\n\
         #EXTINF:4.0,\nfirst.ts\n#EXTINF:4.0,\nsecond.ts\n";
     let mut fetched = switch_fetched_manifest(&origin.base_url, false);
@@ -877,7 +881,7 @@ async fn cross_host_switch_commits_only_after_complete_map_and_segment_staging()
             .filter(|segment| segment.origin_key.origin_epoch == session.origin_epoch)
             .collect::<Vec<_>>();
         assert_eq!(switched.len(), 2);
-        assert_eq!(switched[0].origin_key.host_local_sequence, 500);
+        assert_eq!(switched[0].origin_key.host_local_sequence, 502);
         assert!(switched[0].discontinuity_before);
         assert!(matches!(
             switched[0].status,
@@ -977,45 +981,47 @@ async fn stale_progress_generation_rejects_and_removes_completed_switch_staging(
 
 #[tokio::test]
 async fn switch_segment_staging_failure_holds_episode_without_timeline_mutation() {
-    let manifest = switch_manifest_body(false);
-    let origin = spawn_test_origin(Arc::new(move |path| {
-        if path_has_extension(&path, "m3u8") {
-            (200, Vec::new(), manifest.clone())
-        } else {
-            (404, Vec::new(), String::new())
-        }
-    }))
-    .await;
-    let temp_dir = tempfile::tempdir().expect("switch cache tempdir");
-    let cache = Arc::new(HlsSegmentCache::with_cache_path(temp_dir.path()));
-    let session = test_session();
-    prepare_cross_host_baseline(&session).await;
-    let (baseline_epoch, baseline_proxy_next, baseline_sequences) = {
+    for (sequence, expected_fetches) in [(500, 0), (900, 1)] {
+        let manifest = switch_manifest_body(sequence, false);
+        let origin = spawn_test_origin(Arc::new(move |path| {
+            if path_has_extension(&path, "m3u8") {
+                (200, Vec::new(), manifest.clone())
+            } else {
+                (404, Vec::new(), String::new())
+            }
+        }))
+        .await;
+        let temp_dir = tempfile::tempdir().expect("switch cache tempdir");
+        let cache = Arc::new(HlsSegmentCache::with_cache_path(temp_dir.path()));
+        let session = test_session();
+        prepare_cross_host_baseline(&session).await;
+        let (baseline_epoch, baseline_proxy_next, baseline_sequences) = {
+            let session = session.read().await;
+            (session.origin_epoch, session.proxy_next_seq, session.segments.keys().copied().collect::<Vec<_>>())
+        };
+        let request = switch_test_request(Arc::clone(&session), cache, &origin.base_url);
+        let target_url = Url::parse(&format!("{}/live/user/pass/12345.m3u8", origin.base_url)).expect("target url");
+
+        let result = retry_test_manifest_recovery_chain(
+            &request,
+            target_url,
+            HlsManifestRejectLogReason::PinnedHostRecoveryRejected,
+        )
+        .await;
+
+        assert!(matches!(result, Err(OriginManifestFetchError::RetryExhausted)));
         let session = session.read().await;
-        (session.origin_epoch, session.proxy_next_seq, session.segments.keys().copied().collect::<Vec<_>>())
-    };
-    let request = switch_test_request(Arc::clone(&session), cache, &origin.base_url);
-    let target_url = Url::parse(&format!("{}/live/user/pass/12345.m3u8", origin.base_url)).expect("target url");
-
-    let result = retry_test_manifest_recovery_chain(
-        &request,
-        target_url,
-        HlsManifestRejectLogReason::PinnedHostRecoveryRejected,
-    )
-    .await;
-
-    assert!(matches!(result, Err(OriginManifestFetchError::RetryExhausted)));
-    let session = session.read().await;
-    assert_eq!(session.origin_epoch, baseline_epoch);
-    assert_eq!(session.proxy_next_seq, baseline_proxy_next);
-    assert_eq!(session.segments.keys().copied().collect::<Vec<_>>(), baseline_sequences);
-    let episode = session.origin_control.acceptance_episode.as_ref().expect("failed switch episode retained");
-    assert!(episode.full_burst_completed);
-    assert_eq!(episode.full_bursts_completed, 1);
-    assert_eq!(episode.state, super::super::super::manifest_acceptance::HlsManifestAcceptanceState::Holding);
-    drop(session);
-    let requests = origin.requests.lock().await;
-    assert_eq!(requests.iter().filter(|path| path_has_extension(path, "ts")).count(), 1);
+        assert_eq!(session.origin_epoch, baseline_epoch);
+        assert_eq!(session.proxy_next_seq, baseline_proxy_next);
+        assert_eq!(session.segments.keys().copied().collect::<Vec<_>>(), baseline_sequences);
+        let episode = session.origin_control.acceptance_episode.as_ref().expect("failed switch episode retained");
+        assert!(episode.full_burst_completed);
+        assert_eq!(episode.full_bursts_completed, 1);
+        assert_eq!(episode.state, super::super::super::manifest_acceptance::HlsManifestAcceptanceState::Holding);
+        drop(session);
+        let requests = origin.requests.lock().await;
+        assert_eq!(requests.iter().filter(|path| path_has_extension(path, "ts")).count(), expected_fetches);
+    }
 }
 
 #[tokio::test]

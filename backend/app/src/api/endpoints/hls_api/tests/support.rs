@@ -37,11 +37,11 @@ pub(in crate::api::endpoints::hls_api::tests) use self::{
         transient_manifest_body_from_sequence,
     },
     origins::{
-        encode_test_manifest, spawn_test_binary_origin, spawn_test_encoded_manifest_origin, spawn_test_segment_origin,
-        spawn_test_status_origin, spawn_test_transient_origin,
-        spawn_test_transient_origin_with_delayed_binary_response, spawn_test_transient_origin_with_delayed_response,
-        spawn_test_transient_origin_with_response, TestBinaryOriginResponse, TestEncodedManifestOrigin,
-        TestSegmentOrigin,
+        encode_test_manifest, spawn_test_binary_origin, spawn_test_binary_origin_with_request,
+        spawn_test_encoded_manifest_origin, spawn_test_segment_origin, spawn_test_status_origin,
+        spawn_test_transient_origin, spawn_test_transient_origin_with_delayed_binary_response,
+        spawn_test_transient_origin_with_delayed_response, spawn_test_transient_origin_with_response,
+        TestBinaryOriginResponse, TestEncodedManifestOrigin, TestSegmentOrigin,
     },
     owner_handoff::{publish_owner_handoff_test_manifest, CanonicalOwnerHandoffFixture},
     recording::{

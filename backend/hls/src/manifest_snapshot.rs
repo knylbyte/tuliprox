@@ -12,6 +12,7 @@ use super::{
 };
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
+use tuliprox_parser::hls::origin_manifest::ParsedByteRange;
 
 /// Exact manifest delivery from which lease-local playback evidence is derived.
 pub enum HlsLeaseManifestSnapshotInput<'a> {
@@ -87,6 +88,44 @@ enum ParsedEncryptionDirective {
     Encrypt(Arc<HlsEncryptionSignature>),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HlsCachedManifestSource {
+    pub(crate) origin_commits: u64,
+    pub(crate) recovery_entry: bool,
+    pub(crate) bindings: Box<[HlsCachedSegmentBinding]>,
+    pub(crate) origin_work_generation: u64,
+    pub(crate) body: Arc<str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HlsCachedSegmentBinding {
+    pub(crate) media_start_ms: u64,
+    cache_key: crate::SegmentCacheKey,
+    occurrence: Option<crate::resource_identity::HlsSegmentOccurrenceIdentity>,
+    byte_range: Option<ParsedByteRange>,
+    map: Option<(crate::ProxyMapId, Option<ParsedByteRange>)>,
+    encryption: Option<crate::HlsSegmentEncryption>,
+    published_map: Option<HlsMapSignature>,
+}
+
+impl HlsCachedSegmentBinding {
+    fn capture(session: &HlsSession, entry: &crate::SegmentEntry, published_map: Option<HlsMapSignature>) -> Self {
+        Self {
+            media_start_ms: entry.media_start_ms,
+            cache_key: entry.cache_key.clone(),
+            occurrence: entry.occurrence_identity,
+            byte_range: entry.origin_byte_range,
+            map: entry.map_ref.map(|id| (id, session.maps.get(&id).and_then(|map| map.byte_range))),
+            encryption: entry.encryption.clone(),
+            published_map,
+        }
+    }
+
+    pub(crate) fn is_current(&self, session: &HlsSession, entry: &crate::SegmentEntry) -> bool {
+        *self == Self::capture(session, entry, self.published_map.clone())
+    }
+}
+
 /// Builds the single authoritative lease snapshot from the exact bytes delivered to the client.
 ///
 /// The normal path additionally binds those bytes to the current shared render and cache
@@ -101,7 +140,15 @@ pub fn derive_hls_lease_manifest_snapshot(
             if !plan.is_current(session) || rendered.segment_proxy_seqs != plan.visible {
                 return Ok(None);
             }
-            derive_rendered_snapshot(session, rendered, materialized_body, 0, delivered_at_ms, Some((*plan).clone()))
+            derive_rendered_snapshot(
+                session,
+                rendered,
+                materialized_body,
+                0,
+                delivered_at_ms,
+                Some((*plan).clone()),
+                false,
+            )
         }
         HlsLeaseManifestSnapshotInput::NormalCacheTimeline {
             session,
@@ -136,6 +183,25 @@ pub fn derive_hls_lease_manifest_snapshot(
     }
 }
 
+pub fn derive_hls_recovery_entry_snapshot(
+    session: &HlsSession,
+    plan: Option<&crate::live_window::HlsLiveWindowPlan>,
+    rendered: &crate::renderer::RenderedManifest,
+    materialized_body: &str,
+    stripped_tail_segments: usize,
+    delivered_at_ms: u64,
+) -> Result<Option<HlsLeaseManifestSnapshot>, HlsManifestLimitViolation> {
+    derive_rendered_snapshot(
+        session,
+        rendered,
+        materialized_body,
+        stripped_tail_segments,
+        delivered_at_ms,
+        plan.cloned(),
+        true,
+    )
+}
+
 fn derive_transient_materialized_snapshot(
     materialized_body: &str,
     source_commit_identity: HlsManifestCommitIdentity,
@@ -167,7 +233,7 @@ fn derive_normal_snapshot(
     if rendered.body != committed_body {
         return Ok(None);
     }
-    derive_rendered_snapshot(session, rendered, materialized_body, stripped_tail_segments, delivered_at_ms, None)
+    derive_rendered_snapshot(session, rendered, materialized_body, stripped_tail_segments, delivered_at_ms, None, false)
 }
 
 fn derive_rendered_snapshot(
@@ -177,6 +243,7 @@ fn derive_rendered_snapshot(
     stripped_tail_segments: usize,
     delivered_at_ms: u64,
     window_plan: Option<crate::live_window::HlsLiveWindowPlan>,
+    recovery_entry: bool,
 ) -> Result<Option<HlsLeaseManifestSnapshot>, HlsManifestLimitViolation> {
     let Some(source_commit_identity) = window_plan
         .as_ref()
@@ -194,10 +261,17 @@ fn derive_rendered_snapshot(
         if parsed.units.len() != visible_proxy_seqs.len() {
             return None;
         }
+        let first_proxy_seq = *visible_proxy_seqs.first()?;
+        let previous = window_plan.as_ref().and_then(|plan| plan.previous_window);
         let mut segments = Vec::with_capacity(visible_proxy_seqs.len());
+        let mut bindings = Vec::with_capacity(visible_proxy_seqs.len());
         for (proxy_seq, unit) in visible_proxy_seqs.iter().zip(&parsed.units) {
             let entry = session.segments.get(proxy_seq)?;
-            if entry.duration_ms != unit.duration_ms || entry.discontinuity_before != unit.discontinuity_before {
+            if entry.duration_ms != unit.duration_ms
+                || ((*proxy_seq != first_proxy_seq || window_plan.is_some())
+                    && session.rendered_discontinuity_before(first_proxy_seq, entry, previous)
+                        != unit.discontinuity_before)
+            {
                 return None;
             }
             let map_ref_ready = entry.map_ref.is_none_or(|map_id| {
@@ -207,12 +281,12 @@ fn derive_rendered_snapshot(
                 proxy_seq: *proxy_seq,
                 duration_ms: entry.duration_ms,
                 uri: Arc::from(unit.uri.as_str()),
-                discontinuity_before: entry.discontinuity_before,
+                discontinuity_before: unit.discontinuity_before,
                 map_ref_ready,
                 encryption: unit.active_encryption.clone(),
             });
+            bindings.push(HlsCachedSegmentBinding::capture(session, entry, unit.active_map.clone()));
         }
-        let first_proxy_seq = segments.first()?.proxy_seq;
         if parsed.media_sequence != first_proxy_seq
             || parsed.discontinuity_sequence != rendered.discontinuity_sequence
             || parsed.target_duration_ms != rendered.target_duration_ms
@@ -231,16 +305,24 @@ fn derive_rendered_snapshot(
             active_map: parsed.units.last().and_then(|unit| unit.active_map.clone()),
             active_encryption: parsed.units.last().and_then(|unit| unit.active_encryption.clone()),
         })?;
+        let body: Arc<str> = Arc::from(materialized_body);
+        snapshot.cached_source = Some(Arc::new(HlsCachedManifestSource {
+            origin_commits: window_plan
+                .as_ref()
+                .filter(|_| !recovery_entry)
+                .map_or_else(|| session.last_normal_manifest_origin_commits(), |plan| plan.origin_commits),
+            recovery_entry,
+            bindings: bindings.into_boxed_slice(),
+            origin_work_generation: session.activity.origin_work_generation,
+            body: Arc::clone(&body),
+        }));
         if let Some(startup) = &session.startup {
             let revisions = visible_proxy_seqs
                 .iter()
                 .map(|seq| Some((*seq, startup.revisions.get(seq)?.clone())))
                 .collect::<Option<std::collections::BTreeMap<_, _>>>()?;
             snapshot.startup_revisions = Some(Arc::new(super::HlsManifestRevisions {
-                window_plan: window_plan.map(|plan| crate::live_window::HlsLiveWindowPublication {
-                    plan,
-                    body: Arc::from(materialized_body),
-                }),
+                window_plan: window_plan.map(|plan| crate::live_window::HlsLiveWindowPublication { plan, body }),
                 mode: startup.config.mode,
                 retained_start_seq: session.segments.first_key_value().map_or(first_proxy_seq, |(seq, _)| *seq),
                 revisions,
@@ -261,6 +343,7 @@ fn derive_transient_snapshot(
     let last_proxy_seq = template.segments.last()?.proxy_seq;
     Some(HlsLeaseManifestSnapshot {
         startup_revisions: None,
+        cached_source: None,
         delivery_mode: HlsManifestDeliveryMode::TransientPassthrough,
         source_commit_identity,
         uri_materialization,
@@ -313,6 +396,7 @@ fn snapshot_from_segments(parts: HlsLeaseManifestSnapshotParts) -> Option<HlsLea
     let container = classify_container(active_map.as_ref(), &segments);
     Some(HlsLeaseManifestSnapshot {
         startup_revisions: None,
+        cached_source: None,
         delivery_mode,
         source_commit_identity,
         uri_materialization,

@@ -323,19 +323,30 @@ async fn resumed_alternative_retries_the_current_reference_after_transport_failu
     )
     .await;
     assert!(first.is_err());
-    {
+    let (failed_at, retry_at) = {
         let mut state = request.session.write().await;
         state.origin_control.qualification.record_failure();
-        state.origin_refresh.mark_failure(super::super::current_time_millis());
+        let failed_at = super::super::current_time_millis();
+        state.origin_refresh.mark_failure(failed_at);
         assert_eq!(state.origin_epoch, 0);
         assert!(matches!(state.segments[&50].status, SegmentCacheStatus::Ready { .. }));
-    }
-    let retry_at = request.session.read().await.origin_refresh.next_fetch_allowed_at_ms;
-    let delay = retry_at.saturating_sub(super::super::current_time_millis());
+        (failed_at, state.origin_refresh.next_fetch_allowed_at_ms)
+    };
+    let delay = retry_at.saturating_sub(failed_at);
     assert!(!request.session.read().await.origin_refresh.is_due(retry_at - 1));
     assert!(delay > 0, "the existing failed-round backoff must remain in force");
-    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-    assert!(super::super::current_time_millis() >= retry_at);
+    // Tokio's monotonic timer can wake before the wall clock reaches the retry deadline.
+    tokio::time::timeout(std::time::Duration::from_millis(delay + 2_000), async {
+        loop {
+            let remaining = retry_at.saturating_sub(super::super::current_time_millis());
+            if remaining == 0 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(remaining)).await;
+        }
+    })
+    .await
+    .expect("the wall clock must reach the retry deadline");
     println!("failed_round_attempts=5 existing_backoff_ms={delay} retry_due=true next_manifest_head=435");
     origin.state.fail_probe.store(false, Ordering::Release);
     origin.state.head.store(435, Ordering::Release);
@@ -440,7 +451,7 @@ async fn content_anchor_rejects_missing_different_and_noncomparable_references()
             origin.state.corrupt_probe.store(true, Ordering::Release);
         }
         if case == "range" {
-            candidate.body = candidate.body.replace(
+            candidate.body = candidate.body.replace("#EXTM3U\n", "#EXTM3U\n#EXT-X-VERSION:4\n").replace(
                 &format!("{}/media/437.ts?fixture=1", origin.base(false)),
                 &format!("#EXT-X-BYTERANGE:188@0\n{}/media/437.ts?fixture=1", origin.base(false)),
             );
@@ -464,7 +475,7 @@ async fn content_anchor_rejects_missing_different_and_noncomparable_references()
             let key = request.session.read().await.segments[&50].cache_key.clone();
             request.segment_cache.delete(&key).await.unwrap();
         }
-        mark_full_burst_ready_for_switch_staging(&request.session, &candidate).await;
+        super::support::select_completed_burst_candidate(&mut *request.session.write().await, &candidate, 100);
         let result = super::super::commit_manifest_recovery_candidate(
             &request,
             candidate,

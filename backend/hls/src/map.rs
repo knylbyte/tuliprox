@@ -18,12 +18,8 @@ impl From<u64> for ProxyMapId {
 #[derive(Clone, Eq, PartialEq)]
 pub struct OriginMapKey {
     pub origin_epoch: u64,
-    /// Concrete absolute MAP fetch URI resolved against the final manifest URL.
-    ///
-    /// This may intentionally contain a provider mirror, redirect target, or CDN
-    /// host. Do not normalize it back to `provider://` or the original manifest
-    /// host unless a separate semantic identity is introduced and refetch safety
-    /// for relative EXT-X-MAP URIs is proven.
+    /// Original absolute MAP URI resolved against the final manifest URL.
+    /// The current fetch target is tracked separately.
     pub resolved_origin_uri: String,
     pub byte_range: Option<ParsedByteRange>,
 }
@@ -61,8 +57,7 @@ impl Hash for OriginMapKey {
 pub struct OriginMapFetchRef {
     /// Concrete URL used to refetch the MAP object.
     ///
-    /// Keep this aligned with `OriginMapKey::resolved_origin_uri`; relative MAP
-    /// URIs must remain resolved against the final manifest URL after redirects.
+    /// Resolved against the current manifest's final URL, including its delivery host.
     pub resolved_origin_url: String,
     pub byte_range: Option<ParsedByteRange>,
     pub valid_until_ms: Option<u64>,

@@ -386,6 +386,7 @@ pub(in crate::api::endpoints::hls_api::tests) fn test_segment_entry(
         origin_byte_range: None,
         map_ref: None,
         encryption: None,
+        occurrence_identity: None,
         retained_resource_identity: None,
         origin_fetch_ref: Some(OriginSegmentFetchRef {
             resolved_origin_url: format!("http://origin.example.com/{proxy_seq}.ts"),
@@ -442,6 +443,7 @@ pub(in crate::api::endpoints::hls_api::tests) async fn publish_test_transient_re
         .await
         .expect("test resource lease accepts manifest publication");
     let snapshot = HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::TransientPassthrough,
         source_commit_identity: HlsManifestCommitIdentity::new(now_ms),

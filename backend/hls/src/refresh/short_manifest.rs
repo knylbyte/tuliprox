@@ -162,7 +162,8 @@ pub(super) async fn qualify_short_manifest_if_needed(
             && crate::manifest_fetch::fetched_effective_manifest_host(fetched).as_deref()
                 == session.origin_control.pinned_host.as_deref()
     };
-    if qualified {
+    // The ordinary commit rechecks the epoch transition under its write lock.
+    if qualified || super::origin_probe::is_cache_epoch_candidate(request, fetched, &manifest).await {
         return None;
     }
     {
@@ -296,7 +297,7 @@ async fn run_qualification(
     .await
 }
 
-pub(super) fn record_origin_qualification(session: &mut HlsSession, segment_count: usize) {
+pub(super) fn record_origin_qualification(session: &mut HlsSession, segment_count: usize, restart: bool) {
     let basis = HlsOriginQualificationBasis::capture(session);
     if session.origin_control.qualification.qualified_windows(&basis).is_some() {
         return;
@@ -309,7 +310,7 @@ pub(super) fn record_origin_qualification(session: &mut HlsSession, segment_coun
             .acceptance_episode
             .as_ref()
             .is_some_and(|episode| episode.generation == generation && episode.full_burst_completed);
-    let windows = if (1..3).contains(&segment_count) && full_burst {
+    let windows = if (1..3).contains(&segment_count) && (full_burst || restart) {
         crate::short_manifest::log_short_window_warning(session, segment_count, "origin window qualified");
         HlsQualifiedOriginWindows::ShortAllowed
     } else if segment_count >= 3 {

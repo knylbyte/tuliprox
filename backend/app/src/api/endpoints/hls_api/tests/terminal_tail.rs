@@ -1406,6 +1406,7 @@ pub(in crate::api::endpoints::hls_api::tests) fn regression_origin_refresh_reque
         refresh_identity: None,
         acceptance_directive: HlsManifestAcceptanceDirective::none(),
         access_lease_id,
+        retained_poll_origin: None,
         disabled_headers: None,
         now_ms: super::super::current_time_millis(),
         origin_io: None,

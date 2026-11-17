@@ -198,6 +198,10 @@ pub(super) fn estimated_transient_resource_entry_bytes(
         .saturating_add(resource_id.0.len())
         .saturating_add(resource.id.0.len())
         .saturating_add(resource.resolved_origin_uri.len())
+        .saturating_add(resource.occurrence_binding.as_ref().map_or(0, |_| {
+            std::mem::size_of::<crate::transient_manifest::occurrence::TransientOccurrenceBinding>()
+                .saturating_add(ESTIMATED_ARC_ALLOCATION_OVERHEAD_BYTES)
+        }))
         .saturating_add(resource.content_type_hint.as_ref().map_or(0, String::len))
         .saturating_add(resource.file_ext_hint.as_ref().map_or(0, String::len))
         .saturating_add(std::mem::size_of::<CacheAccessState>())

@@ -41,7 +41,11 @@ impl TransientPassthroughState {
         if !matches!(entry.status, TransientObjectCacheStatus::Ready { .. })
             || entry.binding != binding
             || (resource_kind == TransientResourceKind::Key && entry.ready_content_length() != Some(16))
-            || entry.expires_at_ms < now_ms
+            || (entry.expires_at_ms < now_ms
+                && !self
+                    .resources
+                    .get(key.transient_resource_id())
+                    .is_some_and(|resource| resource.access.retention.protects(now_ms)))
         {
             return None;
         }
@@ -184,7 +188,12 @@ impl TransientPassthroughState {
         if !self.object_fetch_entry_matches(token) {
             return false;
         }
-        if !self.binding_is_current(&token.binding, now_ms) {
+        if !self.binding_is_current(&token.binding, now_ms)
+            || !self
+                .resources
+                .get(&token.binding.resource_id)
+                .is_some_and(|resource| self.origin_resource_is_fetchable(resource, now_ms))
+        {
             let _removed = self.remove_object_entry(&token.lookup_key);
             return false;
         }

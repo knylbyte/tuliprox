@@ -5,7 +5,7 @@ use super::{
     TransientObjectResourceBinding, TransientResourceFile, TransientResourceId, TransientResourceRef,
     TransientResourceRevision, TRANSIENT_RESOURCE_ID_KEY_CONTEXT, TRANSIENT_RESOURCE_ID_LEN,
 };
-use crate::transient_manifest::TransientRewriteCheckpoint;
+use crate::{resource_identity::HlsMediaResourceIdentity, transient_manifest::TransientRewriteCheckpoint};
 use axum::http::StatusCode;
 use base64::{engine::general_purpose, Engine as _};
 use std::{collections::HashSet, fmt, sync::Arc};
@@ -50,6 +50,7 @@ pub(crate) enum HlsTransientManifestCommitError {
     LocalRepresentationLimit(HlsManifestLimitViolation),
     SnapshotUnavailable,
     CommitGenerationExhausted,
+    OccurrenceConflict,
 }
 
 impl From<HlsManifestLimitViolation> for HlsTransientManifestCommitError {
@@ -283,6 +284,7 @@ impl TransientResourceRef {
             access: Arc::new(CacheAccessState::new()),
             revision: TransientResourceRevision::default(),
             origin_account_generation: 0,
+            occurrence_binding: None,
         }
     }
 
@@ -292,6 +294,24 @@ impl TransientResourceRef {
             let identity = format!("account-generation:{generation}\0{}", self.resolved_origin_uri);
             self.id = build_transient_resource_id(&identity, rewrite_secret);
         }
+    }
+
+    pub(crate) fn bind_normal_key(&mut self, resource_uri: &str, generation: u64, rewrite_secret: &[u8]) {
+        let binding = HlsMediaResourceIdentity::from_url(resource_uri, None);
+        let identity = format!("normal-key:{generation}:{:02x?}", binding.semantic_key().bytes());
+        self.id = build_transient_resource_id(&identity, rewrite_secret);
+        self.origin_account_generation = generation;
+    }
+
+    pub(crate) fn origin_account_generation(&self) -> u64 { self.origin_account_generation }
+
+    pub(crate) fn bind_occurrence(
+        &mut self,
+        binding: crate::transient_manifest::occurrence::TransientOccurrenceBinding,
+        rewrite_secret: &[u8],
+    ) {
+        self.id = build_transient_resource_id(&binding.id_input(), rewrite_secret);
+        self.occurrence_binding = Some(Arc::new(binding));
     }
 
     pub fn is_valid_at(&self, now_ms: u64) -> bool { now_ms <= self.expires_at_ms }
@@ -306,6 +326,7 @@ impl TransientResourceRef {
         self.file_ext_hint = next.file_ext_hint;
         self.expires_at_ms = next.expires_at_ms;
         self.revision = next.revision;
+        self.occurrence_binding = next.occurrence_binding;
     }
 
     pub(super) fn has_same_cache_identity(&self, other: &Self) -> bool {
@@ -316,6 +337,7 @@ impl TransientResourceRef {
             && self.resolved_origin_uri == other.resolved_origin_uri
             && self.content_type_hint == other.content_type_hint
             && self.file_ext_hint == other.file_ext_hint
+            && self.occurrence_binding == other.occurrence_binding
     }
 
     pub fn active_readers(&self) -> u32 { self.access.active_readers() }
@@ -335,6 +357,7 @@ impl fmt::Debug for TransientResourceRef {
             .field("active_readers", &self.access.active_readers())
             .field("revision", &self.revision)
             .field("origin_account_generation", &self.origin_account_generation)
+            .field("occurrence_binding", &self.occurrence_binding)
             .finish()
     }
 }

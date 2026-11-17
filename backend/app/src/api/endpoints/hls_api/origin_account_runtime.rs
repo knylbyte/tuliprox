@@ -4,10 +4,56 @@ use super::{
     session::*,
     *,
 };
+use tuliprox_hls::api::{HlsRetainedPollOrigin, HlsRetainedPollOriginGuard};
+
+#[derive(Clone, Copy)]
+pub(super) struct RetainedOriginPreparation<'a> {
+    pub session: &'a HlsSessionHandle,
+    pub origin: &'a HlsRetainedPollOrigin,
+}
+
+impl RetainedOriginPreparation<'_> {
+    async fn lock<'a>(
+        &'a self,
+        app_state: &'a AppState,
+    ) -> Result<HlsRetainedPollOriginGuard<'a>, HlsOriginRuntimeAcquireError> {
+        app_state.hls.proxy.lock_retained_poll_origin(self.session, self.origin).await.ok_or_else(stale_origin_work)
+    }
+
+    pub(super) async fn with_current<T>(
+        &self,
+        app_state: &AppState,
+        operation: impl FnOnce(&mut tuliprox_hls::api::HlsSession, u64) -> Result<T, HlsOriginRuntimeAcquireError>,
+    ) -> Result<T, HlsOriginRuntimeAcquireError> {
+        let guard = self.lock(app_state).await?;
+        let mut session = self.session.write().await;
+        let now_ms = app_state.hls.proxy.now_ms();
+        if !guard.allows_start(&session, now_ms) {
+            return Err(stale_origin_work());
+        }
+        operation(&mut session, now_ms)
+    }
+}
+
+fn stale_origin_work() -> HlsOriginRuntimeAcquireError {
+    HlsOriginRuntimeAcquireError::Fatal(StatusCode::SERVICE_UNAVAILABLE)
+}
+
+pub(super) fn ensure_retained_origin_policy(
+    session: &tuliprox_hls::api::HlsSession,
+    connection_kind: crate::api::model::ConnectionKind,
+    priority: i8,
+) -> Result<(), HlsOriginRuntimeAcquireError> {
+    let current = session.effective_origin_acquire_policy_or_default();
+    if current.connection_kind != connection_kind || current.priority != priority {
+        return Err(stale_origin_work());
+    }
+    Ok(())
+}
 
 /// Prepares the origin account runtime for HLS origin work. A healthy known binding is reused without the
 /// prepare lock; otherwise the locked path rebinds or acquires an account.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn prepare_hls_origin_runtime(
     app_state: &Arc<AppState>,
     session: &HlsSessionHandle,
@@ -22,6 +68,43 @@ pub(super) async fn prepare_hls_origin_runtime(
     work_class: HlsOriginWorkClass,
     now_ms: u64,
 ) -> Result<PreparedHlsOriginRuntime, HlsOriginRuntimeAcquireError> {
+    prepare_hls_origin_runtime_for(
+        app_state,
+        session,
+        input,
+        raw_request_url,
+        session_entry_url,
+        proxy_session_id,
+        fingerprint,
+        connection_kind,
+        priority,
+        work_kind,
+        work_class,
+        now_ms,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+pub(super) async fn prepare_hls_origin_runtime_for(
+    app_state: &Arc<AppState>,
+    session: &HlsSessionHandle,
+    input: &ConfigInput,
+    raw_request_url: &str,
+    session_entry_url: &str,
+    proxy_session_id: &ProxySessionId,
+    fingerprint: &Fingerprint,
+    connection_kind: crate::api::model::ConnectionKind,
+    priority: i8,
+    work_kind: HlsOriginWorkKind,
+    work_class: HlsOriginWorkClass,
+    now_ms: u64,
+    retained: Option<RetainedOriginPreparation<'_>>,
+) -> Result<PreparedHlsOriginRuntime, HlsOriginRuntimeAcquireError> {
+    if let Some(retained) = retained {
+        retained.with_current(app_state, |_, _| Ok(())).await?;
+    }
     {
         let current = session.read().await;
         if current.origin_source.input_id != input.id
@@ -53,8 +136,10 @@ pub(super) async fn prepare_hls_origin_runtime(
                 &binding,
             )
             .await?;
-            let mut current = session.write().await;
-            if !current.is_gc_marked_for_removal() && observed.matches_session(&current) {
+            let reuse = |current: &mut tuliprox_hls::api::HlsSession| {
+                if current.is_gc_marked_for_removal() || !observed.matches_session(current) {
+                    return Ok(None);
+                }
                 if current.origin_account_runtime.is_none() {
                     current.origin_account_runtime = Some(Arc::new(AppHlsOriginAccountRuntime::new(
                         Arc::downgrade(app_state),
@@ -65,15 +150,28 @@ pub(super) async fn prepare_hls_origin_runtime(
                         fingerprint.clone(),
                     )));
                 }
-                return Ok(PreparedHlsOriginRuntime::published(
-                    prepared,
-                    HlsOriginAccountSnapshot::from_session(&current),
-                ));
+                Ok(Some(PreparedHlsOriginRuntime::published(prepared, HlsOriginAccountSnapshot::from_session(current))))
+            };
+            let prepared = if let Some(retained) = retained {
+                retained.with_current(app_state, |current, _| reuse(current)).await?
+            } else {
+                reuse(&mut *session.write().await)?
+            };
+            if let Some(prepared) = prepared {
+                return Ok(prepared);
             }
         }
     }
     let prepare_lock = Arc::clone(&session.read().await.origin_account_prepare_lock);
-    let _prepare_guard = prepare_lock.lock().await;
+    let lock = prepare_lock.lock();
+    #[cfg(test)]
+    let lock = super::manifest::observe_retained_origin_prepare_lock(lock);
+    let _prepare_guard = lock.await;
+    let now_ms = if let Some(retained) = retained {
+        retained.with_current(app_state, |_, now_ms| Ok(now_ms)).await?
+    } else {
+        now_ms
+    };
     let Some(input) = app_state.app_config.get_input_by_id(input.id).filter(|current| current.name == input.name)
     else {
         let mut session = session.write().await;
@@ -87,22 +185,31 @@ pub(super) async fn prepare_hls_origin_runtime(
             reason: hls_no_account_reason_for_binding(session.origin_account_binding.as_ref()),
         });
     };
-    {
-        let mut session_guard = session.write().await;
-        if session_guard.origin_account_runtime.is_none() {
-            session_guard.origin_account_runtime = Some(Arc::new(AppHlsOriginAccountRuntime::new(
+    let input = input.as_ref();
+    advance_hls_origin_account_lifecycle(app_state, session, now_ms).await;
+    let observe = |state: &mut tuliprox_hls::api::HlsSession| {
+        state.origin_account_runtime.get_or_insert_with(|| {
+            Arc::new(AppHlsOriginAccountRuntime::new(
                 Arc::downgrade(app_state),
                 input.id,
                 Arc::clone(&input.name),
                 raw_request_url.to_string(),
                 session_entry_url.to_string(),
                 fingerprint.clone(),
-            )));
-        }
-    }
-    let input = input.as_ref();
-    advance_hls_origin_account_lifecycle(app_state, session, now_ms).await;
-    let observed = HlsOriginAccountSnapshot::from_session(&*session.read().await);
+            ))
+        });
+        HlsOriginAccountSnapshot::from_session(state)
+    };
+    let (observed, connection_kind, priority, now_ms) = if let Some(retained) = retained {
+        retained
+            .with_current(app_state, |state, now_ms| {
+                let policy = state.effective_origin_acquire_policy_or_default();
+                Ok((observe(state), policy.connection_kind, policy.priority, now_ms))
+            })
+            .await?
+    } else {
+        (observe(&mut *session.write().await), connection_kind, priority, now_ms)
+    };
     let previous = observed.binding.clone();
     let mut prepared = prepare_hls_origin_runtime_locked(
         app_state,
@@ -117,9 +224,17 @@ pub(super) async fn prepare_hls_origin_runtime(
         work_kind,
         work_class,
         now_ms,
+        retained,
     )
     .await?;
-    let snapshot = publish_hls_origin_account_with_status(app_state, session, |current| {
+    #[cfg(test)]
+    if prepared.binding_to_publish.is_some() && retained.is_some() {
+        super::manifest::retained_origin_allocated_checkpoint().await;
+    }
+    let snapshot = publish_hls_origin_account_for(app_state, session, retained, |current| {
+        if retained.is_some() {
+            ensure_retained_origin_policy(current, connection_kind, priority)?;
+        }
         let snapshot = if let Some(snapshot) = prepared.prepared_snapshot.take() {
             if current.is_gc_marked_for_removal() || !snapshot.matches_session(current) {
                 return Err(HlsOriginRuntimeAcquireError::Fatal(StatusCode::SERVICE_UNAVAILABLE));
@@ -179,7 +294,15 @@ pub(super) async fn prepare_hls_origin_runtime(
         };
         Ok(snapshot)
     })
-    .await?;
+    .await;
+    if snapshot.is_err() && retained.is_some() {
+        release_retained_origin_allocation(
+            app_state,
+            &build_hls_origin_session_owner(proxy_session_id),
+            prepared.preacquired_origin_account_handle.take(),
+        );
+    }
+    let snapshot = snapshot?;
     Ok(PreparedHlsOriginRuntime::published(prepared, snapshot))
 }
 
@@ -192,9 +315,27 @@ pub(super) async fn publish_hls_origin_account_with_status(
         &mut tuliprox_hls::api::HlsSession,
     ) -> Result<HlsOriginAccountSnapshot, HlsOriginRuntimeAcquireError>,
 ) -> Result<HlsOriginAccountSnapshot, HlsOriginRuntimeAcquireError> {
+    publish_hls_origin_account_for(app_state, session, None, publish).await
+}
+
+async fn publish_hls_origin_account_for(
+    app_state: &Arc<AppState>,
+    session: &HlsSessionHandle,
+    retained: Option<RetainedOriginPreparation<'_>>,
+    publish: impl FnOnce(
+        &mut tuliprox_hls::api::HlsSession,
+    ) -> Result<HlsOriginAccountSnapshot, HlsOriginRuntimeAcquireError>,
+) -> Result<HlsOriginAccountSnapshot, HlsOriginRuntimeAcquireError> {
+    let guard = match retained.as_ref() {
+        Some(retained) => Some(retained.lock(app_state).await?),
+        None => None,
+    };
     let shared_stream_id = hls_cache_shared_stream_id(&session.read().await.proxy_session_id);
     let mut projection = app_state.active_users.lock_shared_stream_provider_projection(shared_stream_id).await;
     let mut current = session.write().await;
+    if guard.as_ref().is_some_and(|guard| !guard.allows_start(&current, app_state.hls.proxy.now_ms())) {
+        return Err(stale_origin_work());
+    }
     let snapshot = publish(&mut current)?;
     if !snapshot.matches_session(&current) {
         return Err(HlsOriginRuntimeAcquireError::Fatal(StatusCode::SERVICE_UNAVAILABLE));
@@ -203,6 +344,36 @@ pub(super) async fn publish_hls_origin_account_with_status(
         projection.update_provider(&binding.account_name);
     }
     Ok(snapshot)
+}
+
+pub(super) fn release_retained_origin_allocation(
+    app_state: &AppState,
+    owner: &str,
+    handle: Option<tuliprox_session::ManagedProviderHandle>,
+) {
+    let request_id = handle
+        .as_ref()
+        .and_then(tuliprox_session::ManagedProviderHandle::handle)
+        .and_then(|handle| handle.playback_request_id);
+    drop(handle);
+    if let Some(request_id) = request_id {
+        app_state.active_provider.finish_identified_playback_request(
+            owner,
+            request_id,
+            tuliprox_core::model::PlaybackRequestOutcome::FailedBeforeMedia,
+        );
+    }
+}
+
+pub(super) fn discard_unpublished_origin_allocation(
+    app_state: &AppState,
+    owner: &str,
+    retained: Option<RetainedOriginPreparation<'_>>,
+    handle: tuliprox_session::ManagedProviderHandle,
+) {
+    if retained.is_some() {
+        release_retained_origin_allocation(app_state, owner, Some(handle));
+    }
 }
 
 async fn advance_hls_origin_account_lifecycle(app_state: &Arc<AppState>, session: &HlsSessionHandle, now_ms: u64) {
@@ -226,6 +397,7 @@ async fn prepare_hls_origin_runtime_locked(
     work_kind: HlsOriginWorkKind,
     work_class: HlsOriginWorkClass,
     now_ms: u64,
+    retained: Option<RetainedOriginPreparation<'_>>,
 ) -> Result<HlsOriginRuntimeAllocation, HlsOriginRuntimeAcquireError> {
     let playback_kind = hls_session_origin_playback_kind(session).await;
     let existing_binding = session.read().await.origin_account_binding.clone();
@@ -265,6 +437,7 @@ async fn prepare_hls_origin_runtime_locked(
                         priority,
                         playback_kind,
                         now_ms,
+                        retained,
                     )
                     .await;
                 }
@@ -297,6 +470,7 @@ async fn prepare_hls_origin_runtime_locked(
         playback_kind,
         preferred_account.as_ref(),
         now_ms,
+        retained,
     )
     .await
     {
@@ -376,6 +550,7 @@ async fn prepare_hls_origin_runtime_locked(
             playback_kind,
             None,
             now_ms,
+            retained,
         )
         .await
         {
@@ -407,7 +582,7 @@ async fn prepare_hls_origin_runtime_locked(
 
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_lines)]
-pub(super) async fn rebind_hls_origin_account(
+async fn rebind_hls_origin_account(
     app_state: &Arc<AppState>,
     session: &HlsSessionHandle,
     input: &ConfigInput,
@@ -420,9 +595,9 @@ pub(super) async fn rebind_hls_origin_account(
     priority: i8,
     playback_kind: PlaybackKind,
     now_ms: u64,
+    retained: Option<RetainedOriginPreparation<'_>>,
 ) -> Result<HlsOriginRuntimeAllocation, HlsOriginRuntimeAcquireError> {
-    {
-        let mut session_guard = session.write().await;
+    let acquire = |session_guard: &mut tuliprox_hls::api::HlsSession, now_ms| {
         if !session_guard.origin_account_rebind.is_allowed_now(now_ms) {
             debug!(
                 "HLS origin account rebind skipped by backoff: proxy_session={} old_account={} retry_after_ms=2000",
@@ -432,24 +607,16 @@ pub(super) async fn rebind_hls_origin_account(
             return Err(HlsOriginRuntimeAcquireError::Fatal(StatusCode::SERVICE_UNAVAILABLE));
         }
         session_guard.origin_account_rebind.mark_attempt_started(Arc::clone(&stale_binding.account_name), now_ms);
-    }
-
-    let safe_proxy_session = {
-        let session_guard = session.read().await;
-        safe_proxy_session_id(&session_guard.proxy_session_id)
-    };
-    debug!(
-        "HLS origin account rebind started: proxy_session={} old_account={} reason={stale_status:?}",
-        safe_proxy_session,
-        sanitize_sensitive_info(stale_binding.account_name.as_ref())
-    );
-    app_state.active_provider.clear_identified_provider_reservation(
-        &stale_binding.session_owner,
-        &stale_binding.account_name,
-        stale_binding.provider_binding_tag,
-    );
-    let expected_work_generation = {
-        let mut session_guard = session.write().await;
+        debug!(
+            "HLS origin account rebind started: proxy_session={} old_account={} reason={stale_status:?}",
+            safe_proxy_session_id(&session_guard.proxy_session_id),
+            sanitize_sensitive_info(stale_binding.account_name.as_ref())
+        );
+        app_state.active_provider.clear_identified_provider_reservation(
+            &stale_binding.session_owner,
+            &stale_binding.account_name,
+            stale_binding.provider_binding_tag,
+        );
         if let Some(binding) = session_guard.origin_account_binding.as_mut().filter(|binding| {
             binding.account_name == stale_binding.account_name
                 && binding.session_owner == stale_binding.session_owner
@@ -464,17 +631,27 @@ pub(super) async fn rebind_hls_origin_account(
             );
         }
         session_guard.invalidate_queued_origin_work();
-        session_guard.activity.origin_work_generation
+        let provider_handle = app_state.active_provider.acquire_connection_with_lease_for_session(
+            &input.name,
+            &fingerprint.addr,
+            false,
+            priority,
+            connection_kind,
+            Some(PlaybackLeaseRef::new(&stale_binding.session_owner, playback_kind)),
+        );
+        Ok((session_guard.activity.origin_work_generation, provider_handle))
     };
-
-    let Some(provider_handle) = app_state.active_provider.acquire_connection_with_lease_for_session(
-        &input.name,
-        &fingerprint.addr,
-        false,
-        priority,
-        connection_kind,
-        Some(PlaybackLeaseRef::new(&stale_binding.session_owner, playback_kind)),
-    ) else {
+    let (expected_work_generation, provider_handle) = if let Some(retained) = retained {
+        retained
+            .with_current(app_state, |current, now_ms| {
+                ensure_retained_origin_policy(current, connection_kind, priority)?;
+                acquire(current, now_ms)
+            })
+            .await?
+    } else {
+        acquire(&mut *session.write().await, now_ms)?
+    };
+    let Some(provider_handle) = provider_handle else {
         mark_hls_origin_rebind_failed(session, stale_binding, now_ms, "no_account_available").await;
         return Err(HlsOriginRuntimeAcquireError::NoAccountAvailable {
             reason: hls_no_account_reason_for_binding(Some(stale_binding)),
@@ -485,7 +662,7 @@ pub(super) async fn rebind_hls_origin_account(
         tuliprox_session::ManagedProviderHandle::new(Arc::clone(&app_state.active_provider), provider_handle);
     let Some(provider_config) = managed_handle.handle().and_then(|handle| handle.allocation.get_provider_config())
     else {
-        drop(managed_handle);
+        discard_unpublished_origin_allocation(app_state, &stale_binding.session_owner, retained, managed_handle);
         mark_hls_origin_rebind_failed(session, stale_binding, now_ms, "no_provider_config").await;
         return Err(HlsOriginRuntimeAcquireError::Fatal(StatusCode::SERVICE_UNAVAILABLE));
     };
@@ -499,14 +676,14 @@ pub(super) async fn rebind_hls_origin_account(
     )
     .await
     else {
-        drop(managed_handle);
+        discard_unpublished_origin_allocation(app_state, &stale_binding.session_owner, retained, managed_handle);
         mark_hls_origin_rebind_failed(session, stale_binding, now_ms, "invalid_origin_url").await;
         return Err(HlsOriginRuntimeAcquireError::Fatal(StatusCode::SERVICE_UNAVAILABLE));
     };
 
     let Some(new_account_name) = managed_handle.handle().and_then(|handle| handle.allocation.get_provider_name())
     else {
-        drop(managed_handle);
+        discard_unpublished_origin_allocation(app_state, &stale_binding.session_owner, retained, managed_handle);
         mark_hls_origin_rebind_failed(session, stale_binding, now_ms, "missing_account_name").await;
         return Err(HlsOriginRuntimeAcquireError::Fatal(StatusCode::SERVICE_UNAVAILABLE));
     };
@@ -519,7 +696,14 @@ pub(super) async fn rebind_hls_origin_account(
         now_ms,
     );
     new_binding.provider_binding_tag = managed_handle.handle().and_then(|handle| handle.binding_tag);
-    let prepared_snapshot = publish_hls_origin_account_with_status(app_state, session, |session_guard| {
+    #[cfg(test)]
+    if retained.is_some() {
+        super::manifest::retained_origin_allocated_checkpoint().await;
+    }
+    let snapshot = publish_hls_origin_account_for(app_state, session, retained, |session_guard| {
+        if retained.is_some() {
+            ensure_retained_origin_policy(session_guard, connection_kind, priority)?;
+        }
         if !publish_hls_origin_account_rebind(
             session_guard,
             stale_binding,
@@ -530,7 +714,14 @@ pub(super) async fn rebind_hls_origin_account(
         }
         Ok(HlsOriginAccountSnapshot::from_session(session_guard))
     })
-    .await?;
+    .await;
+    let prepared_snapshot = match snapshot {
+        Ok(snapshot) => snapshot,
+        Err(reason) => {
+            discard_unpublished_origin_allocation(app_state, &stale_binding.session_owner, retained, managed_handle);
+            return Err(reason);
+        }
+    };
     debug!(
         "HLS origin account rebound: old_account={} new_account={}",
         sanitize_sensitive_info(stale_binding.account_name.as_ref()),
@@ -907,28 +1098,20 @@ async fn begin_hls_group_member_handoff(
     session.activity.origin_work_generation
 }
 
-/// Publishes a member handoff only into the same binding and work generation observed before the
-/// switch, mirroring the account-rebind publication fence.
-fn publish_hls_origin_member_handoff(
-    session: &mut tuliprox_hls::api::HlsSession,
+/// Checks the binding and work generation before committing a member handoff.
+fn hls_member_handoff_is_current(
+    session: &tuliprox_hls::api::HlsSession,
     expected: Option<&HlsOriginAccountBinding>,
     expected_work_generation: u64,
-    source: HlsOriginSource,
-    replacement: HlsOriginAccountBinding,
 ) -> bool {
     if session.is_gc_marked_for_removal() || session.activity.origin_work_generation != expected_work_generation {
         return false;
     }
-    let matches = match (expected, session.origin_account_binding.as_ref()) {
+    match (expected, session.origin_account_binding.as_ref()) {
         (Some(expected), Some(current)) => hls_member_binding_matches(current, expected),
         (None, None) => true,
         _ => false,
-    };
-    if !matches {
-        return false;
     }
-    session.handoff_origin_member(source, replacement);
-    true
 }
 
 /// Runs one origin manifest refresh for a prepared group member account through the regular
@@ -1100,6 +1283,32 @@ fn log_handoff_outcome(proxy_session_id: &ProxySessionId, outcome: &str) {
     );
 }
 
+pub(super) async fn request_hls_group_entry_member_handoff(
+    app_state: &Arc<AppState>,
+    session: &HlsSessionHandle,
+    bound_source: &HlsOriginSource,
+    bound_url: &str,
+    fingerprint: &Fingerprint,
+) {
+    let runtime = {
+        let mut current = session.write().await;
+        if current.origin_source != *bound_source || current.is_gc_marked_for_removal() {
+            return;
+        }
+        Arc::clone(current.origin_account_runtime.get_or_insert_with(|| {
+            Arc::new(AppHlsOriginAccountRuntime::new(
+                Arc::downgrade(app_state),
+                bound_source.input_id,
+                Arc::clone(&bound_source.input_name),
+                bound_url.to_string(),
+                bound_url.to_string(),
+                fingerprint.clone(),
+            ))
+        }))
+    };
+    runtime.notify_member_unhealthy(session, HlsMemberUnhealthyReason::ManifestFailure);
+}
+
 /// Hands a live failover-group session over to the next healthy member. R3 triggers call this via
 /// [`HlsOriginAccountRuntime::notify_member_unhealthy`]; R2 also calls it from the cached entry
 /// path when a fresh selection disagrees with a non-reusable bound session.
@@ -1112,7 +1321,7 @@ async fn handoff_hls_group_member(
     fingerprint: &Fingerprint,
     reason: HlsMemberUnhealthyReason,
 ) {
-    let now_ms = current_time_millis();
+    let now_ms = app_state.hls.proxy.now_ms();
     let Some((target_id, group_vid)) = session.read().await.key.group_identity() else {
         return;
     };
@@ -1127,6 +1336,9 @@ async fn handoff_hls_group_member(
 
     let (current_index, failed_origin, old_binding, proxy_session_id, playback_kind, policy, request_headers) = {
         let session = session.read().await;
+        if reason == HlsMemberUnhealthyReason::TerminalPending && session.origin_reusable_at(now_ms) {
+            return;
+        }
         let input_name = session.origin_source.input_name.clone();
         let stream_ref = session.origin_source.stream_ref.clone();
         let index = group.members.iter().position(|member| {
@@ -1143,6 +1355,13 @@ async fn handoff_hls_group_member(
         )
     };
 
+    let playback = group_playback_settings(app_state, &target);
+    let leases = app_state.hls.proxy.access_leases();
+    if !playback.failover.enabled && leases.read().await.has_active_live_lease(&proxy_session_id, now_ms) {
+        log_handoff_outcome(&proxy_session_id, "active-failover-disabled");
+        return;
+    }
+
     if let Some(index) = current_index {
         record_member_failure(&app_state.member_health, &group.members[index], None, reason.failure_class());
     }
@@ -1153,9 +1372,10 @@ async fn handoff_hls_group_member(
         reason.failure_class()
     );
 
-    let playback = group_playback_settings(app_state, &target);
     let member_count = group.members.len();
-    let mut decision = {
+    let mut decision = if !playback.failover.enabled {
+        BudgetDecision::Next { exclude: current_index.into_iter().collect() }
+    } else {
         let mut guard = handoff_budget.lock().await;
         let budget = guard.get_or_insert_with(|| FailoverBudget::new(&playback.failover));
         budget.on_trigger(current_index.unwrap_or(0), member_count, Instant::now())
@@ -1169,7 +1389,10 @@ async fn handoff_hls_group_member(
         match decision {
             BudgetDecision::GiveUp => {
                 log_handoff_outcome(&proxy_session_id, "give-up");
-                begin_hls_group_member_handoff(app_state, session, old_binding.as_ref(), current_time_millis()).await;
+                if playback.failover.enabled {
+                    begin_hls_group_member_handoff(app_state, session, old_binding.as_ref(), current_time_millis())
+                        .await;
+                }
                 return;
             }
             BudgetDecision::RetrySame => {
@@ -1214,23 +1437,28 @@ async fn handoff_hls_group_member(
     // A handoff that finished while this one waited already replaced the failed member; this
     // notification is stale. A binding change on the same member (account rebind) still hands off,
     // from the binding current under the lock.
-    let current_binding = {
+    let (current_binding, work_generation) = {
         let session = session.read().await;
         if session.origin_source != failed_origin {
             return;
         }
-        session.origin_account_binding.clone()
+        (session.origin_account_binding.clone(), session.activity.origin_work_generation)
     };
     let session_owner = current_binding
         .as_ref()
         .map_or_else(|| build_hls_origin_session_owner(&proxy_session_id), |binding| binding.session_owner.clone());
-    let expected_work_generation =
-        begin_hls_group_member_handoff(app_state, session, current_binding.as_ref(), now_ms).await;
+    let expected_work_generation = if playback.failover.enabled {
+        begin_hls_group_member_handoff(app_state, session, current_binding.as_ref(), now_ms).await
+    } else {
+        work_generation
+    };
 
+    let playback_lease = PlaybackLeaseRef::new(&session_owner, playback_kind);
     let req = GroupSelectionRequest {
         mode: SelectionMode::Live,
         prefer: None,
-        lease: Some(PlaybackLeaseRef::new(&session_owner, playback_kind)),
+        // A start-only switch is speculative until the live-lease guard allows it.
+        lease: playback.failover.enabled.then_some(playback_lease),
         allow_provider_grace: playback.allow_provider_grace,
         bypass_maintenance: false,
         exclude: &exclude,
@@ -1259,9 +1487,7 @@ async fn handoff_hls_group_member(
         fingerprint,
     )
     .await;
-    let Ok((resolved, probed)) = selected else {
-        // No member left: the old binding is already detached and fenced, so the session's
-        // existing terminal/unavailable handling takes over.
+    let Ok((mut resolved, probed)) = selected else {
         log_handoff_outcome(&proxy_session_id, "no-member");
         return;
     };
@@ -1318,9 +1544,40 @@ async fn handoff_hls_group_member(
         generation,
         now_ms,
     );
-    new_binding.provider_binding_tag = resolved.acquired.handle.handle().and_then(|handle| handle.binding_tag);
-
     let new_index = resolved.acquired.index;
+    // Activation writes the same lease store. Keep its read lock until the binding has been
+    // published, so a Pending or Idle session cannot be switched past a racing activation.
+    let lease_guard = if playback.failover.enabled { None } else { Some(leases.read().await) };
+    let published = publish_hls_origin_account_with_status(app_state, session, |current| {
+        if current.origin_source != failed_origin
+            || lease_guard.as_ref().is_some_and(|leases| {
+                leases.has_active_live_lease(&current.proxy_session_id, app_state.hls.proxy.now_ms())
+            })
+            || !hls_member_handoff_is_current(current, current_binding.as_ref(), expected_work_generation)
+        {
+            return Err(stale_origin_work());
+        }
+        if !playback.failover.enabled && resolved.acquired.handle.bind_playback_lease(playback_lease).is_none() {
+            return Err(stale_origin_work());
+        }
+        new_binding.provider_binding_tag = resolved.acquired.handle.handle().and_then(|handle| handle.binding_tag);
+        current.handoff_origin_member(new_source, new_binding);
+        member.store(Arc::new(AppHlsMemberBinding {
+            input_id: resolved.input.id,
+            input_name: Arc::clone(&resolved.input.name),
+            raw_request_url,
+            entry_url,
+        }));
+        Ok(HlsOriginAccountSnapshot::from_session(current))
+    })
+    .await;
+    drop(lease_guard);
+    let Ok(snapshot) = published else {
+        drop(resolved.acquired.handle);
+        log_handoff_outcome(&proxy_session_id, "no-member");
+        return;
+    };
+
     debug!(
         "HLS group member handoff member switch: proxy_session={} old_index={:?} new_index={} old_account={} new_account={}",
         safe_proxy_session_id(&proxy_session_id),
@@ -1335,32 +1592,7 @@ async fn handoff_hls_group_member(
         sanitize_sensitive_info(new_account.as_ref())
     );
 
-    let published = publish_hls_origin_account_with_status(app_state, session, |current| {
-        if !publish_hls_origin_member_handoff(
-            current,
-            current_binding.as_ref(),
-            expected_work_generation,
-            new_source.clone(),
-            new_binding.clone(),
-        ) {
-            return Err(HlsOriginRuntimeAcquireError::Fatal(StatusCode::SERVICE_UNAVAILABLE));
-        }
-        Ok(HlsOriginAccountSnapshot::from_session(current))
-    })
-    .await;
-    let Ok(snapshot) = published else {
-        drop(resolved.acquired.handle);
-        log_handoff_outcome(&proxy_session_id, "no-member");
-        return;
-    };
-
     drop(prepare_guard);
-    member.store(Arc::new(AppHlsMemberBinding {
-        input_id: resolved.input.id,
-        input_name: Arc::clone(&resolved.input.name),
-        raw_request_url,
-        entry_url,
-    }));
     let preacquired_handle = resolved.acquired.handle;
     trigger_hls_group_member_handoff_refresh(
         app_state,

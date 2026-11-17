@@ -43,6 +43,9 @@ impl HlsLeaseManifestPublicationGuard {
         self.issued_at_ms == other.issued_at_ms && self.admission_generation == other.admission_generation
     }
     pub(crate) const fn has_source_binding(self) -> bool { self.source.is_some() }
+    pub(crate) const fn recovery_entry_snapshot_generation(self) -> Option<u64> {
+        self.recovery_entry_snapshot_generation
+    }
     pub fn is_for_session(self, session: &crate::HlsSessionHandle) -> bool {
         self.source.is_none_or(|source| source.session_address == std::sync::Arc::as_ptr(session) as usize)
     }
@@ -100,6 +103,22 @@ impl HlsLeaseManifestPublicationGuard {
 }
 
 impl HlsAccessLease {
+    pub fn matches_manifest_response_authorization(&self, expected: &Self) -> bool {
+        let terminal_transition = expected.playback_mode == HlsLeasePlaybackMode::Live
+            && matches!(
+                self.playback_mode,
+                HlsLeasePlaybackMode::TerminalTail(_)
+                    | HlsLeasePlaybackMode::TerminalCustomResponse(_)
+                    | HlsLeasePlaybackMode::TerminalUnavailable { .. }
+            );
+        let expected_admission = if terminal_transition {
+            expected.admission_generation.checked_add(1)
+        } else {
+            Some(expected.admission_generation)
+        };
+        self.issued_at_ms == expected.issued_at_ms && Some(self.admission_generation) == expected_admission
+    }
+
     pub fn media_identity(&self) -> Option<HlsMediaLeaseIdentity> {
         let playback = match &self.playback_mode {
             HlsLeasePlaybackMode::Live => {

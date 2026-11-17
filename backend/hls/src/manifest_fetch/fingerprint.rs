@@ -21,7 +21,7 @@ use crate::{
         HlsManifestAcceptanceGeneration, HlsManifestCandidateObservation, HlsManifestSegmentFingerprint,
         HlsManifestTimelineFingerprint, HlsTerminalAlternativeCompatibility, HLS_MANIFEST_FINGERPRINT_SEGMENT_LIMIT,
     },
-    resource_identity::HlsMediaResourceIdentity,
+    resource_identity::{HlsMediaPlaylistScope, HlsMediaResourceIdentity, HlsSegmentOccurrenceIdentity},
     timeline::HlsResourceReplayDecision,
 };
 use sha2::{Digest, Sha256};
@@ -36,26 +36,30 @@ pub(super) fn deterministic_timeline_conflict_for_candidate(
     candidate: &HlsManifestRecoveryCandidate,
     evidence: &HlsCommittedResourceEvidence,
 ) -> Option<HlsDeterministicTimelineConflict> {
-    if is_same_host_reset_candidate(&candidate.report.quality) {
-        // Across an authorized restart, URI repetition/order cannot decide
-        // whether the origin is serving old bytes. The staged content check owns
-        // that decision, before any old-epoch replay prefix is removed.
-        return None;
-    }
     let OriginManifestParseOutcome::Normal(manifest) =
         parse_origin_media_manifest(&candidate.fetched.body, &candidate.fetched.final_manifest_url)
     else {
         return None;
     };
-    let candidate_fingerprint =
-        deterministic_conflict_fingerprint(&manifest, &candidate.fetched.body, &candidate.fetched.final_manifest_url);
+    let candidate_fingerprint = deterministic_conflict_fingerprint(
+        &evidence.session_key,
+        &manifest,
+        &candidate.fetched.body,
+        &candidate.fetched.final_manifest_url,
+    );
+    let scope = HlsMediaPlaylistScope::from_session(&evidence.session_key)?;
     let mut saw_new = false;
     for (candidate_position, segment) in manifest.segments.iter().enumerate() {
-        let identity = HlsMediaResourceIdentity::from_url(&segment.resolved_origin_url, segment.origin_byte_range);
-        let resource_key = identity.semantic_key();
-        let published =
-            evidence.published_entries.iter().find(|(published, _)| published.semantic_key() == resource_key);
-        if let Some((_, existing_proxy_seq)) = published {
+        let identity = HlsSegmentOccurrenceIdentity::from_parsed(scope, segment);
+        let resource_key =
+            HlsMediaResourceIdentity::from_url(&segment.resource_uri, segment.origin_byte_range).semantic_key();
+        let published = evidence.known_entries.iter().find(|(published, _)| published.same_position(identity));
+        if let Some((published, existing_proxy_seq)) = published {
+            // A changed binding is rejected by occurrence validation. It is not
+            // proof of a reordered replay and must not mint that permanent receipt.
+            if !evidence.binding_matches(*existing_proxy_seq, *published, identity) {
+                return None;
+            }
             if saw_new {
                 return Some(HlsDeterministicTimelineConflict {
                     previous_proxy_tail: evidence.previous_proxy_tail,
@@ -149,7 +153,8 @@ fn deterministic_conflict_receipt_is_current_for_session(
     receipt: &HlsDeterministicConflictReceipt,
     session: &crate::HlsSession,
 ) -> bool {
-    receipt.origin_progress_generation == session.origin_control.progress_generation
+    receipt.conflict.previous_proxy_tail == session.proxy_next_seq.and_then(|next| next.checked_sub(1))
+        && receipt.origin_progress_generation == session.origin_control.progress_generation
         && receipt.published_resource_history_generation == session.published_resource_history.generation()
         && receipt.pinned_host_generation == session.origin_epoch
 }
@@ -162,6 +167,7 @@ pub(super) struct HlsManifestCandidateFingerprint {
 }
 
 pub(super) fn build_manifest_timeline_fingerprint(
+    session_key: &crate::HlsSessionKey,
     body: &str,
     final_manifest_url: &str,
 ) -> HlsManifestCandidateFingerprint {
@@ -171,7 +177,7 @@ pub(super) fn build_manifest_timeline_fingerprint(
                 .then_some(manifest.target_duration.filter(|duration| *duration > 0))
                 .flatten();
             HlsManifestCandidateFingerprint {
-                timeline: fingerprint_parsed_manifest(&manifest, body, final_manifest_url),
+                timeline: fingerprint_parsed_manifest(session_key, &manifest, body, final_manifest_url),
                 has_switch_segment: !manifest.segments.is_empty(),
                 emergency_evidence: emergency_manifest_evidence(&manifest),
                 target_duration_secs,
@@ -193,6 +199,7 @@ pub(super) fn build_manifest_timeline_fingerprint(
 }
 
 pub fn deterministic_timeline_conflict_from_rejection(
+    session_key: &crate::HlsSessionKey,
     fetched: &FetchedOriginManifest,
     reason: &HlsManifestRejectLogReason,
 ) -> Option<HlsDeterministicTimelineConflict> {
@@ -214,12 +221,12 @@ pub fn deterministic_timeline_conflict_from_rejection(
     };
     let segment = manifest.segments.get(*candidate_position)?;
     let resource_key =
-        HlsMediaResourceIdentity::from_url(&segment.resolved_origin_url, segment.origin_byte_range).semantic_key();
+        HlsMediaResourceIdentity::from_url(&segment.resource_uri, segment.origin_byte_range).semantic_key();
     if resource_key != *expected_resource_key {
         return None;
     }
     let candidate_fingerprint =
-        deterministic_conflict_fingerprint(&manifest, &fetched.body, &fetched.final_manifest_url);
+        deterministic_conflict_fingerprint(session_key, &manifest, &fetched.body, &fetched.final_manifest_url);
     Some(HlsDeterministicTimelineConflict {
         previous_proxy_tail: *previous_proxy_tail,
         existing_proxy_seq: *existing_proxy_seq,
@@ -260,6 +267,7 @@ fn is_mpeg_ts_resource(resource: &str) -> bool {
 }
 
 fn fingerprint_parsed_manifest(
+    session_key: &crate::HlsSessionKey,
     manifest: &ParsedOriginManifest,
     body: &str,
     final_manifest_url: &str,
@@ -271,12 +279,15 @@ fn fingerprint_parsed_manifest(
     let mut segment_samples = Vec::with_capacity(manifest.segments.len().min(HLS_MANIFEST_FINGERPRINT_SEGMENT_LIMIT));
     let mut first_program_date_time_ms = None;
     let mut last_program_date_time_ms = None;
+    let scope = HlsMediaPlaylistScope::from_session(session_key);
     for segment in &manifest.segments {
+        let occurrence_identity = scope.map(|scope| HlsSegmentOccurrenceIdentity::from_parsed(scope, segment));
         duration_hasher.update(segment.duration_ms.to_be_bytes());
         discontinuity_hasher.update([u8::from(segment.discontinuity_before)]);
-        let resource_identity =
-            HlsMediaResourceIdentity::from_url(&segment.resolved_origin_url, segment.origin_byte_range);
-        resource_hasher.update(resource_identity.semantic_key().bytes());
+        let resource_identity = HlsMediaResourceIdentity::from_url(&segment.resource_uri, segment.origin_byte_range);
+        if let Some(identity) = occurrence_identity {
+            resource_hasher.update(identity.semantic_key().bytes());
+        }
         update_container_signature(&mut container_hasher, &segment.resolved_origin_url);
         let program_date_time_ms = parse_program_date_time_ms(segment.program_date_time.as_deref());
         first_program_date_time_ms = first_program_date_time_ms.or(program_date_time_ms);
@@ -289,6 +300,7 @@ fn fingerprint_parsed_manifest(
                 discontinuity_before: segment.discontinuity_before,
                 program_date_time_ms,
                 normalized_resource_identity: Some(resource_identity),
+                occurrence_identity,
             });
         }
     }
@@ -309,6 +321,7 @@ fn fingerprint_parsed_manifest(
 }
 
 pub(super) fn deterministic_conflict_fingerprint(
+    session_key: &crate::HlsSessionKey,
     manifest: &ParsedOriginManifest,
     body: &str,
     final_manifest_url: &str,
@@ -320,12 +333,16 @@ pub(super) fn deterministic_conflict_fingerprint(
     let mut segment_samples = Vec::with_capacity(manifest.segments.len().min(HLS_MANIFEST_FINGERPRINT_SEGMENT_LIMIT));
     let mut first_program_date_time_ms = None;
     let mut last_program_date_time_ms = None;
+    let scope = HlsMediaPlaylistScope::from_session(session_key);
     for segment in &manifest.segments {
+        let occurrence_identity = scope.map(|scope| HlsSegmentOccurrenceIdentity::from_parsed(scope, segment));
         duration_hasher.update(segment.duration_ms.to_be_bytes());
         discontinuity_hasher.update([u8::from(segment.discontinuity_before)]);
         let resource_key =
-            HlsMediaResourceIdentity::from_url(&segment.resolved_origin_url, segment.origin_byte_range).semantic_key();
-        resource_hasher.update(resource_key.bytes());
+            HlsMediaResourceIdentity::from_url(&segment.resource_uri, segment.origin_byte_range).semantic_key();
+        if let Some(identity) = occurrence_identity {
+            resource_hasher.update(identity.semantic_key().bytes());
+        }
         update_container_signature(&mut container_hasher, &segment.resolved_origin_url);
         let program_date_time_ms = parse_program_date_time_ms(segment.program_date_time.as_deref());
         first_program_date_time_ms = first_program_date_time_ms.or(program_date_time_ms);
@@ -351,7 +368,7 @@ pub(super) fn deterministic_conflict_fingerprint(
         duration_pattern_hash: duration_hasher.finalize().into(),
         discontinuity_pattern_hash: discontinuity_hasher.finalize().into(),
         semantic_resource_pattern_hash: (!manifest.segments.is_empty()).then(|| resource_hasher.finalize().into()),
-        map_and_encryption_hash: semantic_map_and_encryption_hash(body, &manifest.maps, final_manifest_url),
+        map_and_encryption_hash: map_and_encryption_hash(body, &manifest.maps, final_manifest_url),
         container_signature_hash: container_hasher.finalize().into(),
         segment_samples,
     }
@@ -396,6 +413,7 @@ fn fingerprint_transient_manifest(body: &str, final_manifest_url: &str) -> (HlsM
                     discontinuity_before: pending_discontinuity,
                     program_date_time_ms: pending_program_date_time_ms,
                     normalized_resource_identity: Some(resource_identity),
+                    occurrence_identity: None,
                 });
             }
             pending_discontinuity = false;
@@ -461,31 +479,7 @@ pub(super) fn map_and_encryption_hash(
 ) -> [u8; 32] {
     let mut hasher = Sha256::new();
     for map in maps {
-        hasher.update(
-            HlsMediaResourceIdentity::from_url(&map.resolved_origin_uri, map.byte_range).semantic_key().bytes(),
-        );
-    }
-    for line in body
-        .lines()
-        .map(str::trim)
-        .filter(|line| line.starts_with("#EXT-X-KEY:") || (maps.is_empty() && line.starts_with("#EXT-X-MAP:")))
-    {
-        hasher.update(normalized_tag_uri(line, final_manifest_url).as_bytes());
-        hasher.update([0]);
-    }
-    hasher.finalize().into()
-}
-
-fn semantic_map_and_encryption_hash(
-    body: &str,
-    maps: &[tuliprox_parser::hls::origin_manifest::ParsedOriginMap],
-    final_manifest_url: &str,
-) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    for map in maps {
-        hasher.update(
-            HlsMediaResourceIdentity::from_url(&map.resolved_origin_uri, map.byte_range).semantic_key().bytes(),
-        );
+        hasher.update(HlsMediaResourceIdentity::from_url(&map.resource_uri, map.byte_range).semantic_key().bytes());
     }
     for line in body
         .lines()
@@ -514,21 +508,4 @@ fn update_semantic_tag_identity(hasher: &mut Sha256, line: &str, final_manifest_
     hasher.update(&line.as_bytes()[..value_start]);
     hasher.update(HlsMediaResourceIdentity::from_url(&resolved, None).semantic_key().bytes());
     hasher.update(&line.as_bytes()[value_end..]);
-}
-
-fn normalized_tag_uri(line: &str, final_manifest_url: &str) -> String {
-    let Some(uri_start) = line.find("URI=\"") else {
-        return line.to_string();
-    };
-    let value_start = uri_start.saturating_add(5);
-    let Some(relative_end) = line.get(value_start..).and_then(|tail| tail.find('"')) else {
-        return line.to_string();
-    };
-    let value_end = value_start.saturating_add(relative_end);
-    let uri = line.get(value_start..value_end).unwrap_or_default();
-    let normalized_uri = Url::parse(uri)
-        .ok()
-        .or_else(|| Url::parse(final_manifest_url).ok()?.join(uri).ok())
-        .map_or_else(|| uri.split(['?', '#']).next().unwrap_or_default().to_string(), |url| url.path().to_string());
-    format!("{}{}{}", &line[..value_start], normalized_uri, &line[value_end..])
 }

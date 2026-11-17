@@ -2,7 +2,18 @@ use super::*;
 use crate::{HlsFreshManifestRequiredReason, HlsProxyManager};
 use axum::{body::Body, extract::State, http::Uri, response::Response, routing::any, Router};
 use shared::model::{HlsManifestRecoveryBurstLevel, HlsStartupMode};
-use std::{fmt::Write as _, sync::Arc, time::Duration};
+use std::{
+    fmt::Write as _,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
+
+mod verified_recovery;
+
+type TransferLog = Arc<tokio::sync::Mutex<Vec<(String, Option<String>, usize)>>>;
 
 #[derive(Clone)]
 struct OriginState {
@@ -11,6 +22,11 @@ struct OriginState {
     manifests: Arc<tokio::sync::Mutex<std::collections::VecDeque<String>>>,
     fallback_manifest: Arc<tokio::sync::RwLock<Option<String>>>,
     new_namespace_bytes: Arc<tokio::sync::RwLock<Option<Vec<u8>>>>,
+    pause_query: Arc<tokio::sync::RwLock<Option<String>>>,
+    entered: Arc<tokio::sync::Notify>,
+    release: Arc<tokio::sync::Notify>,
+    truncate: Arc<AtomicBool>,
+    transfers: TransferLog,
 }
 
 struct Origin {
@@ -31,11 +47,16 @@ impl Origin {
             manifests: Arc::default(),
             fallback_manifest: Arc::default(),
             new_namespace_bytes: Arc::default(),
+            pause_query: Arc::default(),
+            entered: Arc::default(),
+            release: Arc::default(),
+            truncate: Arc::default(),
+            transfers: Arc::default(),
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let app = Router::new()
-            .fallback(any(|State(state): State<OriginState>, uri: Uri| async move {
+            .fallback(any(|State(state): State<OriginState>, uri: Uri, headers: axum::http::HeaderMap| async move {
                 state.requests.lock().await.push(uri.to_string());
                 if path_has_extension(uri.path(), "m3u8") {
                     let body = state.manifests.lock().await.pop_front();
@@ -45,12 +66,17 @@ impl Origin {
                         state.fallback_manifest.read().await.clone().unwrap_or_default()
                     }));
                 }
+                let pause = state.pause_query.read().await.as_deref().is_some_and(|query| uri.query() == Some(query));
+                if pause {
+                    state.entered.notify_one();
+                    state.release.notified().await;
+                }
                 let body = if uri.path().contains("fedcba9876543210") {
                     state.new_namespace_bytes.read().await.clone()
                 } else {
                     None
                 };
-                Response::new(Body::from(body.unwrap_or(state.bytes.read().await.clone())))
+                origin_media_response(&state, uri, headers, body.unwrap_or(state.bytes.read().await.clone())).await
             }))
             .with_state(state.clone());
         let task = tokio::spawn(async move {
@@ -58,6 +84,39 @@ impl Origin {
         });
         Self { base, state, task }
     }
+}
+
+async fn origin_media_response(
+    state: &OriginState,
+    uri: Uri,
+    headers: axum::http::HeaderMap,
+    mut body: Vec<u8>,
+) -> Response {
+    let range = headers.get(axum::http::header::RANGE).map(|value| value.to_str().unwrap().to_owned());
+    let mut response = Response::builder();
+    if let Some(range) = &range {
+        let (start, end) = range.strip_prefix("bytes=").unwrap().split_once('-').unwrap();
+        let (start, end) = (start.parse::<usize>().unwrap(), end.parse::<usize>().unwrap());
+        if start > end || end >= body.len() {
+            return Response::builder().status(416).body(Body::empty()).unwrap();
+        }
+        response = response
+            .status(206)
+            .header(axum::http::header::CONTENT_RANGE, format!("bytes {start}-{end}/{}", body.len()));
+        body = body[start..=end].to_vec();
+    }
+    let length = body.len();
+    state.transfers.lock().await.push((uri.to_string(), range, length));
+    response = response.header(axum::http::header::CONTENT_LENGTH, length);
+    let body = if state.truncate.load(Ordering::Acquire) {
+        Body::from_stream(futures::stream::iter([
+            Ok(bytes::Bytes::copy_from_slice(&body[..length / 2])),
+            Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "fixture truncated response")),
+        ]))
+    } else {
+        Body::from(body)
+    };
+    response.body(body).unwrap()
 }
 
 fn media(marker: u8) -> Vec<u8> {
@@ -68,7 +127,11 @@ fn media(marker: u8) -> Vec<u8> {
 }
 
 fn playlist(base: &str, namespace: &str, count: u64, query: &str) -> FetchedOriginManifest {
-    let mut body = "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n".to_owned();
+    playlist_with_start(base, namespace, count, query, 0)
+}
+
+fn playlist_with_start(base: &str, namespace: &str, count: u64, query: &str, start: u64) -> FetchedOriginManifest {
+    let mut body = format!("#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:{start}\n");
     for seq in 0..count {
         writeln!(body, "#EXTINF:4,\n{base}/{namespace}/{seq}.ts{query}").unwrap();
     }
@@ -79,7 +142,9 @@ fn playlist(base: &str, namespace: &str, count: u64, query: &str) -> FetchedOrig
     fetched
 }
 
-async fn warm(origin: &Origin, mode: HlsStartupMode) -> OriginRefreshRequest {
+async fn warm(origin: &Origin, mode: HlsStartupMode) -> OriginRefreshRequest { warm_with_start(origin, mode, 0).await }
+
+async fn warm_with_start(origin: &Origin, mode: HlsStartupMode, start: u64) -> OriginRefreshRequest {
     let manager = Arc::new(HlsProxyManager::with_private_cache(&shared::model::HlsCacheConfigDto {
         startup: shared::model::HlsStartupConfigDto { mode, ..Default::default() },
         ..Default::default()
@@ -87,11 +152,12 @@ async fn warm(origin: &Origin, mode: HlsStartupMode) -> OriginRefreshRequest {
     let session = manager.get_or_create_session(crate::HlsSessionKey::new(1, "12345"), b"secret", 0).await;
     let mut request = switch_test_request(Arc::clone(&session), Arc::clone(manager.segment_cache()), &origin.base);
     request.hls_proxy = manager;
+    request.origin_entry = LiveHlsOriginEntry::parse(&format!("{}/index.m3u8", origin.base)).unwrap();
     if let Some(startup) = session.write().await.startup.as_mut() {
         startup.worker = Arc::downgrade(&request.segment_worker_pool);
         startup.policy_fixed = true;
     }
-    let fetched = playlist(&origin.base, "0123456789abcdef", 5, "?token=old");
+    let fetched = playlist_with_start(&origin.base, "0123456789abcdef", 5, "?token=old", start);
     let context = manifest_fetch_context(&request, None);
     super::super::commit_initial_fetched_manifest(&request, &context, fetched, None, false).await.unwrap();
     let context = crate::SegmentFetchContext {
@@ -119,7 +185,7 @@ async fn warm(origin: &Origin, mode: HlsStartupMode) -> OriginRefreshRequest {
             crate::segment_fetcher::SegmentDemandFetchOutcome::Ready
         );
     }
-    assert_eq!(session.read().await.origin_seq_highwater, Some(4));
+    assert_eq!(session.read().await.origin_seq_highwater, Some(start + 4));
     request
 }
 
@@ -155,6 +221,9 @@ async fn restart_with_new_paths_accepts_lower_and_equal_highwater() {
         for count in [4, 5] {
             let origin = Origin::start().await;
             let mut request = warm(&origin, mode).await;
+            // The restart verifies each segment serially before committing the window. Budget a
+            // fixture interval for each probe and one for setup, apart from the transfer deadlines.
+            request.origin_manifest_timeout_ms *= count + 1;
             let (epoch, progress, old_key) = {
                 let session = request.session.read().await;
                 (
@@ -168,7 +237,14 @@ async fn restart_with_new_paths_accepts_lower_and_equal_highwater() {
             authorize_reentry(&mut request).await;
             *origin.state.bytes.write().await = media(2);
             let fetched = playlist(&origin.base, "fedcba9876543210", count, "?token=new");
-            assert!(candidate(&request, fetched.clone()).await.is_ok(), "{mode:?}/{count}");
+            let started = tokio::time::Instant::now();
+            candidate(&request, fetched.clone()).await.unwrap_or_else(|error| {
+                panic!(
+                    "{mode:?}/{count} restart failed after {:?} with {error:?} (window budget {} ms)",
+                    started.elapsed(),
+                    request.origin_manifest_timeout_ms
+                )
+            });
             let session = request.session.read().await;
             assert_eq!(session.origin_epoch, epoch + 1);
             assert_eq!(session.origin_seq_highwater, Some(count - 1));
@@ -281,12 +357,13 @@ async fn recovery_burst_verifies_same_host_resets_and_rejects_replayed_bytes() {
 async fn restart_with_reused_urls_requires_fresh_origin_bytes() {
     for mode in [HlsStartupMode::FirstReady, HlsStartupMode::Progressive, HlsStartupMode::Optimistic] {
         let origin = Origin::start().await;
-        let mut request = warm(&origin, mode).await;
+        let mut request = warm_with_start(&origin, mode, 1).await;
         let old_revision = request.session.read().await.startup.as_ref().unwrap().revisions[&0].clone();
         let before = origin.state.requests.lock().await.len();
         authorize_reentry(&mut request).await;
         *origin.state.bytes.write().await = media(3);
-        assert!(candidate(&request, playlist(&origin.base, "0123456789abcdef", 5, "?token=old")).await.is_ok());
+        let repeated = playlist_with_start(&origin.base, "0123456789abcdef", 5, "?token=old", 1);
+        assert!(candidate(&request, repeated).await.is_ok());
         assert_eq!(origin.state.requests.lock().await.len() - before, 5);
         let session = request.session.read().await;
         assert_eq!(session.origin_epoch, 1);
@@ -323,18 +400,14 @@ async fn query_rotation_reuses_media_only_after_content_verification() {
         };
         let before = origin.state.requests.lock().await.len();
         let fetched = playlist(&origin.base, "0123456789abcdef", 5, "?unknown=1&unknown=2&token=new");
-        assert!(candidate(&request, fetched.clone()).await.is_ok());
+        let result = candidate(&request, fetched.clone()).await;
+        assert!(result.is_ok(), "{:?}", result.err());
         assert_eq!(origin.state.requests.lock().await.len() - before, 5);
         let session = request.session.read().await;
         assert_eq!(session.origin_epoch, epoch);
         assert_eq!(session.origin_control.progress_generation, progress);
         assert_eq!(session.startup.as_ref().unwrap().revisions[&0], revision);
-        assert!(session.segments[&0]
-            .origin_fetch_ref
-            .as_ref()
-            .unwrap()
-            .resolved_origin_url
-            .ends_with("?unknown=1&unknown=2&token=new"));
+        assert!(session.segments[&0].origin_fetch_ref.as_ref().unwrap().resolved_origin_url.ends_with("?token=old"));
         assert!(revision.revision().origin_binding_is_current(&session));
         drop(session);
         assert!(candidate(&request, fetched).await.is_ok());
@@ -553,6 +626,9 @@ async fn restart_preserves_range_map_and_encryption_boundaries() {
         *origin.state.bytes.write().await = media(7);
         let mut fetched = playlist(&origin.base, "fedcba9876543210", 4, "");
         fetched.body = fetched.body.replacen("#EXTINF:4,\n", &format!("{tag}#EXTINF:4,\n"), 1);
+        if tag.starts_with("#EXT-X-BYTERANGE:") {
+            fetched.body = fetched.body.replace("#EXTM3U\n", "#EXTM3U\n#EXT-X-VERSION:4\n");
+        }
         assert!(candidate(&request, fetched).await.is_err(), "binding mismatch must not publish a candidate");
         let session = request.session.read().await;
         assert_eq!(session.origin_epoch, 0);

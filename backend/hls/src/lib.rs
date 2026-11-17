@@ -76,6 +76,7 @@ mod prefetch;
 mod prepared_terminal_bundle;
 mod progressive_budget;
 mod progressive_startup;
+mod publication_retention;
 mod qos;
 mod recovery_timing;
 mod refresh;
@@ -151,7 +152,10 @@ pub mod api {
         },
         lifecycle::{HlsLifecycleEvent, HlsLifecycleEventKey},
         live_window::{HlsLiveWindowPlan, HlsLiveWindowView},
-        manager::{exec_hls_lifecycle, HlsMediaActivityCommitOutcome, HlsProxyManager},
+        manager::{
+            exec_hls_lifecycle, HlsMediaActivityCommitOutcome, HlsProxyManager, HlsRecoveryEntryCommit,
+            HlsRecoveryPoll, HlsRetainedPollOrigin, HlsRetainedPollOriginGuard,
+        },
         manifest_commit::{
             hls_cached_manifest_options_for_requirement, hls_committed_manifest_body_for_request,
             hls_live_window_origin_allowed_for_request, hls_manifest_commit_requirement,
@@ -160,7 +164,8 @@ pub mod api {
         manifest_fetch::{LiveHlsOriginEntry, RetryPolicy},
         manifest_limits::{HlsManifestLimitViolation, MAX_HLS_MANIFEST_BYTES},
         manifest_snapshot::{
-            derive_hls_lease_manifest_snapshot, HlsLeaseManifestSnapshotInput, HlsTransientManifestTemplate,
+            derive_hls_lease_manifest_snapshot, derive_hls_recovery_entry_snapshot, HlsCachedManifestSource,
+            HlsLeaseManifestSnapshotInput, HlsTransientManifestTemplate,
         },
         map::{MapCacheStatus, MapEntry, OriginMapKey, ProxyMapId},
         map_fetcher::MapFetchContext,
@@ -168,7 +173,11 @@ pub mod api {
             HlsBandwidthPersistenceOutcome, HlsMasterBandwidth, HlsMasterBandwidthSelection,
             HlsSingleVariantMasterPlaylist,
         },
-        media_reserve::{HlsLeaseManifestSnapshot, HlsLeaseManifestUriMaterialization, HlsManifestCommitIdentity},
+        media_reserve::{
+            HlsLeaseManifestSnapshot, HlsLeaseManifestUriMaterialization, HlsManifestCommitIdentity,
+            HlsStartupAdmissionDecision, HlsStartupAdmissionOriginState, HlsStartupAdmissionRejection,
+            HlsStartupAdmissionSnapshot,
+        },
         observability::{
             log_hls_origin_content_coding, safe_hls_access_lease_id, safe_proxy_session_id, safe_session_key,
             safe_user_session_token, HlsLogIdentity, HlsOriginContentCodingObjectKind, HlsOriginContentCodingSource,

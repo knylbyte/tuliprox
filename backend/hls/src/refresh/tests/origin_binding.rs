@@ -149,6 +149,7 @@ async fn provider_failover_status_does_not_count_as_hls_retry() {
         refresh_identity: None,
         acceptance_directive: HlsManifestAcceptanceDirective::none(),
         access_lease_id: None,
+        retained_poll_origin: None,
         disabled_headers: None,
         now_ms: 100,
         origin_io: None,
@@ -232,9 +233,10 @@ async fn recovery_binding_supersession_is_discarded_without_failure_signal() {
     let requests_before_supersession = origin.requests.lock().await.len();
 
     let replacement_binding_url = format!("{}/live/b/index.m3u8", origin.base_url);
-    let mut binding_b_manifest = fetched_manifest(&three_segment_manifest_body(103));
+    let mut binding_b_manifest = fetched_manifest(&three_segment_manifest_body(102));
     binding_b_manifest.resolved_request_url.clone_from(&replacement_binding_url);
-    binding_b_manifest.final_manifest_url.clone_from(&replacement_binding_url);
+    // The replacement request target redirects to the same selected playlist and keeps its cache anchor.
+    binding_b_manifest.final_manifest_url.clone_from(&baseline_binding_url);
     binding_b_manifest.redirect_host = Some(host_from_base_url(&origin.base_url));
     let metrics = Arc::clone(request.segment_worker_pool.metrics());
     assert!(mark_origin_refresh_started(&mut request, 300).await);
@@ -364,6 +366,7 @@ async fn provider_failover_initial_success_commits_without_hls_host_retry_when_u
         refresh_identity: None,
         acceptance_directive: HlsManifestAcceptanceDirective::none(),
         access_lease_id: None,
+        retained_poll_origin: None,
         disabled_headers: None,
         now_ms: 100,
         origin_io: None,
@@ -476,7 +479,7 @@ pub(in crate::refresh::tests) async fn prepare_ready_content_anchor(
 
 pub(in crate::refresh::tests) async fn assert_cross_host_replay_does_not_commit(candidate_bytes: &'static str) {
     const COMMITTED_BYTES: &[u8] = b"committed-media-bytes";
-    let manifest = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:900\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\nold500.ts\n".to_string();
+    let manifest = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:500\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\nold500.ts\n".to_string();
     let origin = spawn_test_origin(Arc::new(move |path| {
         if path_has_extension(&path, "m3u8") {
             (200, Vec::new(), manifest.clone())
@@ -539,7 +542,7 @@ async fn recovery_required_orchestrator_accepts_pinned_progress_without_another_
         if path == "/live/user/pass/12345.m3u8" {
             let hit = entry_hits_for_handler.fetch_add(1, Ordering::SeqCst);
             if hit < plan.total_candidates() {
-                return (200, Vec::new(), switch_manifest_body(false));
+                return (200, Vec::new(), switch_manifest_body(500, false));
             }
             return (
                 302,

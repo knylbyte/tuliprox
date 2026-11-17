@@ -16,6 +16,11 @@ pub(super) async fn acquire_manifest_provider(
     let Some(io) = request.origin_io.as_ref() else { return Ok(None) };
     let deadline = Instant::now() + crate::hls_object_body_deadline(request.origin_manifest_timeout_ms);
     loop {
+        if !super::retained_refresh_has_session_demand(request).await {
+            return Err(OriginManifestFetchError::RecoveryUnavailable {
+                reason: HlsManifestRecoveryUnavailableReason::BindingSuperseded,
+            });
+        }
         let (binding, progress_generation, target_duration) = {
             let session = request.session.read().await;
             if !refresh_origin_work_generation_is_current(&session, request) {
@@ -59,7 +64,7 @@ pub(super) async fn acquire_manifest_provider(
                 return Ok(Some((io.clone(), guard)));
             }
             Err(kind) => {
-                drop(io.take_preacquired_provider_handle());
+                super::release_unused_preacquired_handle(io, request.retained_poll_origin.as_ref());
                 if !attempt.begin_logical_attempt() {
                     return Err(OriginManifestFetchError::RetryExhausted);
                 }

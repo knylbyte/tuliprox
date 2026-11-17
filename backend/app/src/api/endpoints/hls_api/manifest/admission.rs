@@ -1,6 +1,12 @@
 use super::{
-    super::origin_refresh_request::{hls_origin_refresh_request, HlsOriginRefreshOptions},
+    super::{
+        origin_account_runtime::{
+            prepare_hls_origin_runtime_for, release_retained_origin_allocation, RetainedOriginPreparation,
+        },
+        origin_refresh_request::{hls_origin_refresh_request, HlsOriginRefreshOptions},
+    },
     access::hls_cache_session_key_for_origin,
+    cached::{finish_hls_recovery_entry_response, HlsProvisionalRecoveryEntryResponse},
     clear_hls_provisioning_handoff_consumer, duration_to_millis_saturating,
     effective_hls_url_failover_provider_for_fetch_url, hls_access_lease_timing_for_session, hls_access_lease_ttl_ms,
     hls_availability_reevaluation_registration_failure_response, hls_cache_configured,
@@ -20,20 +26,19 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
-use log::debug;
+use log::{debug, warn};
 use shared::utils::sanitize_sensitive_info;
 use std::{sync::Arc, time::Duration};
 use tuliprox_hls::api::{
     build_proxy_session_id, hls_cached_manifest_options_for_requirement, hls_manifest_acceptance_directive_for_session,
-    hls_manifest_commit_requirement, register_hls_availability_reevaluation, safe_hls_access_lease_id,
-    safe_proxy_session_id, safe_session_key, HlsAccessContext, HlsAccessLeaseId, HlsAccessLeasePendingDeadline,
-    HlsAccessLeaseState, HlsAccessLeaseTouch, HlsAccountBindingProtection, HlsManifestAcceptanceDirective,
-    HlsManifestAcceptanceEvaluationOutcome, HlsManifestCommitRequirement, HlsOriginIoContext, HlsOriginWorkClass,
+    register_hls_availability_reevaluation, safe_hls_access_lease_id, safe_proxy_session_id, safe_session_key,
+    HlsAccessContext, HlsAccessLeaseId, HlsAccessLeasePendingDeadline, HlsAccessLeaseState, HlsAccessLeaseTouch,
+    HlsAccountBindingProtection, HlsManifestAcceptanceDirective, HlsManifestAcceptanceEvaluationOutcome,
+    HlsManifestCommitRequirement, HlsOriginIoContext, HlsOriginWorkClass, HlsRecoveryPoll, HlsRetainedPollOrigin,
     HlsRuntimeCustomTailReason, HlsSessionHandle, HlsSessionStoreOutcome, LiveHlsOriginEntry, ProxySessionId,
 };
 
 #[allow(clippy::too_many_arguments)]
-#[expect(clippy::too_many_lines, reason = "Keep admission, final failure retention and its response in one lifecycle.")]
 pub(in crate::api::endpoints::hls_api) async fn prepare_hls_canonical_manifest_origin_runtime(
     app_state: &Arc<AppState>,
     session: &HlsSessionHandle,
@@ -49,22 +54,7 @@ pub(in crate::api::endpoints::hls_api) async fn prepare_hls_canonical_manifest_o
     let expected_account = tuliprox_hls::api::HlsOriginAccountSnapshot::from_session(&*session.read().await);
     let mut allow_grace_hold = true;
     loop {
-        let origin_policy = hls_effective_origin_acquire_policy(session).await;
-        match prepare_hls_origin_runtime(
-            app_state,
-            session,
-            origin.input,
-            origin.raw_request_url,
-            origin.session_entry_url.as_str(),
-            path_proxy_session_id,
-            fingerprint,
-            origin_policy.connection_kind,
-            origin_policy.priority,
-            HlsOriginWorkKind::Manifest,
-            HlsOriginWorkClass::ManifestInteractive,
-            now_ms,
-        )
-        .await
+        match prepare_manifest_origin_work(app_state, session, origin, path_proxy_session_id, fingerprint, now_ms).await
         {
             Ok(prepared) => return Ok(prepared),
             Err(HlsOriginRuntimeAcquireError::NoAccountAvailable {
@@ -150,6 +140,32 @@ pub(in crate::api::endpoints::hls_api) async fn prepare_hls_canonical_manifest_o
             }
         }
     }
+}
+
+async fn prepare_manifest_origin_work(
+    app_state: &Arc<AppState>,
+    session: &HlsSessionHandle,
+    origin: &HlsCacheManifestOrigin<'_>,
+    proxy_session_id: &ProxySessionId,
+    fingerprint: &Fingerprint,
+    now_ms: u64,
+) -> Result<PreparedHlsOriginRuntime, HlsOriginRuntimeAcquireError> {
+    let policy = hls_effective_origin_acquire_policy(session).await;
+    prepare_hls_origin_runtime(
+        app_state,
+        session,
+        origin.input,
+        origin.raw_request_url,
+        origin.session_entry_url.as_str(),
+        proxy_session_id,
+        fingerprint,
+        policy.connection_kind,
+        policy.priority,
+        HlsOriginWorkKind::Manifest,
+        HlsOriginWorkClass::ManifestInteractive,
+        now_ms,
+    )
+    .await
 }
 
 pub(in crate::api::endpoints::hls_api) async fn apply_hls_user_agent_stream_index(
@@ -263,7 +279,35 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
             )
             .await
         {
-            HlsAccessLeaseTouch::Touched { .. } => {}
+            HlsAccessLeaseTouch::Touched { lease } => {
+                if session.read().await.has_retained_recovery_poll() {
+                    #[cfg(test)]
+                    super::cached::hls_manifest_publication_checkpoint(
+                        super::cached::HlsManifestPublicationStage::RetainedPoll,
+                    )
+                    .await;
+                    mark_hls_authorized_manifest_access(app_state, &session, now_ms).await;
+                    // Select after the last await before returning the response.
+                    match app_state.hls.proxy.retained_recovery_poll(&session, context, &lease).await {
+                        HlsRecoveryPoll::Regular => {}
+                        HlsRecoveryPoll::Unavailable => return Some(hls_canonical_retry_after_response()),
+                        HlsRecoveryPoll::Terminal(lease) => {
+                            return super::hls_terminal_playback_response(
+                                app_state,
+                                &lease,
+                                path_proxy_session_id,
+                                access_lease_id,
+                            );
+                        }
+                        HlsRecoveryPoll::Retained { body, origin: refresh } => {
+                            if let Some(refresh) = refresh {
+                                spawn_retained_poll_refresh(app_state, &session, refresh, fingerprint, origin, headers);
+                            }
+                            return Some(super::hls_response(body.to_string()));
+                        }
+                    }
+                }
+            }
             HlsAccessLeaseTouch::Denied => {
                 return Some(
                     hls_runtime_or_standalone_custom_tail_response(
@@ -317,21 +361,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
         &app_state.active_users,
     )
     .await;
-    let url_failover_provider = effective_hls_url_failover_provider_for_fetch_url(
-        &prepared_origin.fetch_url,
-        prepared_origin.url_failover_provider.clone(),
-        origin.session_entry_url.url_failover_provider(),
-    );
-    let origin_entry = LiveHlsOriginEntry::parse_with_provider_configs(
-        &prepared_origin.fetch_url,
-        url_failover_provider,
-        prepared_origin.runtime_provider_config.clone(),
-    )?;
-    let profile_recovery_failover =
-        origin.input.playback_provider.as_deref().is_some_and(|name| {
-            origin_entry.url_failover_provider().is_some_and(|profile| profile.name.as_ref() == name)
-        });
-    let origin_entry = origin_entry.with_profile_recovery_failover(profile_recovery_failover);
+    let origin_entry = canonical_manifest_origin_entry(&prepared_origin, &origin)?;
     {
         let session_guard = session.read().await;
         if session_guard.is_gc_marked_for_removal() {
@@ -359,14 +389,58 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
         now_ms,
     )
     .await;
-    let manifest_commit_requirement = hls_manifest_commit_requirement(
-        &session,
-        session_outcome,
-        handoff_previous_rendered_at_ms,
-        matches!(access_lease_state, HlsAccessLeaseState::Pending | HlsAccessLeaseState::Idle),
-        now_ms,
+    let (manifest_commit_requirement, recovery_entry) = app_state
+        .hls
+        .proxy
+        .manifest_commit_requirement_with_recovery_entry_for_lease(
+            &session,
+            session_outcome,
+            handoff_previous_rendered_at_ms,
+            matches!(access_lease_state, HlsAccessLeaseState::Pending | HlsAccessLeaseState::Idle),
+            access_lease_id,
+            now_ms,
+        )
+        .await;
+    let manifest_boundary_rendered_at_ms = handoff_previous_rendered_at_ms.unwrap_or(previous_manifest_rendered_at_ms);
+    let wait_timeout =
+        hls_manifest_wait_timeout_for_requirement(app_state, &session, manifest_commit_requirement).await;
+    let cached_manifest_options = hls_cached_manifest_options_for_requirement(
+        wait_timeout,
+        manifest_commit_requirement,
+        manifest_boundary_rendered_at_ms,
+        entry_origin_manifest_commits,
     )
-    .await;
+    .with_recovery_entry(recovery_entry);
+    let bandwidth_learning = match context.known_bitrate_bps {
+        Some(_) => HlsRuntimeBandwidthLearningContext::Disabled,
+        None => HlsRuntimeBandwidthLearningContext::Eligible(origin.input),
+    };
+    if cached_manifest_options.recovery_entry_requested() {
+        // The regular candidate still has priority. A shared recovery window
+        // can be published before scheduling or joining another origin request.
+        let mut immediate = cached_manifest_options;
+        immediate.wait_timeout = Duration::ZERO;
+        if let Some(response) = try_hls_cached_manifest_response(
+            app_state,
+            Some(fingerprint),
+            &session,
+            access_lease_id,
+            access_lease_state,
+            &app_state.hls.proxy.strip(),
+            server_path,
+            immediate,
+            bandwidth_learning,
+        )
+        .await
+        {
+            if response.extensions().get::<HlsProvisionalRecoveryEntryResponse>().is_none()
+                || !session.read().await.origin_refresh.is_due(now_ms)
+            {
+                return Some(finish_hls_recovery_entry_response(response));
+            }
+            // An unplayable fallback must not prevent the normal refresh path from spending a due retry.
+        }
+    }
     let hls_ctx = app_state.hls_ctx();
     let acceptance_evaluation =
         hls_manifest_acceptance_directive_for_session(&hls_ctx, &session, path_proxy_session_id).await;
@@ -380,43 +454,9 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
             return Some(hls_canonical_retry_after_response());
         }
     };
-    let manifest_boundary_rendered_at_ms = handoff_previous_rendered_at_ms.unwrap_or(previous_manifest_rendered_at_ms);
-    let wait_timeout =
-        hls_manifest_wait_timeout_for_requirement(app_state, &session, manifest_commit_requirement).await;
-    let cached_manifest_options = hls_cached_manifest_options_for_requirement(
-        wait_timeout,
-        manifest_commit_requirement,
-        manifest_boundary_rendered_at_ms,
-        entry_origin_manifest_commits,
-    );
-    let bandwidth_learning = match context.known_bitrate_bps {
-        Some(_) => HlsRuntimeBandwidthLearningContext::Disabled,
-        None => HlsRuntimeBandwidthLearningContext::Eligible(origin.input),
-    };
 
-    let (origin_policy, reservation_ttl_secs, playback_kind, account_runtime) = {
-        let session = session.read().await;
-        (
-            session.effective_origin_acquire_policy_or_default(),
-            session.account_overlap_timing().reservation_ttl_secs(),
-            session.origin_playback_kind(),
-            session.origin_account_runtime.clone(),
-        )
-    };
     let mut preacquired_provider_handle = prepared_origin.preacquired_origin_account_handle;
-    let mut origin_io = HlsOriginIoContext {
-        ctx: hls_ctx.clone(),
-        client_addr: fingerprint.addr,
-        allow_grace: HlsOriginWorkClass::ManifestInteractive.allows_grace(),
-        priority: origin_policy.priority,
-        connection_kind: origin_policy.connection_kind,
-        reservation_ttl_secs,
-        preacquired_provider_handle: None,
-        started_generation: None,
-        prepared_account: None,
-        playback_kind,
-        account_runtime,
-    };
+    let mut origin_io = canonical_manifest_origin_io(app_state, &session, fingerprint).await;
     if availability_reevaluation_owner_key.is_none() {
         if let Some(provider_handle) = preacquired_provider_handle.take() {
             origin_io = origin_io.with_managed_provider_handle(provider_handle);
@@ -539,7 +579,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
                 context.virtual_id,
                 app_state.hls.proxy.now_ms(),
             );
-            return Some(response);
+            return Some(finish_hls_recovery_entry_response(response));
         }
         return Some(StatusCode::SERVICE_UNAVAILABLE.into_response());
     }
@@ -581,7 +621,7 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
             )
             .await
             {
-                return Some(response);
+                return Some(finish_hls_recovery_entry_response(response));
             }
         }
         HlsSessionStoreOutcome::Reused => {
@@ -647,12 +687,238 @@ pub(in crate::api::endpoints::hls_api) async fn try_hls_cache_canonical_manifest
             )
             .await
             {
-                return Some(response);
+                return Some(finish_hls_recovery_entry_response(response));
             }
         }
     }
 
     Some(hls_unpublished_lease_channel_unavailable_response(app_state, path_proxy_session_id, access_lease_id).await)
+}
+
+fn spawn_retained_poll_refresh(
+    app_state: &Arc<AppState>,
+    session: &HlsSessionHandle,
+    refresh_origin: HlsRetainedPollOrigin,
+    fingerprint: &Fingerprint,
+    origin: HlsCacheManifestOrigin<'_>,
+    headers: HeaderMap,
+) {
+    let app = Arc::clone(app_state);
+    let session = Arc::clone(session);
+    let fingerprint = fingerprint.clone();
+    let input = origin.input.clone();
+    let raw_request_url = origin.raw_request_url.to_owned();
+    #[cfg(test)]
+    let barrier = super::cached::take_retained_origin_barrier();
+    tokio::spawn(async move {
+        let refresh = refresh_retained_poll(
+            &app,
+            &session,
+            &refresh_origin,
+            &fingerprint,
+            HlsCacheManifestOrigin {
+                raw_request_url: &raw_request_url,
+                session_entry_url: origin.session_entry_url,
+                input: &input,
+                origin_source: origin.origin_source,
+            },
+            headers,
+        );
+        #[cfg(test)]
+        if let Some(barrier) = barrier {
+            let scoped = Arc::clone(&barrier);
+            super::cached::HLS_MANIFEST_PUBLICATION_BARRIER.scope(std::cell::RefCell::new(Some(scoped)), refresh).await;
+            barrier.finished.notify_one();
+            return;
+        }
+        refresh.await;
+    });
+}
+
+#[allow(clippy::too_many_lines, reason = "Keep prepared-account ownership through refresh registration.")]
+async fn refresh_retained_poll(
+    app_state: &Arc<AppState>,
+    session: &HlsSessionHandle,
+    refresh: &HlsRetainedPollOrigin,
+    fingerprint: &Fingerprint,
+    origin: HlsCacheManifestOrigin<'_>,
+    mut headers: HeaderMap,
+) {
+    let proxy_id = refresh.proxy_id();
+    let lease_id = refresh.lease_id();
+    let retained = RetainedOriginPreparation { session, origin: refresh };
+    let prepared = match prepare_hls_origin_runtime_for(
+        app_state,
+        session,
+        origin.input,
+        origin.raw_request_url,
+        origin.session_entry_url.as_str(),
+        proxy_id,
+        fingerprint,
+        crate::api::model::ConnectionKind::Normal,
+        0,
+        HlsOriginWorkKind::Manifest,
+        HlsOriginWorkClass::Background,
+        app_state.hls.proxy.now_ms(),
+        Some(retained),
+    )
+    .await
+    {
+        Ok(prepared) => prepared,
+        Err(reason) => {
+            debug!(
+                "HLS retained poll origin preparation deferred: proxy_session={} reason={reason:?}",
+                safe_proxy_session_id(proxy_id)
+            );
+            #[cfg(test)]
+            if matches!(
+                reason,
+                HlsOriginRuntimeAcquireError::NoAccountAvailable {
+                    reason: HlsOriginRuntimeNoAccountReason::ProviderConnectionsExhausted
+                }
+            ) {
+                super::cached::hls_manifest_publication_checkpoint(
+                    super::cached::HlsManifestPublicationStage::RetainedOriginExhausted,
+                )
+                .await;
+            }
+            return;
+        }
+    };
+    apply_hls_user_agent_stream_index(
+        session,
+        &mut headers,
+        origin.input.has_flag(ConfigInputFlags::UserAgentStreamIndex),
+        &app_state.active_users,
+    )
+    .await;
+    #[cfg(test)]
+    super::cached::hls_manifest_publication_checkpoint(
+        super::cached::HlsManifestPublicationStage::RetainedOriginBeforeRefresh,
+    )
+    .await;
+    let now_ms = app_state.hls.proxy.now_ms();
+    let Some(origin_entry) = canonical_manifest_origin_entry(&prepared, &origin) else {
+        discard_retained_poll_preparation(app_state, session, refresh, prepared).await;
+        return;
+    };
+    let requirement = app_state
+        .hls
+        .proxy
+        .manifest_commit_requirement_for_lease(session, HlsSessionStoreOutcome::Reused, None, false, lease_id, now_ms)
+        .await;
+    let hls_ctx = app_state.hls_ctx();
+    let (directive, owner_key) = match hls_manifest_acceptance_directive_for_session(&hls_ctx, session, proxy_id).await
+    {
+        HlsManifestAcceptanceEvaluationOutcome::Evaluated(directive) => (directive, None),
+        HlsManifestAcceptanceEvaluationOutcome::StateContention { owner_key } => {
+            (HlsManifestAcceptanceDirective::none(), Some(owner_key))
+        }
+        HlsManifestAcceptanceEvaluationOutcome::SessionSuperseded => {
+            discard_retained_poll_preparation(app_state, session, refresh, prepared).await;
+            return;
+        }
+    };
+    let io = canonical_manifest_origin_io(app_state, session, fingerprint).await.with_grace(false);
+    let preacquired = prepared.preacquired_origin_account_handle;
+    let mut request = hls_origin_refresh_request(
+        app_state,
+        session,
+        tuliprox_hls::api::HlsPreparedOriginAccount { entry: origin_entry, snapshot: prepared.snapshot },
+        HlsOriginRefreshOptions {
+            headers,
+            origin_io: io,
+            manifest_commit_requirement: requirement,
+            acceptance_directive: directive,
+            access_lease_id: Some(lease_id.clone()),
+            rewrite_secret: app_state.get_encrypt_secret().to_vec(),
+            now_ms,
+        },
+    );
+    request.retained_poll_origin = Some(refresh.clone());
+    if let Some(owner_key) = owner_key {
+        let can_schedule = retained.with_current(app_state, |_, _| Ok(())).await.is_ok();
+        if !can_schedule {
+            release_retained_origin_allocation(
+                app_state,
+                &tuliprox_hls::api::build_hls_origin_session_owner(proxy_id),
+                preacquired,
+            );
+            app_state.hls.proxy.release_unused_retained_poll_origin(session, refresh).await;
+            return;
+        }
+        // A reevaluation can sleep or hand off. Later work acquires against
+        // the current binding without holding the provisional connection.
+        drop(preacquired);
+        if let HlsCanonicalOwnerRegistration::FailClosed(reason) = hls_canonical_owner_registration(
+            register_hls_availability_reevaluation(hls_ctx, Arc::clone(session), owner_key, request),
+        ) {
+            warn!("HLS retained poll availability reevaluation not registered: reason={}", reason.as_label());
+        }
+    } else {
+        if let Some(handle) = preacquired {
+            request.origin_io = request.origin_io.take().map(|io| io.with_managed_provider_handle(handle));
+        }
+        super::canonical_owner::trigger_hls_background_manifest_refresh(app_state, session, proxy_id, request).await;
+    }
+}
+
+async fn discard_retained_poll_preparation(
+    app_state: &Arc<AppState>,
+    session: &HlsSessionHandle,
+    refresh: &HlsRetainedPollOrigin,
+    prepared: PreparedHlsOriginRuntime,
+) {
+    release_retained_origin_allocation(
+        app_state,
+        &tuliprox_hls::api::build_hls_origin_session_owner(refresh.proxy_id()),
+        prepared.preacquired_origin_account_handle,
+    );
+    app_state.hls.proxy.release_unused_retained_poll_origin(session, refresh).await;
+}
+
+fn canonical_manifest_origin_entry(
+    prepared: &PreparedHlsOriginRuntime,
+    origin: &HlsCacheManifestOrigin<'_>,
+) -> Option<LiveHlsOriginEntry> {
+    let url_failover_provider = effective_hls_url_failover_provider_for_fetch_url(
+        &prepared.fetch_url,
+        prepared.url_failover_provider.clone(),
+        origin.session_entry_url.url_failover_provider(),
+    );
+    let entry = LiveHlsOriginEntry::parse_with_provider_configs(
+        &prepared.fetch_url,
+        url_failover_provider,
+        prepared.runtime_provider_config.clone(),
+    )?;
+    let profile_recovery_failover = origin
+        .input
+        .playback_provider
+        .as_deref()
+        .is_some_and(|name| entry.url_failover_provider().is_some_and(|profile| profile.name.as_ref() == name));
+    Some(entry.with_profile_recovery_failover(profile_recovery_failover))
+}
+
+async fn canonical_manifest_origin_io(
+    app_state: &Arc<AppState>,
+    session: &HlsSessionHandle,
+    fingerprint: &Fingerprint,
+) -> HlsOriginIoContext {
+    let session = session.read().await;
+    let policy = session.effective_origin_acquire_policy_or_default();
+    HlsOriginIoContext {
+        ctx: app_state.hls_ctx(),
+        client_addr: fingerprint.addr,
+        allow_grace: HlsOriginWorkClass::ManifestInteractive.allows_grace(),
+        priority: policy.priority,
+        connection_kind: policy.connection_kind,
+        reservation_ttl_secs: session.account_overlap_timing().reservation_ttl_secs(),
+        preacquired_provider_handle: None,
+        started_generation: None,
+        prepared_account: None,
+        playback_kind: session.origin_playback_kind(),
+        account_runtime: session.origin_account_runtime.clone(),
+    }
 }
 
 pub(in crate::api::endpoints::hls_api) fn hls_initial_manifest_decision_wait_timeout(

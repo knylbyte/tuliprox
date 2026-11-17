@@ -126,6 +126,7 @@ pub(crate) enum FakeOriginMode {
         start: usize,
         manifest_status: Arc<std::sync::atomic::AtomicU16>,
         segment_status: Arc<std::sync::atomic::AtomicU16>,
+        manifest_release: Option<(usize, tokio::sync::watch::Receiver<bool>)>,
     },
     /// MPEG-TS bytes, then an open connection without data.
     TsThenStall(Vec<u8>),

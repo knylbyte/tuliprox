@@ -284,6 +284,18 @@ async fn spawn_tracked_origin(mode: FakeOriginMode) -> TrackedOrigin {
                 FakeOriginMode::HlsAdvancing
                 | FakeOriginMode::HlsAdvancingFrom(_)
                 | FakeOriginMode::HlsAdvancingWithFault { .. } => {
+                    if !request_str.contains(".ts") {
+                        if let FakeOriginMode::HlsAdvancingWithFault {
+                            start,
+                            manifest_release: Some((unblocked, release)),
+                            ..
+                        } = &mode
+                        {
+                            if advancing_seq >= start.saturating_add(*unblocked) {
+                                let _ = release.clone().wait_for(|released| *released).await;
+                            }
+                        }
+                    }
                     let fault = match &mode {
                         FakeOriginMode::HlsAdvancingWithFault { manifest_status, segment_status, .. } => {
                             let status = if request_str.contains(".ts") { segment_status } else { manifest_status };

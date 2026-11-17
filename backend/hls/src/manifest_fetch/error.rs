@@ -186,6 +186,20 @@ pub enum HlsManifestAcceptanceRejectReason {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HlsManifestRejectLogReason {
+    OriginCacheRevalidationRequired {
+        anchor_proxy_seq: u64,
+    },
+    OriginCacheAnchorMissing {
+        anchor_proxy_seq: u64,
+        anchor_origin_seq: u64,
+    },
+    OriginCacheSuccessorMissing {
+        previous_origin_seq: u64,
+        candidate_origin_seq: u64,
+    },
+    OriginPlaylistScopeChanged {
+        anchor_proxy_seq: u64,
+    },
     MissingOriginHighwater,
     ForwardTooFar {
         previous: u64,
@@ -215,6 +229,10 @@ pub enum HlsManifestRejectLogReason {
         existing_proxy_seq: u64,
         candidate_origin_seq: u64,
     },
+    OriginRolloverResourceReplay {
+        existing_proxy_seq: u64,
+        candidate_origin_seq: u64,
+    },
     SwitchResourceUnavailable,
     SwitchEncryptionKeyNotReady,
     SwitchMapResetUnsupported,
@@ -227,6 +245,20 @@ pub enum HlsManifestRejectLogReason {
 impl HlsManifestRejectLogReason {
     pub fn status_label(&self) -> String {
         match self {
+            Self::OriginCacheRevalidationRequired { anchor_proxy_seq } => {
+                format!("origin-cache-revalidation-required anchor_proxy_seq={anchor_proxy_seq}")
+            }
+            Self::OriginCacheAnchorMissing { anchor_proxy_seq, anchor_origin_seq } => {
+                format!("origin-cache-anchor-missing proxy_seq={anchor_proxy_seq} origin_seq={anchor_origin_seq}")
+            }
+            Self::OriginCacheSuccessorMissing { previous_origin_seq, candidate_origin_seq } => {
+                format!(
+                    "origin-cache-successor-missing previous={previous_origin_seq} candidate={candidate_origin_seq}"
+                )
+            }
+            Self::OriginPlaylistScopeChanged { anchor_proxy_seq } => {
+                format!("origin-playlist-scope-changed anchor_proxy_seq={anchor_proxy_seq}")
+            }
             Self::MissingOriginHighwater => "missing-origin-highwater".to_string(),
             Self::ForwardTooFar { previous, origin, window } => {
                 format!(
@@ -265,6 +297,9 @@ impl HlsManifestRejectLogReason {
                 format!(
                     "origin-sequence-resource-conflict existing_proxy_seq={existing_proxy_seq} candidate_origin_seq={candidate_origin_seq}"
                 )
+            }
+            Self::OriginRolloverResourceReplay { existing_proxy_seq, candidate_origin_seq } => {
+                format!("origin-rollover-resource-replay existing_proxy_seq={existing_proxy_seq} candidate_origin_seq={candidate_origin_seq}")
             }
             Self::SwitchResourceUnavailable => "switch-resource-unavailable".to_string(),
             Self::SwitchEncryptionKeyNotReady => "switch-encryption-key-not-ready".to_string(),

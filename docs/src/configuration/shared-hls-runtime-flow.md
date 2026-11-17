@@ -169,6 +169,7 @@ A session can be removed only when all relevant work has drained:
 - no prefetch queue entries are pending;
 - no ready object has an active reader;
 - no transient resource reader is active;
+- no published media or terminal protection still blocks cleanup;
 - no temporary files block cleanup.
 
 ## Manifest commit and startup rendering
@@ -179,14 +180,91 @@ window and user-specific access-lease URLs.
 Startup rendering can apply `hls_cache.strip` to hold back the initial view. This can help players that behave poorly when
 they start too close to the live edge.
 
-Manifest acceptance is conservative. Tuliprox tracks media sequence progress, host changes, and recovery signals so it can
-avoid accepting a manifest that would move the shared session backwards or suddenly switch to an unsafe origin host.
+### Segment identity and ordinary reloads
 
-Media sequence and highwater are local to an effective origin host and origin epoch. Tuliprox never treats matching
-sequence numbers or similar URIs on two hosts as continuity evidence. When reserve pressure requires recovery, the first
-acceptance attempt runs the complete configured burst; it does not start with a reduced probe. A cross-host winner is
-staged, checked against the lease-centered handoff base, committed under its acceptance generation, and starts a new
-origin epoch with a discontinuity when required.
+A segment occurrence belongs to the selected stream in its logical input, rendition, and archive context. Its origin
+media sequence number (MSN) identifies the position. Two positions can reuse the same URI and still represent separate
+occurrences. The client sees a monotonically assigned proxy sequence and a lease-specific URI. Published sequences
+keep the bytes and dependencies of their original binding.
+
+The final manifest URL supplies the HTTP fetch location and the base for resolving relative references. Tuliprox
+compares the resulting segment path, exact query, and effective HLS byte range. MAP and KEY each use their own
+resolved reference. MAP also uses its effective range, and the existing encryption and account checks govern key
+use. HTTP parameters inherited for transport stay on the fetch URL. A normal cache refresh can use a new fetch
+URL for the same MAP or KEY if its bytes are still missing. Previously published dependencies keep their bytes.
+
+For example, `https://a.example/live/one.m3u8?delivery=1` and
+`https://b.example/next/two.m3u8?delivery=2` both resolve `/media/490.ts?asset=main` to the same segment binding
+for MSN 490. The relative spelling `media/490.ts?asset=main` resolves to different paths in those directories.
+The same resource comparison applies in recovery and in transient publications, including overlapping parts.
+
+For an established timeline, the active cache anchor is the highest held proxy sequence with a current origin
+occurrence in the active namespace. A `Discovered` entry can be the anchor before it has any cached bytes. Local-only
+media and entries from a previous verified restart do not select the anchor. An ordinary reload must contain that
+anchor, preserve known overlapping bindings, and extend it with consecutive successors. A different manifest delivery
+host can serve the same selected playlist and pass those checks without recovery or another GET for READY overlap.
+
+### Controlled recovery and reset
+
+A missing anchor or required successor, or a conflicting segment path, query, or range, rejects the ordinary reload.
+The existing bounded recovery flow may then try the concrete origin again. Only within that flow can a different
+concrete binding of the same occurrence be confirmed: SHA-256 must match over the complete
+real media bytes of both bindings at the same processing layer, including the full declared range when applicable.
+A prefix, missing reference, short response, or invalid dependency, account, or generation cannot qualify the binding.
+Recovery reuses verified READY overlap and only fetches needed new or unverified media. Once confirmed, the current
+origin binding can be reused by ordinary reloads while its evidence remains valid. The old published URL, revision,
+and byte binding stay unchanged.
+
+An older or restarted MSN window is not an ordinary successor. Recovery can verify a reset with new media evidence.
+The two manifest-only exceptions below also open a new origin epoch. Explicit operator resets have their own lifecycle.
+
+When reserve pressure requires recovery, the first acceptance attempt runs the complete configured burst. Cross-host
+handoff that cannot keep the current timeline still needs staged media evidence and a generation-safe commit.
+
+### Observed Origin rollover and idle re-entry
+
+Successful cache-anchor validation confirms the host that delivered the selected media playlist after redirects.
+Normal refresh and recovery can both confirm a host, including a qualifying recovery response that is not selected.
+The session records that effective hostname or IP in `known_hosts` for the current origin epoch. A successful check
+sets the expiry to the check time plus twice the sum of the window's segment durations. A rotated manifest path or
+query leaves the proof intact. A timeout or delayed window missing the anchor leaves the expiry unchanged. An
+unresolved binding conflict revokes the proof for the responding host.
+
+In a normal refresh, a confirmed host may deliver a window explicitly starting at MSN zero with the current anchor
+absent. Tuliprox accepts the first valid window directly if every segment has a binding unknown to the session. It
+compares the complete resolved path, query, and HLS byte range across retained occurrences of the same logical
+stream, including earlier epochs. The comparison applies to any MSN and any delivery host. One reused binding
+rejects the entire candidate for an epoch change, including in recovery and idle re-entry. The guard cannot detect
+the same bytes at entirely new bindings. A window starting at zero that still contains the current anchor follows
+ordinary continuity checks.
+
+A new live access lease entering a retained session after more than three prior target durations without confirmed
+media delivery requires a fresh origin manifest. If the current anchor is absent, the valid selected window can
+start a new epoch even when its first MSN is positive. Recovery prefers a confirmed host among suitable responses.
+An expired host confirmation does not prevent re-entry. With the current anchor present, ordinary continuity still
+applies. A session removed by garbage collection starts cold with its own proxy sequence and host state.
+
+Both manifest-only paths accept a valid short window directly and qualify it for the new epoch. They commit the
+epoch before fetching the new media. The first supplied MSN gets the next free
+proxy sequence and a discontinuity before it. The remaining segments follow in order. Strip, READY and startup policy
+still govern delivery. The epoch commit clears all host confirmations. Published older URLs retain their original
+bindings. This is a compatibility exception for the Origin. The client-facing media sequence stays monotone as
+specified in [RFC 8216 § 6.2.2](https://www.rfc-editor.org/rfc/rfc8216.html#section-6.2.2).
+
+### First lease publication during manifest recovery
+
+A new live lease first tries the regular entry window. While an established cacheable session is running manifest
+recovery, the first lease publication can use the session's last committed render when the regular window cannot
+start. That render may precede the latest Origin commit. The lease gets its own URLs and start view, including the
+configured strip policy. Publication rechecks the running recovery, source validity, lease authorization, local
+media bindings and the new lease's READY reserve. The fallback can bridge an age-based fresh-commit requirement.
+Account and provisioning handoffs, reserve and terminal revalidation, and idle re-entry keep their own boundaries.
+
+The decision uses the recovery already in progress and can respond before it finishes. A temporarily unavailable
+entry returns HTTP 503 with `Retry-After: 1` when the recovery fallback has no admissible window. The request logs
+a successful fallback at WARN, including its reason and source generation. A final degraded admission rejection
+reports the measured and required durations. A missing render has its own reason. After recovery, the lease follows
+the normal live window and keeps its published media bindings.
 
 `PublicationLate` begins at `1.5 * TARGETDURATION`, but it is only an observation that the origin is publishing late. The
 runtime starts recovery and closes startup admission only when lease-specific READY reserve, full-burst recovery ETA, and
@@ -299,8 +377,8 @@ replacement, while a late completion cannot clear a successor token, including o
 
 Account handoff gives newly published transient resources and normal AES key references a separate resource-ID namespace.
 Identical origin key URLs therefore cannot inherit cached keys from the previous account. Old published references keep
-their original mappings and cached bytes; existing resource TTLs and metadata limits still govern retention. Rolling EVENT
-rewrites restart at handoff and preserve the new namespace when appending subsequent manifest lines.
+their original mappings and cached bytes. The publication retention described below can keep cached bindings beyond
+resource TTL. Rolling EVENT rewrites restart at handoff and preserve the new namespace when appending manifest lines.
 
 A live failover-group session is keyed by the logical group (target and group channel ID), not by a member; the bound
 member is session state. A member handoff is an account handoff that also replaces the bound member: it releases the old
@@ -340,8 +418,23 @@ Some manifests contain objects that should not become normal cached timeline seg
 resources or unsupported HLS features.
 
 When Tuliprox detects such a manifest, the session can switch from `NormalCacheTimeline` to `TransientPassthrough`.
-The rendered manifest then points user-specific `/r/<resource_file>` URLs at short-lived transient resource entries.
-Tuliprox still validates the `hls_access_lease_id` before serving those resources.
+The rendered manifest uses lease-specific `/r/<resource_file>` routes. An overlapping occurrence retains its route,
+fetch binding, and cached object revision across reloads when its identity and dependencies match. The same origin URI
+at a different segment or part position, or with a different effective range, keeps its own identity. A conflicting
+binding for an already published position cannot replace that route. Tuliprox still validates the access lease.
+
+### Retention of published media
+
+Cacheable media that was actually delivered in a playlist stays protected when the playlist removes it. The minimum
+ends at removal time plus the segment duration plus the longest delivered playlist duration that contained it, across
+leases. For example, removal at second 10 of a four-second segment previously listed in a 24-second playlist protects
+it until second 38. A render that was never delivered does not establish this deadline.
+
+This protection covers the existing cached bytes, immutable startup revision, and required MAP/key mappings. It applies
+to duration GC, session and global size GC, and reclamation before a write. Existing readers, current publications and
+terminal pins may protect objects longer. If protected objects fill a budget, new cache work defers or receives the
+existing capacity error. Retention does not extend lease validity or grant a fresh origin fetch for an expired mapping.
+Direct streams that were not cacheable remain direct; Tuliprox does not spool them to provide local retention.
 
 ## Cleanup and stale URLs
 

@@ -227,6 +227,24 @@ fn classify_manifest_sequence_relation(
     }
 }
 
+/// A checked shared-cache occurrence supplies continuity independently of the delivering host.
+pub(crate) fn quality_with_cache_continuity(
+    mut quality: HlsManifestOriginQuality,
+    anchor_origin_seq: u64,
+) -> HlsManifestOriginQuality {
+    quality.previous_highwater = Some(anchor_origin_seq);
+    quality.sequence_relation = classify_manifest_sequence_relation(
+        Some(anchor_origin_seq),
+        quality.origin_highwater,
+        None,
+        HlsManifestContinuityMode::StrictContinuity,
+    );
+    quality.requires_handoff_discontinuity = false;
+    quality.reject_reason = None;
+    quality.score = manifest_origin_quality_score(quality.host_relation, quality.sequence_relation, false);
+    quality
+}
+
 fn manifest_continuity_mode(session: &crate::HlsSession, now_ms: u64) -> HlsManifestContinuityMode {
     if session.origin_is_qualified() {
         return HlsManifestContinuityMode::StrictContinuity;

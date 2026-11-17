@@ -28,6 +28,7 @@ hls_cache:
 "#;
 
     let cfg: ReverseProxyConfigDto = serde_saphyr::from_str(yaml).expect("reverse_proxy should deserialize");
+    assert_eq!(cfg.hls_cache.as_ref().unwrap().manifest_recovery_burst.level, HlsManifestRecoveryBurstLevel::Balanced);
     assert_eq!(
         cfg.hls_cache,
         Some(HlsCacheConfigDto {
@@ -119,7 +120,7 @@ fn hls_cache_serializes_non_default_manifest_recovery_burst() {
     let cfg = ReverseProxyConfigDto {
         rewrite_secret: "00112233445566778899aabbccddeeff".to_string(),
         hls_cache: Some(HlsCacheConfigDto {
-            manifest_recovery_burst: HlsManifestRecoveryBurstConfigDto { level: HlsManifestRecoveryBurstLevel::Beast },
+            manifest_recovery_burst: HlsManifestRecoveryBurstConfigDto { level: HlsManifestRecoveryBurstLevel::Off },
             ..Default::default()
         }),
         ..Default::default()
@@ -130,7 +131,8 @@ fn hls_cache_serializes_non_default_manifest_recovery_burst() {
         serialized.contains("manifest_recovery_burst:"),
         "expected manifest recovery burst block, got: {serialized}"
     );
-    assert!(serialized.contains("level: beast"), "expected burst level, got: {serialized}");
+    let restored: ReverseProxyConfigDto = serde_saphyr::from_str(&serialized).unwrap();
+    assert_eq!(restored.hls_cache.unwrap().manifest_recovery_burst.level, HlsManifestRecoveryBurstLevel::Off);
 }
 
 #[test]
@@ -316,7 +318,7 @@ fn hls_strip_config_default_is_segments() {
 #[test]
 fn origin_target_duration_defaults_validates_and_roundtrips() {
     let legacy: HlsCacheConfigDto = serde_json::from_str("{}").unwrap();
-    assert_eq!(legacy.min_origin_target_duration_secs, Secs::new(0));
+    assert_eq!(legacy.min_origin_target_duration_secs, Secs::new(4));
     for raw in ["-1", "1.5"] {
         let json = format!("{{\"min_origin_target_duration_secs\":{raw}}}");
         assert!(serde_json::from_str::<HlsCacheConfigDto>(&json).is_err());

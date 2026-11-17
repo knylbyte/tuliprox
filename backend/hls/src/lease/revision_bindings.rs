@@ -87,10 +87,21 @@ pub(super) fn commit_lease_revision_bindings(lease: &mut HlsAccessLease, snapsho
         }) {
             return false;
         }
-        let bindings = lease.revision_bindings.get_or_insert_with(|| Arc::new(HlsLeaseRevisionBindings::default()));
-        let bindings = Arc::make_mut(bindings);
+        let mut bindings = current.map_or_else(HlsLeaseRevisionBindings::default, |bindings| (**bindings).clone());
         bindings.revisions.extend(publication.revisions.iter().map(|(seq, revision)| (*seq, revision.clone())));
-        bindings.retire_while(|seq, len| len > MAX_LEASE_REVISION_BINDINGS || seq < publication.retained_start_seq);
+        while let Some((&seq, revision)) = bindings.revisions.first_key_value() {
+            if (seq >= publication.retained_start_seq && bindings.revisions.len() <= MAX_LEASE_REVISION_BINDINGS)
+                || revision.revision().retention_is_active(snapshot.delivered_at_ms)
+            {
+                break;
+            }
+            bindings.retired_through = Some(seq);
+            bindings.revisions.remove(&seq);
+        }
+        if bindings.revisions.len() > MAX_LEASE_REVISION_BINDINGS {
+            return false;
+        }
+        lease.revision_bindings = Some(Arc::new(bindings));
     }
     true
 }

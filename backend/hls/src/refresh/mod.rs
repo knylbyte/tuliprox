@@ -49,10 +49,12 @@ use tuliprox_core::model::{AppConfig, HlsManifestRecoveryBurstConfig, ReversePro
 
 pub(crate) mod anchor_probe;
 mod commit;
+pub(crate) mod continuity;
 pub(crate) mod failure;
 pub(crate) mod origin_probe;
 mod provider;
 mod short_manifest;
+mod verified_binding;
 pub(crate) use short_manifest::observe_target_duration;
 mod startup_revision;
 mod switch_staging;
@@ -65,7 +67,7 @@ use self::{
         commit_fetched_manifest_with_acceptance_mode, ensure_refresh_origin_work_generation_is_current,
         refresh_origin_work_generation_is_current, HlsManifestCommitProgressEvidence,
     },
-    failure::{apply_manifest_fetch_failure_signal, member_origin_failure, refresh_failure_backoff_schedule},
+    failure::{apply_manifest_fetch_failure, member_origin_failure, refresh_failure_backoff_schedule},
     switch_staging::{
         critical_handoff_snapshot_is_current, prepare_critical_handoff, remove_uncommitted_staged_switch_files,
         stage_alternative_manifest_switch, switch_staging_error, verify_content_anchor,
@@ -90,6 +92,8 @@ pub struct OriginRefreshState {
     pub last_success_at_ms: Option<u64>,
     pub last_error_at_ms: Option<u64>,
     pub in_flight: bool,
+    /// This refresh may run only while the shared session has origin demand.
+    pub(crate) retained_poll_owned: bool,
     /// Ownership token for the currently running refresh, independent of work generations and timestamps.
     pub refresh_identity: Option<Arc<()>>,
 }
@@ -100,6 +104,7 @@ impl OriginRefreshState {
     pub fn mark_started(&mut self, now_ms: u64) {
         self.last_fetch_started_at_ms = Some(now_ms);
         self.in_flight = true;
+        self.retained_poll_owned = false;
         self.refresh_identity = Some(Arc::new(()));
     }
 
@@ -124,6 +129,7 @@ impl OriginRefreshState {
         self.last_error_at_ms = None;
         self.consecutive_failures = 0;
         self.in_flight = false;
+        self.retained_poll_owned = false;
         self.refresh_identity = None;
         self.next_fetch_allowed_at_ms = fetch_started_at_ms.saturating_add(refresh_interval_ms);
         refresh_interval_ms
@@ -135,6 +141,7 @@ impl OriginRefreshState {
         let next_retry_delay_ms = self.next_failure_backoff_ms();
         self.consecutive_failures = self.consecutive_failures.saturating_add(1);
         self.in_flight = false;
+        self.retained_poll_owned = false;
         self.refresh_identity = None;
         self.next_fetch_allowed_at_ms = failed_at_ms.saturating_add(next_retry_delay_ms);
     }
@@ -142,6 +149,7 @@ impl OriginRefreshState {
     fn mark_invalidated(&mut self, finished_at_ms: u64) {
         self.last_fetch_finished_at_ms = Some(finished_at_ms);
         self.in_flight = false;
+        self.retained_poll_owned = false;
         self.refresh_identity = None;
     }
 
@@ -186,6 +194,8 @@ pub struct OriginRefreshRequest {
     pub refresh_identity: Option<Arc<()>>,
     pub acceptance_directive: HlsManifestAcceptanceDirective,
     pub access_lease_id: Option<HlsAccessLeaseId>,
+    /// Present only on a refresh scheduled by a retained live-manifest poll.
+    pub retained_poll_origin: Option<crate::manager::HlsRetainedPollOrigin>,
     pub now_ms: u64,
     pub origin_io: Option<HlsOriginIoContext>,
     pub post_refresh_runtime: Option<HlsPostRefreshRuntime>,
@@ -334,8 +344,9 @@ pub async fn trigger_origin_refresh_sync(mut request: OriginRefreshRequest) -> b
 }
 
 async fn run_owned_refresh(request: OriginRefreshRequest, fetch_started_at_ms: u64) {
-    let cancellation = request.session.read().await.origin_work_cancellation.clone();
+    let cancellation = request.work_owner.as_ref().expect("started refresh owns its cancellation token").cancellation();
     tokio::select! {
+        biased;
         () = cancellation.cancelled() => {},
         () = Box::pin(refresh_and_commit(request, fetch_started_at_ms)) => {},
     }
@@ -348,10 +359,26 @@ async fn mark_origin_refresh_started(request: &mut OriginRefreshRequest, fetch_s
     )
 }
 
+async fn retained_refresh_start_blocked(request: &OriginRefreshRequest) -> Option<HlsOriginRefreshTriggerOutcome> {
+    let origin = request.retained_poll_origin.as_ref()?;
+    let Some(guard) = request.hls_proxy.lock_retained_poll_origin(&request.session, origin).await else {
+        return Some(HlsOriginRefreshTriggerOutcome::SessionUnavailable);
+    };
+    let state = request.session.read().await;
+    let now_ms = request.hls_proxy.now_ms();
+    if state.origin_refresh.in_flight && guard.has_session_demand(now_ms) {
+        return Some(HlsOriginRefreshTriggerOutcome::InFlight);
+    }
+    (!guard.allows_start(&state, now_ms)).then_some(HlsOriginRefreshTriggerOutcome::SessionUnavailable)
+}
+
 async fn mark_origin_refresh_started_with_outcome(
     request: &mut OriginRefreshRequest,
     fetch_started_at_ms: u64,
 ) -> HlsOriginRefreshTriggerOutcome {
+    if let Some(outcome) = retained_refresh_start_blocked(request).await {
+        return outcome;
+    }
     if request.attempt.is_none() {
         let Ok(session) = request.session.try_read() else {
             return HlsOriginRefreshTriggerOutcome::RecoveryPressureStateContention;
@@ -384,6 +411,9 @@ async fn mark_origin_refresh_started_with_outcome(
                             != crate::origin::HlsOriginAccountStatus::Known
                 })
         };
+        if needs_prepare && request.retained_poll_origin.is_some() {
+            return HlsOriginRefreshTriggerOutcome::SessionUnavailable;
+        }
         if let Some(runtime) = io.account_runtime.as_ref().filter(|_| needs_prepare) {
             // A replacement result must not inherit an allocation prepared for the old entry.
             drop(io.take_preacquired_provider_handle());
@@ -407,7 +437,13 @@ async fn mark_origin_refresh_started_with_outcome(
         let hls_proxy = Arc::clone(&request.hls_proxy);
         let session_handle = Arc::clone(&request.session);
         for attempt in 0..HLS_RECOVERY_PRESSURE_START_CAS_ATTEMPTS {
-            match hls_proxy.with_current_recovery_pressure_session(&session_handle, &guard, |session| {
+            match hls_proxy.with_current_recovery_pressure_state(&session_handle, &guard, |leases, session| {
+                if request.retained_poll_origin.as_ref().is_some_and(|origin| {
+                    !origin.matches_session(&hls_proxy, &session_handle)
+                        || !origin.allows_start(leases, session, hls_proxy.now_ms())
+                }) {
+                    return HlsOriginRefreshTriggerOutcome::SessionUnavailable;
+                }
                 mark_origin_refresh_started_in_session(request, session, fetch_started_at_ms, &metrics)
             }) {
                 HlsRecoveryPressureGuardAccess::Acquired(outcome) => return outcome,
@@ -424,7 +460,20 @@ async fn mark_origin_refresh_started_with_outcome(
         return HlsOriginRefreshTriggerOutcome::RecoveryPressureStateContention;
     }
     let session_handle = Arc::clone(&request.session);
+    let hls_proxy = Arc::clone(&request.hls_proxy);
+    let retained = request.retained_poll_origin.clone();
+    let retained_guard = if let Some(origin) = retained.as_ref() {
+        let Some(guard) = hls_proxy.lock_retained_poll_origin(&session_handle, origin).await else {
+            return HlsOriginRefreshTriggerOutcome::SessionUnavailable;
+        };
+        Some(guard)
+    } else {
+        None
+    };
     let mut session = session_handle.write().await;
+    if retained_guard.as_ref().is_some_and(|guard| !guard.allows_start(&session, hls_proxy.now_ms())) {
+        return HlsOriginRefreshTriggerOutcome::SessionUnavailable;
+    }
     mark_origin_refresh_started_in_session(request, &mut session, fetch_started_at_ms, &metrics)
 }
 
@@ -500,6 +549,7 @@ fn mark_origin_refresh_started_in_session(
             session.fresh_manifest_commit_requirement_generation(reason)
         });
     session.origin_refresh.mark_started(fetch_started_at_ms);
+    session.origin_refresh.retained_poll_owned = request.retained_poll_origin.is_some();
     session.origin_refresh.attempt = request.attempt.clone();
     request.refresh_identity = session.origin_refresh.refresh_identity.clone();
     request.work_owner = Some(Arc::new(work_guard::RefreshWorkGuard::new(request, session)));
@@ -514,9 +564,22 @@ fn mark_origin_refresh_started_in_session(
 
 #[allow(clippy::too_many_lines)]
 async fn refresh_and_commit(mut request: OriginRefreshRequest, fetch_started_at_ms: u64) {
+    if !retained_refresh_has_session_demand(&request).await {
+        release_preacquired_origin_provider_handle(&request).await;
+        return;
+    }
     request.headers = sanitized_hls_origin_headers(&request.headers, request.disabled_headers.as_ref());
     let (provider_lease, result) = match provider::acquire_manifest_provider(&request).await {
         Ok(provider_lease) => {
+            if !retained_refresh_has_session_demand(&request).await {
+                if let Some((io, guard)) = provider_lease {
+                    finish_hls_origin_account_io(&io, &request.session, guard, false).await;
+                }
+                if let Some(origin) = request.retained_poll_origin.as_ref() {
+                    request.hls_proxy.release_unused_retained_poll_origin(&request.session, origin).await;
+                }
+                return;
+            }
             let result = Box::pin(fetch_and_commit_manifest_with_policy(&mut request)).await;
             (provider_lease, result)
         }
@@ -538,6 +601,7 @@ async fn refresh_and_commit(mut request: OriginRefreshRequest, fetch_started_at_
     if let Some(target_duration_ms) = early_prepared_terminal_target_duration_ms {
         start_refresh_terminal_bundle_preparation(&request, target_duration_ms);
     }
+    let has_demand = retained_refresh_has_session_demand(&request).await;
     let fetch_finished_at_ms = request.hls_proxy.now_ms();
     let origin_work_state = finish_refresh_origin_work(&request, fetch_finished_at_ms).await;
     if let Some(owner) = request.work_owner.as_ref() {
@@ -549,7 +613,7 @@ async fn refresh_and_commit(mut request: OriginRefreshRequest, fetch_started_at_
             &origin_io,
             &request.session,
             guard,
-            origin_work_state.generation_valid && origin_work_state.refresh_reservation,
+            has_demand && origin_work_state.generation_valid && origin_work_state.refresh_reservation,
         )
         .await;
         debug!(
@@ -558,7 +622,7 @@ async fn refresh_and_commit(mut request: OriginRefreshRequest, fetch_started_at_
         );
         touch_refresh_origin_account_binding(
             &request,
-            origin_work_state.generation_valid && origin_work_state.refresh_reservation,
+            has_demand && origin_work_state.generation_valid && origin_work_state.refresh_reservation,
         )
         .await;
     }
@@ -589,7 +653,8 @@ async fn refresh_and_commit(mut request: OriginRefreshRequest, fetch_started_at_
             }
             // Invalidated work must release its own singleflight flag even when no successor was published.
             Ok(_) | Err(_)
-                if !origin_work_state.generation_valid
+                if !has_demand
+                    || !origin_work_state.generation_valid
                     || !refresh_origin_work_generation_is_current(&session, &request) =>
             {
                 session.origin_refresh.mark_invalidated(fetch_finished_at_ms);
@@ -666,7 +731,10 @@ async fn refresh_and_commit(mut request: OriginRefreshRequest, fetch_started_at_
                 session.origin_control.qualification.record_failure();
                 session.origin_refresh.mark_failure(fetch_finished_at_ms);
                 metrics.record_refresh_failed();
-                let post_refresh_action = apply_manifest_fetch_failure_signal(&mut session, &err, fetch_finished_at_ms);
+                let entry_attempt = request.access_lease_id.is_some()
+                    && request.attempt.as_ref().is_some_and(|attempt| !attempt.active_live_playback);
+                let post_refresh_action =
+                    apply_manifest_fetch_failure(&mut session, &err, fetch_finished_at_ms, entry_attempt);
                 let origin_failure = member_origin_failure(&err);
                 let exhausted = matches!(post_refresh_action, HlsPostRefreshAvailabilityAction::Reevaluate { .. })
                     && origin_failure.is_some();
@@ -711,6 +779,11 @@ async fn refresh_and_commit(mut request: OriginRefreshRequest, fetch_started_at_
     request.hls_proxy.schedule_member_health_stall(&request.session, fetch_finished_at_ms).await;
     if let Some(owner) = request.work_owner.as_ref() {
         owner.disarm();
+    }
+    if !has_demand {
+        if let Some(origin) = request.retained_poll_origin.as_ref() {
+            request.hls_proxy.release_unused_retained_poll_origin(&request.session, origin).await;
+        }
     }
     if let Some(io) = request.origin_io.as_ref() {
         io.ctx
@@ -795,6 +868,11 @@ async fn refresh_and_commit(mut request: OriginRefreshRequest, fetch_started_at_
             )
             .await;
     }
+}
+
+pub(super) async fn retained_refresh_has_session_demand(request: &OriginRefreshRequest) -> bool {
+    let Some(origin) = request.retained_poll_origin.as_ref() else { return true };
+    request.hls_proxy.retained_poll_has_session_demand(&request.session, origin).await
 }
 
 fn record_superseded_manifest_recovery_completion(
@@ -952,19 +1030,23 @@ async fn release_preacquired_origin_provider_handle(request: &OriginRefreshReque
     let Some(origin_io) = request.origin_io.as_ref() else {
         return;
     };
-    let Some(managed) = origin_io.take_preacquired_provider_handle() else {
-        return;
-    };
-    let binding = request.session.read().await.origin_account_binding.clone();
-    if let Some(binding) = binding {
-        debug!(
-            "HLS provider handle released after manifest refresh: provider={} reason=refresh-not-started",
-            sanitize_sensitive_info(binding.account_name.as_ref())
+    release_unused_preacquired_handle(origin_io, request.retained_poll_origin.as_ref());
+    if let Some(origin) = request.retained_poll_origin.as_ref() {
+        request.hls_proxy.release_unused_retained_poll_origin(&request.session, origin).await;
+    }
+}
+
+fn release_unused_preacquired_handle(io: &HlsOriginIoContext, origin: Option<&crate::manager::HlsRetainedPollOrigin>) {
+    let Some(managed) = io.take_preacquired_provider_handle() else { return };
+    let request_id = managed.handle().and_then(|handle| handle.playback_request_id);
+    drop(managed);
+    if let Some((origin, request_id)) = origin.zip(request_id) {
+        io.ctx.active_provider.finish_identified_playback_request(
+            &crate::origin::build_hls_origin_session_owner(origin.proxy_id()),
+            request_id,
+            tuliprox_core::model::PlaybackRequestOutcome::FailedBeforeMedia,
         );
     }
-    // Drop the managed owner synchronously: the provider slot is released without a
-    // lossy cleanup message.
-    drop(managed);
 }
 
 async fn touch_refresh_origin_account_binding(request: &OriginRefreshRequest, reservation_refreshed: bool) {
@@ -1011,6 +1093,7 @@ fn manifest_fetch_context(
 ) -> HlsOriginManifestFetchContext {
     HlsOriginManifestFetchContext {
         origin_account_snapshot: request.origin_io.as_ref().and_then(|io| io.prepared_account.clone()),
+        retained_poll_origin: request.retained_poll_origin.clone(),
         attempt: request.attempt.clone(),
         app_config: Arc::clone(&request.app_config),
         session: Arc::clone(&request.session),
@@ -1042,6 +1125,10 @@ async fn fetch_and_commit_manifest_with_policy(
             return Err(OriginManifestFetchError::RetryExhausted);
         }
     }
+    let idle_reentry = origin_probe::wants_idle_entry(request).await;
+    if let Some(attempt) = request.attempt.as_ref() {
+        attempt.set_idle_reentry(idle_reentry);
+    }
     let (mut established_recovery_binding, prefetch_trigger) = {
         let session = request.session.read().await;
         if !refresh_origin_work_generation_is_current(&session, request) {
@@ -1064,7 +1151,7 @@ async fn fetch_and_commit_manifest_with_policy(
         return result;
     }
     let mut recovery_suppression_logged = false;
-    if prefetch_trigger.starts_episode() {
+    if !idle_reentry && prefetch_trigger.starts_episode() {
         if let Some(binding) = established_recovery_binding.clone() {
             return Box::pin(recover_manifest_for_request(
                 &fetch_context,
@@ -1087,6 +1174,21 @@ async fn fetch_and_commit_manifest_with_policy(
             .await
         {
             Ok(fetched) => fetched,
+            Err(error) if idle_reentry && !failure::manifest_hard_fetch_error(&error) => {
+                let Some(binding) = established_recovery_binding else { return Err(error) };
+                return Box::pin(recover_manifest_for_request(
+                    &fetch_context,
+                    request,
+                    HlsManifestRecoveryPath {
+                        binding,
+                        reject_reason: None,
+                        deterministic_conflict: None,
+                        trigger: HlsManifestAcceptanceTrigger::Observe,
+                        diagnostic: recovery_prefetch_diagnostic(request),
+                    },
+                ))
+                .await;
+            }
             Err(initial_error) => return Err(initial_error),
         };
     // A handoff first resolves the new entry. Recovery may use only that concrete target,
@@ -1132,6 +1234,56 @@ fn manifest_recovery_binding_for_request(
             && session.origin_seq_highwater.is_some()
             && session.last_rendered_manifest.is_some()
             && session.published_live_origin_baseline.is_some())
+        .then(|| session.origin_control.manifest_origin_binding.clone())
+        .flatten()
+    })
+}
+
+fn manifest_recovery_binding_for_continuity_rejection(
+    session: &crate::HlsSession,
+    request: &OriginRefreshRequest,
+    reason: &HlsManifestRejectLogReason,
+) -> Option<HlsManifestOriginBinding> {
+    manifest_recovery_binding_for_request(session, request).or_else(|| {
+        // An immutable transient occurrence conflict may spend the existing recovery
+        // budget on its committed concrete target, without inventing a normal cache anchor.
+        if matches!(reason, HlsManifestRejectLogReason::SwitchResourceUnavailable)
+            && matches!(session.mode, crate::HlsSessionMode::TransientPassthrough { .. })
+            && session.transient.last_manifest_commit_identity().is_some()
+            && session.transient.last_manifest_template().is_some()
+            && session.origin_control.pinned_host.is_some()
+            && session.origin_seq_highwater.is_some()
+            && !session.is_gc_marked_for_removal()
+            && !matches!(
+                session.origin_control.progress_phase,
+                crate::origin_progress::HlsOriginProgressPhase::Terminal
+                    | crate::origin_progress::HlsOriginProgressPhase::TerminalPartial
+            )
+            && refresh_origin_work_generation_is_current(session, request)
+            && request.attempt.as_ref().is_none_or(|attempt| !attempt.is_closed())
+        {
+            return session.origin_control.manifest_origin_binding.clone();
+        }
+        // A discovered origin occurrence is already a comparison context, even before
+        // the first renderable window. Only an actual continuity rejection may use its
+        // concrete target; reserve pressure alone does not establish a new baseline.
+        (matches!(
+            reason,
+            HlsManifestRejectLogReason::OriginCacheAnchorMissing { .. }
+                | HlsManifestRejectLogReason::OriginCacheRevalidationRequired { .. }
+                | HlsManifestRejectLogReason::OriginCacheSuccessorMissing { .. }
+                | HlsManifestRejectLogReason::OriginPlaylistScopeChanged { .. }
+                | HlsManifestRejectLogReason::OriginSequenceResourceConflict { .. }
+        ) && matches!(session.mode, crate::HlsSessionMode::NormalCacheTimeline)
+            && continuity::HlsCacheOriginAnchor::capture(session).is_some()
+            && !session.is_gc_marked_for_removal()
+            && !matches!(
+                session.origin_control.progress_phase,
+                crate::origin_progress::HlsOriginProgressPhase::Terminal
+                    | crate::origin_progress::HlsOriginProgressPhase::TerminalPartial
+            )
+            && refresh_origin_work_generation_is_current(session, request)
+            && request.attempt.as_ref().is_some_and(|attempt| !attempt.is_closed()))
         .then(|| session.origin_control.manifest_origin_binding.clone())
         .flatten()
     })
@@ -1204,9 +1356,23 @@ async fn recover_manifest_for_request(
     request: &OriginRefreshRequest,
     path: HlsManifestRecoveryPath,
 ) -> Result<CommittedOriginManifest, OriginManifestFetchError> {
-    let binding_is_current = {
+    let (binding_is_current, reentry_verification) = {
         let session = request.session.read().await;
-        manifest_recovery_binding_for_request(&session, request).as_ref() == Some(&path.binding)
+        let current = path.reject_reason.as_ref().map_or_else(
+            || manifest_recovery_binding_for_request(&session, request),
+            |reason| manifest_recovery_binding_for_continuity_rejection(&session, request, reason),
+        );
+        (
+            current.as_ref() == Some(&path.binding),
+            matches!(path.reject_reason, Some(HlsManifestRejectLogReason::OriginCacheRevalidationRequired { .. }))
+                && matches!(
+                    request.manifest_commit_requirement.fresh_reason(),
+                    Some(
+                        crate::HlsFreshManifestRequiredReason::StaleEntryWindow
+                            | crate::HlsFreshManifestRequiredReason::ExpiredRevalidation
+                    )
+                ),
+        )
     };
     if !binding_is_current {
         return Err(OriginManifestFetchError::RecoveryUnavailable {
@@ -1228,7 +1394,11 @@ async fn recover_manifest_for_request(
         path.reject_reason,
         path.deterministic_conflict,
         path.trigger,
-        request.manifest_commit_requirement.acceptance_mode(),
+        if reentry_verification {
+            HlsManifestCommitAcceptanceMode::FreshPinnedRevalidation
+        } else {
+            request.manifest_commit_requirement.acceptance_mode()
+        },
         |fetched, acceptance_mode| Box::pin(commit_manifest_recovery_candidate(request, fetched, acceptance_mode)),
     ))
     .await
@@ -1293,14 +1463,23 @@ async fn commit_initial_fetched_manifest(
             .await
         }
         Err(HlsManifestCommitError::TimelineRejected { reason }) => {
-            let deterministic_conflict = deterministic_timeline_conflict_from_rejection(&fetched, &reason);
+            let deterministic_conflict = {
+                let session = request.session.read().await;
+                deterministic_timeline_conflict_from_rejection(&session.key, &fetched, &reason)
+            };
             if let Some(conflict) = deterministic_conflict.as_ref() {
                 let session = request.session.read().await;
                 if deterministic_conflict_receipt_matches(&session, conflict) {
                     return Err(OriginManifestFetchError::DeterministicTimelineConflict(Box::new(conflict.clone())));
                 }
             }
-            let Some(binding) = established_recovery_binding else {
+            let binding = if let Some(binding) = established_recovery_binding {
+                Some(binding)
+            } else {
+                let session = request.session.read().await;
+                manifest_recovery_binding_for_continuity_rejection(&session, request, &reason)
+            };
+            let Some(binding) = binding else {
                 if !recovery_suppression_logged {
                     log_manifest_recovery_burst_suppressed(request, HlsManifestAcceptanceTrigger::Observe).await;
                 }
@@ -1378,19 +1557,14 @@ async fn commit_verified_critical_handoff(
     .await
 }
 
-async fn commit_manifest_recovery_candidate(
+async fn prepare_recovery_switch(
     request: &OriginRefreshRequest,
-    fetched: FetchedOriginManifest,
+    fetched: &FetchedOriginManifest,
     acceptance_mode: HlsManifestCommitAcceptanceMode,
-) -> Result<CommittedOriginManifest, HlsManifestCommitError> {
-    {
-        let session = request.session.read().await;
-        ensure_refresh_origin_work_generation_is_current(&session, request)?;
-    }
-    switch_staging::reject_final_content_mismatch(request, &fetched, acceptance_mode).await?;
+) -> Result<Option<switch_staging::HlsStagedSwitchCommit>, HlsManifestCommitError> {
     let content_anchor =
         if acceptance_mode == HlsManifestCommitAcceptanceMode::AllowVerifiedContentAnchorHostSwitchCandidate {
-            Some(Box::pin(verify_content_anchor(request, &fetched)).await?)
+            Some(Box::pin(verify_content_anchor(request, fetched)).await?)
         } else {
             None
         };
@@ -1406,7 +1580,7 @@ async fn commit_manifest_recovery_candidate(
             | HlsManifestCommitAcceptanceMode::AllowVerifiedContentAnchorHostSwitchCandidate
             | HlsManifestCommitAcceptanceMode::AllowVerifiedEmergencyHostSwitchCandidate
     ) {
-        Some(Box::pin(stage_alternative_manifest_switch(request, &fetched)).await?)
+        Some(Box::pin(stage_alternative_manifest_switch(request, fetched)).await?)
     } else {
         None
     };
@@ -1426,7 +1600,7 @@ async fn commit_manifest_recovery_candidate(
                 }
             }
             HlsManifestCommitAcceptanceMode::AllowVerifiedEmergencyHostSwitchCandidate => {
-                Box::pin(verify_staged_emergency_handoff(request, &fetched, &*staged)).await
+                Box::pin(verify_staged_emergency_handoff(request, fetched, &*staged)).await
             }
             HlsManifestCommitAcceptanceMode::StrictPinnedHost
             | HlsManifestCommitAcceptanceMode::FreshPinnedRevalidation
@@ -1440,7 +1614,38 @@ async fn commit_manifest_recovery_candidate(
             return Err(error);
         }
     }
+    Ok(staged_switch)
+}
+
+async fn commit_manifest_recovery_candidate(
+    request: &OriginRefreshRequest,
+    fetched: FetchedOriginManifest,
+    acceptance_mode: HlsManifestCommitAcceptanceMode,
+) -> Result<CommittedOriginManifest, HlsManifestCommitError> {
+    if let Some(result) = origin_probe::commit_idle_entry(request, &fetched, acceptance_mode, true).await {
+        cancel_superseded_terminal_work_after_media_progress(request, &result).await;
+        let (progress_evidence, wake_segment_scheduler, wake_map_scheduler) = result?;
+        return Ok(CommittedOriginManifest { fetched, progress_evidence, wake_segment_scheduler, wake_map_scheduler });
+    }
+    switch_staging::reject_final_content_mismatch(request, &fetched, acceptance_mode).await?;
+    if let Some(progress) = commit::commit_recovery_cache_continuation(request, &fetched, acceptance_mode).await? {
+        cancel_superseded_terminal_work_after_media_progress(request, &Ok((progress, true, true))).await;
+        return Ok(CommittedOriginManifest {
+            fetched,
+            progress_evidence: progress,
+            wake_segment_scheduler: true,
+            wake_map_scheduler: true,
+        });
+    }
+    {
+        let session = request.session.read().await;
+        ensure_refresh_origin_work_generation_is_current(&session, request)?;
+    }
     let mut origin_update = origin_probe::prepare_origin_update(request, &fetched, acceptance_mode).await?;
+    let content_qualified = origin_update.is_some()
+        && acceptance_mode != HlsManifestCommitAcceptanceMode::AllowVerifiedEmergencyHostSwitchCandidate;
+    let mut staged_switch =
+        if content_qualified { None } else { prepare_recovery_switch(request, &fetched, acceptance_mode).await? };
     let has_critical_handoff = staged_switch.as_ref().is_some_and(|staged| staged.critical_handoff.is_some());
     let commit_result = if has_critical_handoff {
         let staged = staged_switch

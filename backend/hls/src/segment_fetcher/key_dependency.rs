@@ -2,10 +2,10 @@ use super::{
     fetch_hls_transient_origin_response_with_attempt_prepare, finish_segment_origin_attempt, mark_segment_discovered,
     prepare_segment_origin_attempt, transient_object_expires_at, HlsOriginResourceClients, HlsSegmentEncryption,
     HlsTransientObjectFetchFinalizer, HlsTransientOriginFetchRequest, ProxySessionId, SegmentCacheKey,
-    SegmentFetchContext, SegmentFetchError, SegmentFetchPolicy, SegmentFetchSnapshot, SegmentKeyFetchDependency,
-    SegmentOriginWorkFinish, StagedCacheObject, TransientObjectFetchDecision, TransientObjectFetchToken,
-    TransientObjectUnavailableState, TransientPassthroughState, TransientResourceFile, TransientResourceId,
-    TransientResourceKind, TransientResourceRef,
+    SegmentFetchContext, SegmentFetchError, SegmentFetchFailure, SegmentFetchPolicy, SegmentFetchSnapshot,
+    SegmentKeyFetchDependency, SegmentOriginWorkFinish, StagedCacheObject, TransientObjectFetchDecision,
+    TransientObjectFetchToken, TransientObjectUnavailableState, TransientPassthroughState, TransientResourceFile,
+    TransientResourceId, TransientResourceKind, TransientResourceRef,
 };
 use futures::FutureExt;
 use log::warn;
@@ -128,21 +128,20 @@ pub(super) async fn ensure_segment_key_dependency_ready(
     snapshot: &SegmentFetchSnapshot,
     policy: &SegmentFetchPolicy,
     retry_work: Option<Arc<crate::HlsOriginRetryWork>>,
-) -> Result<(), SegmentFetchError> {
+) -> Result<(), SegmentFetchFailure> {
     let Some(dependency) = snapshot.key_dependency.clone() else {
         return Ok(());
     };
     match dependency {
-        SegmentKeyDependency::Wait { notifier, resource_id, resource_extension } => {
-            wait_for_segment_key_dependency(
-                context,
-                notifier,
-                resource_id,
-                resource_extension,
-                policy.origin_object_wait_timeout(),
-            )
-            .await
-        }
+        SegmentKeyDependency::Wait { notifier, resource_id, resource_extension } => wait_for_segment_key_dependency(
+            context,
+            notifier,
+            resource_id,
+            resource_extension,
+            policy.origin_object_wait_timeout(),
+        )
+        .await
+        .map_err(SegmentFetchFailure::from_key_transfer),
         SegmentKeyDependency::Fetch(dependency) => {
             let SegmentKeyFetchDependency { token, resource, resource_file } = *dependency;
             let binding = SegmentKeyBindingSnapshot::from(snapshot);
@@ -207,7 +206,7 @@ pub(super) async fn fetch_segment_key_dependency_into_cache(
     resource: TransientResourceRef,
     resource_file: TransientResourceFile,
     retry_work: Option<Arc<crate::HlsOriginRetryWork>>,
-) -> Result<(), SegmentFetchError> {
+) -> Result<(), SegmentFetchFailure> {
     let retry_work = match retry_work {
         Some(work) => Some(work),
         None => {
@@ -225,7 +224,9 @@ pub(super) async fn fetch_segment_key_dependency_into_cache(
     let run =
         commit_segment_key_dependency(context, binding, policy, token, resource, resource_file, retry_work.clone());
     match deadline {
-        Some(deadline) => tokio::time::timeout_at(deadline, run).await.unwrap_or(Err(SegmentFetchError::Timeout)),
+        Some(deadline) => tokio::time::timeout_at(deadline, run)
+            .await
+            .unwrap_or(Err(SegmentFetchFailure::KeyUnavailable(SegmentFetchError::Timeout))),
         None => run.await,
     }
 }
@@ -238,7 +239,7 @@ async fn commit_segment_key_dependency(
     resource: TransientResourceRef,
     resource_file: TransientResourceFile,
     retry_work: Option<Arc<crate::HlsOriginRetryWork>>,
-) -> Result<(), SegmentFetchError> {
+) -> Result<(), SegmentFetchFailure> {
     let mut fetch_finalizer = HlsTransientObjectFetchFinalizer::new(
         context.session.clone(),
         Arc::clone(&context.segment_cache),
@@ -271,7 +272,7 @@ async fn commit_segment_key_dependency(
             warn!("HLS stale staged AES key cleanup failed: error={err}");
         }
         context.session.write().await.fail_transient_object_retryable_if_current(&token, current_time_millis(), 1_000);
-        return Err(SegmentFetchError::Timeout);
+        return Err(SegmentFetchFailure::KeyUnavailable(SegmentFetchError::Timeout));
     }
     let metadata = match context.segment_cache.commit_staged(token.cache_key(), staged).await {
         Ok(metadata) => metadata,
@@ -281,7 +282,7 @@ async fn commit_segment_key_dependency(
                 current_time_millis(),
                 1_000,
             );
-            return Err(SegmentFetchError::cache_commit(&err));
+            return Err(SegmentFetchError::cache_commit(&err).into());
         }
     };
     let ready_at_ms = current_time_millis();
@@ -289,7 +290,7 @@ async fn commit_segment_key_dependency(
     let mut session = context.session.write().await;
     if !segment_key_dependency_generation_matches(&session, binding, &token, &resource, &resource_file, ready_at_ms) {
         session.fail_transient_object_retryable_if_current(&token, ready_at_ms, 1_000);
-        return Err(SegmentFetchError::Timeout);
+        return Err(SegmentFetchFailure::KeyUnavailable(SegmentFetchError::Timeout));
     }
     let expires_at_ms = transient_object_expires_at(ready_at_ms, session.transient.resource_ttl_ms);
     if !session.commit_transient_object_ready_if_current(
@@ -300,7 +301,7 @@ async fn commit_segment_key_dependency(
         ready_at_ms,
         expires_at_ms,
     ) {
-        return Err(SegmentFetchError::Timeout);
+        return Err(SegmentFetchFailure::KeyUnavailable(SegmentFetchError::Timeout));
     }
     fetch_finalizer.complete();
     Ok(())
@@ -314,7 +315,7 @@ async fn stage_segment_key_dependency(
     resource_file: &TransientResourceFile,
     expected_generation: u64,
     retry_work: Option<Arc<crate::HlsOriginRetryWork>>,
-) -> Result<(StagedCacheObject, SegmentOriginWorkFinish), SegmentFetchError> {
+) -> Result<(StagedCacheObject, SegmentOriginWorkFinish), SegmentFetchFailure> {
     let request = HlsTransientOriginFetchRequest {
         resolved_origin_uri: resource.resolved_origin_uri.clone(),
         origin_headers: context.headers.clone(),
@@ -359,7 +360,7 @@ async fn stage_segment_key_dependency(
                 current_time_millis(),
                 1_000,
             );
-            return Err(err);
+            return Err(SegmentFetchFailure::from_key_transfer(err));
         }
     };
     let staged = context
@@ -378,7 +379,7 @@ async fn stage_segment_key_dependency(
                 current_time_millis(),
                 Some(axum::http::StatusCode::BAD_GATEWAY),
             );
-            return Err(SegmentFetchError::NonRetryableStatus(axum::http::StatusCode::BAD_GATEWAY));
+            return Err(SegmentFetchError::NonRetryableStatus(axum::http::StatusCode::BAD_GATEWAY).into());
         }
         Err(err) => {
             context.session.write().await.fail_transient_object_retryable_if_current(
@@ -386,7 +387,7 @@ async fn stage_segment_key_dependency(
                 current_time_millis(),
                 1_000,
             );
-            return Err(SegmentFetchError::cache_body(&err));
+            return Err(SegmentFetchFailure::from_key_transfer(SegmentFetchError::cache_body(&err)));
         }
     };
     Ok((staged, origin_work))

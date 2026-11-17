@@ -57,7 +57,7 @@ fn transient_manifest_resource_limit_rejects_without_mutating_current_manifest()
 fn retained_finalized_generation_limit_rejects_the_next_generation() {
     let mut state = TransientPassthroughState::default();
     for index in 0..MAX_RETAINED_FINALIZED_MANIFEST_GENERATIONS {
-        let rewritten = rewritten_finalized_manifest(1, &format!("generation-{index}"));
+        let rewritten = rewritten_finalized_manifest_at(1, &format!("generation-{index}"), index);
         let semantics = parse_manifest_semantics(&rewritten.body);
         state
             .commit_rewritten_manifest_with_semantics(
@@ -77,7 +77,8 @@ fn retained_finalized_generation_limit_rejects_the_next_generation() {
     }
     let retained_body = state.last_manifest_body.clone().expect("retained current body");
     let retained_generation = state.manifest_generation();
-    let overflow = rewritten_finalized_manifest(1, "generation-overflow");
+    let overflow =
+        rewritten_finalized_manifest_at(1, "generation-overflow", MAX_RETAINED_FINALIZED_MANIFEST_GENERATIONS);
     let semantics = parse_manifest_semantics(&overflow.body);
 
     let violation = local_representation_limit(

@@ -54,10 +54,10 @@ async fn result(request: &OriginRefreshRequest) -> (Secs, Option<Outcome>, bool)
 }
 
 #[tokio::test]
-async fn default_zero_disables_duration_search_for_short_target_duration() {
+async fn explicit_zero_disables_duration_search_for_short_target_duration() {
     let server = spawn_test_origin(Arc::new(|_| (200, Vec::new(), playlist(100, Some(2))))).await;
     let mut request = request(&server, HlsManifestRecoveryBurstLevel::Beast);
-    request.hls_proxy = Arc::new(crate::HlsProxyManager::new());
+    request.hls_proxy.update_min_origin_target_duration_secs(Secs::new(0));
     request.app_config = test_app_config();
     assert_eq!(request.hls_proxy.min_origin_target_duration_secs(), Secs::new(0));
     assert!(trigger_origin_refresh_sync(request.clone()).await);

@@ -58,6 +58,11 @@ impl HlsProxyManager {
         self.access_leases.write().await.lifecycle_snapshot(lease_id, now_ms)
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub async fn remove_access_lease_for_test(&self, lease_id: &HlsAccessLeaseId) {
+        self.remove_access_lease(lease_id).await;
+    }
+
     pub(super) async fn remove_access_lease(&self, lease_id: &HlsAccessLeaseId) {
         let Some(preparation) = self.access_leases.read().await.prepare_access_lease_removal(lease_id) else {
             return;

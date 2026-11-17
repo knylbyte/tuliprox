@@ -386,12 +386,7 @@ pub(in crate::api::endpoints::hls_api) async fn maybe_mark_hls_provisioning_hand
 pub(in crate::api::endpoints::hls_api) async fn latest_shared_hls_manifest_rendered_at_ms(
     session: &HlsSessionHandle,
 ) -> u64 {
-    let session = session.read().await;
-    session
-        .last_rendered_manifest
-        .as_ref()
-        .map_or(0, |rendered| rendered.rendered_at_ms)
-        .max(session.transient.last_manifest_rendered_at_ms.unwrap_or(0))
+    session.read().await.latest_manifest_rendered_at_ms()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -597,6 +592,7 @@ pub(in crate::api::endpoints::hls_api) fn shared_hls_provisioning_segment_entry(
         origin_byte_range: None,
         map_ref: None,
         encryption: None,
+        occurrence_identity: None,
         retained_resource_identity: None,
         origin_fetch_ref: None,
         status: SegmentCacheStatus::Ready { content_length, ready_at_ms: now_ms },

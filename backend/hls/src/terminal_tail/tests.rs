@@ -11,6 +11,7 @@ const TERMINAL_ASSET_BYTES: &[u8] =
 
 fn manifest() -> HlsLeaseManifestSnapshot {
     HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
         source_commit_identity: HlsManifestCommitIdentity::new(1),
@@ -173,6 +174,7 @@ async fn unresolved_aes_terminal_base_evidence(iv: &str) -> HlsTerminalBaseEvide
             origin_byte_range: None,
             map_ref: None,
             encryption: Some(timeline_encryption),
+            occurrence_identity: None,
             retained_resource_identity: None,
             origin_fetch_ref: None,
             status: SegmentCacheStatus::Ready {
@@ -251,6 +253,7 @@ async fn terminal_timing_session(
                 origin_byte_range: None,
                 map_ref: None,
                 encryption: None,
+                occurrence_identity: None,
                 retained_resource_identity: None,
                 origin_fetch_ref: None,
                 status: SegmentCacheStatus::Ready {

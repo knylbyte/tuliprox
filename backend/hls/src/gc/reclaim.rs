@@ -1,10 +1,11 @@
 use super::{
     deletion::{CacheObjectDeletion, SegmentCacheDeletionReason},
-    policy::protected_set_for_cache_reclamation,
+    policy::{protected_set_for_cache_reclamation, protected_set_for_cache_reclamation_at},
     selection::{
         capacity_reclamation_evidence, collect_projected_session_reclamation, duration_expired_head_segment,
-        fifo_head_size_candidate, oldest_global_fifo_head_candidate, oldest_global_transient_object_candidate,
-        remove_map_entry, remove_obsolete_deferred_heads, remove_obsolete_segment_metadata, remove_segment_entry,
+        fifo_head_size_candidate, oldest_global_fifo_head_candidate, oldest_global_fifo_head_candidate_at,
+        oldest_global_transient_object_candidate, oldest_global_transient_object_candidate_at, remove_map_entry,
+        remove_obsolete_deferred_heads, remove_obsolete_segment_metadata, remove_segment_entry,
         remove_stale_queue_entries, session_cache_size, take_expired_transient_objects,
         unprotected_unreferenced_map_ids,
     },
@@ -204,11 +205,14 @@ impl HlsGarbageCollector {
         report.stale_queue_entries_removed =
             report.stale_queue_entries_removed.saturating_add(remove_stale_queue_entries(session));
 
-        remove_obsolete_segment_metadata(session, &protected_set_for_cache_reclamation(session, cache, None, None));
+        remove_obsolete_segment_metadata(
+            session,
+            &protected_set_for_cache_reclamation_at(session, cache, None, None, now_ms),
+        );
         remove_obsolete_deferred_heads(session, cache, None, None, deletions);
         let transient_before = session.transient.resources.len();
-        let protected = protected_set_for_cache_reclamation(session, cache, None, None);
-        session.transient.prune_expired_except(now_ms, &protected.key_resource_ids);
+        let protected = protected_set_for_cache_reclamation_at(session, cache, None, None, now_ms);
+        session.transient.prune_expired_except(now_ms, &protected.transient_object_ids);
         let transient_resources_pruned = transient_before.saturating_sub(session.transient.resources.len());
         let mut transient_readiness_changed = transient_resources_pruned > 0;
         report.transient_resources_pruned =
@@ -228,7 +232,7 @@ impl HlsGarbageCollector {
         while deletions.has_capacity() {
             let Some(proxy_seq) = duration_expired_head_segment(
                 session,
-                &protected_set_for_cache_reclamation(session, cache, None, None),
+                &protected_set_for_cache_reclamation_at(session, cache, None, None, now_ms),
                 policy,
                 now_ms,
             ) else {
@@ -243,7 +247,7 @@ impl HlsGarbageCollector {
         let mut session_size =
             cache.accounted_session_bytes(&session.proxy_session_id).max(session_cache_size(session));
         while session_size > policy.cache_bytes_per_session && deletions.has_capacity() {
-            let protected = protected_set_for_cache_reclamation(session, cache, None, None);
+            let protected = protected_set_for_cache_reclamation_at(session, cache, None, None, now_ms);
             let Some(removal) = session.transient.remove_oldest_ready_object_except(&protected.transient_object_ids)
             else {
                 break;
@@ -256,9 +260,10 @@ impl HlsGarbageCollector {
             });
         }
         while session_size > policy.cache_bytes_per_session && deletions.has_capacity() {
-            let Some(candidate) =
-                fifo_head_size_candidate(session, &protected_set_for_cache_reclamation(session, cache, None, None))
-            else {
+            let Some(candidate) = fifo_head_size_candidate(
+                session,
+                &protected_set_for_cache_reclamation_at(session, cache, None, None, now_ms),
+            ) else {
                 break;
             };
             session_size = session_size.saturating_sub(candidate.content_length);
@@ -270,9 +275,10 @@ impl HlsGarbageCollector {
             }
         }
 
-        for map_id in
-            unprotected_unreferenced_map_ids(session, &protected_set_for_cache_reclamation(session, cache, None, None))
-        {
+        for map_id in unprotected_unreferenced_map_ids(
+            session,
+            &protected_set_for_cache_reclamation_at(session, cache, None, None, now_ms),
+        ) {
             if !deletions.has_capacity() {
                 break;
             }
@@ -289,6 +295,7 @@ impl HlsGarbageCollector {
     pub(super) async fn collect_global_size_deletions(
         &self,
         sessions: &[HlsSessionHandle],
+        now_ms: u64,
         policy: &GarbageCollectionPolicy,
         report: &mut GarbageCollectionReport,
         deletions: &mut CacheDeletionBatch,
@@ -301,14 +308,19 @@ impl HlsGarbageCollector {
             if total_size <= policy.cache_bytes_global || !deletions.has_capacity() {
                 break;
             }
-            let Some(candidate) =
-                oldest_global_transient_object_candidate(sessions, &self.cache, None, &skipped_transient_sessions)
-                    .await
+            let Some(candidate) = oldest_global_transient_object_candidate_at(
+                sessions,
+                &self.cache,
+                None,
+                &skipped_transient_sessions,
+                now_ms,
+            )
+            .await
             else {
                 break;
             };
             let mut session = candidate.session.write().await;
-            let protected = protected_set_for_cache_reclamation(&session, &self.cache, None, None);
+            let protected = protected_set_for_cache_reclamation_at(&session, &self.cache, None, None, now_ms);
             let Some(removal) = session.transient.remove_oldest_ready_object_except(&protected.transient_object_ids)
             else {
                 skipped_transient_sessions.insert(candidate.proxy_session_id);
@@ -331,14 +343,15 @@ impl HlsGarbageCollector {
                 break;
             }
             let Some(candidate) =
-                oldest_global_fifo_head_candidate(sessions, &self.cache, None, &skipped_segment_sessions).await
+                oldest_global_fifo_head_candidate_at(sessions, &self.cache, None, &skipped_segment_sessions, now_ms)
+                    .await
             else {
                 break;
             };
             let mut session = candidate.session.write().await;
             let Some(current_head) = fifo_head_size_candidate(
                 &session,
-                &protected_set_for_cache_reclamation(&session, &self.cache, None, None),
+                &protected_set_for_cache_reclamation_at(&session, &self.cache, None, None, now_ms),
             ) else {
                 skipped_segment_sessions.insert(candidate.proxy_session_id);
                 continue;
@@ -358,7 +371,7 @@ impl HlsGarbageCollector {
 
             for map_id in unprotected_unreferenced_map_ids(
                 &session,
-                &protected_set_for_cache_reclamation(&session, &self.cache, None, None),
+                &protected_set_for_cache_reclamation_at(&session, &self.cache, None, None, now_ms),
             ) {
                 if !deletions.has_capacity() {
                     break;

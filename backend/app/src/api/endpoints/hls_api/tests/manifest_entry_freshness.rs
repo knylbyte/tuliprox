@@ -244,9 +244,19 @@ pub(super) async fn canonical_response_for_lease(
     request_url: &str,
     lease: &str,
 ) -> axum::response::Response {
+    let key = super::super::build_hls_origin_source(input, "12345").session_key();
+    canonical_response_for_lease_with_key(app_state, input, request_url, lease, &key).await
+}
+
+pub(super) async fn canonical_response_for_lease_with_key(
+    app_state: &Arc<AppState>,
+    input: &ConfigInput,
+    request_url: &str,
+    lease: &str,
+    session_key: &tuliprox_hls::api::HlsSessionKey,
+) -> axum::response::Response {
     let origin_source = super::super::build_hls_origin_source(input, "12345");
-    let session_key = origin_source.session_key();
-    let proxy_session_id = build_proxy_session_id(&session_key, &app_state.get_encrypt_secret());
+    let proxy_session_id = build_proxy_session_id(session_key, &app_state.get_encrypt_secret());
     let access_lease_id = HlsAccessLeaseId(lease.to_string());
     let access_context = test_hls_access_context(proxy_session_id.clone(), access_lease_id.clone());
     let stored = app_state
@@ -258,7 +268,7 @@ pub(super) async fn canonical_response_for_lease(
     if stored.is_none() {
         prepare_pending_test_hls_access_lease(app_state, &proxy_session_id, &access_lease_id).await;
         if lease != "warm" {
-            if let Some(session) = app_state.hls.proxy.sessions().get_by_key(&session_key).await {
+            if let Some(session) = app_state.hls.proxy.sessions().get_by_key(session_key).await {
                 session.write().await.origin_refresh.last_success_at_ms =
                     Some(super::super::current_time_millis().saturating_sub(10_000));
             }

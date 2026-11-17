@@ -454,6 +454,18 @@ async fn rebind_origin_with_window(
                     release.acquire().await.unwrap().forget();
                 }
                 let replacement = path.contains("account-user");
+                let resource_path = path.split_once('?').map_or(path.as_str(), |(path, _)| path);
+                let is_manifest = path_has_extension(resource_path, "m3u8");
+                if matches!(layout, RebindMediaLayout::SharedPath) && resource_path.starts_with("/live/") && is_manifest
+                {
+                    // Model the account token as inherited transport data. The shared playlist references stay equal.
+                    let token = if replacement { "account-user" } else { "root-user" };
+                    let response = format!(
+                        "HTTP/1.1 307 Temporary Redirect\r\nLocation: /manifest/rebind.m3u8?token={token}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    );
+                    socket.write_all(response.as_bytes()).await.unwrap();
+                    return;
+                }
                 let body = if let Some(control) = recovery {
                     // The playlists use virtual segment URIs; resume_origin_media supplies their TS bodies.
                     if path.ends_with("m3u8") {
@@ -467,7 +479,7 @@ async fn rebind_origin_with_window(
                     } else {
                         resume_origin_media(&path)
                     }
-                } else if path.ends_with("m3u8") {
+                } else if is_manifest {
                     let (head, count) = match (layout, replacement) {
                         (RebindMediaLayout::AccountPath, true) => (108, 8),
                         (RebindMediaLayout::SharedPath, true) => (102, 7),
@@ -479,10 +491,7 @@ async fn rebind_origin_with_window(
                     for seq in head..head + count {
                         let uri = match layout {
                             RebindMediaLayout::AccountPath => format!("{seq}.ts"),
-                            RebindMediaLayout::SharedPath => format!(
-                                "/common/{seq}.ts?account={}",
-                                if replacement { "account-user" } else { "root-user" }
-                            ),
+                            RebindMediaLayout::SharedPath => format!("/common/{seq}.ts"),
                         };
                         writeln!(manifest, "#EXTINF:4,\n{uri}").unwrap();
                     }

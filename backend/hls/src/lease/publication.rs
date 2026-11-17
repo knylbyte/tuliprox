@@ -36,6 +36,11 @@ impl HlsAccessLease {
             entry_generation,
             strip_policy: None,
             admits_live_entry: true,
+            recovery_entry_snapshot_generation: self
+                .last_manifest_snapshot
+                .as_ref()
+                .filter(|snapshot| snapshot.is_recovery_entry())
+                .map(|snapshot| snapshot.snapshot_generation),
             source: None,
         })
     }
@@ -251,7 +256,12 @@ fn manifest_source_is_regressive(
     candidate: &HlsLeaseManifestSnapshot,
     entry: bool,
 ) -> bool {
-    candidate.source_commit_identity.commit_generation() < current.source_commit_identity.commit_generation()
+    let source_regressive = match current.recovery_entry_origin_order(candidate) {
+        Some(std::cmp::Ordering::Less) => true,
+        Some(std::cmp::Ordering::Equal) => false,
+        _ => candidate.source_commit_identity.commit_generation() < current.source_commit_identity.commit_generation(),
+    };
+    source_regressive
         || ((entry
             || candidate.startup_revisions.as_ref().is_some_and(|publication| publication.window_plan.is_some()))
             && candidate.first_proxy_seq < current.first_proxy_seq)

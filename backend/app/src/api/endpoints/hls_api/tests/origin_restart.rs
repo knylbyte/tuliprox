@@ -5,6 +5,7 @@ use super::{
     ConfigInput, TestBinaryOriginResponse, AES_TEST_KEY_BYTES,
 };
 use axum::http::StatusCode;
+use sha2::{Digest, Sha256};
 use shared::model::{HlsStartupMode, InputType};
 use std::{
     fmt::Write as _,
@@ -15,7 +16,7 @@ use std::{
     time::Duration,
 };
 
-fn trace_fixture() {
+pub(super) fn trace_fixture() {
     struct Logger;
     impl log::Log for Logger {
         fn enabled(&self, _: &log::Metadata<'_>) -> bool { true }
@@ -47,6 +48,12 @@ async fn enable_unstripped_cache(app: &Arc<crate::api::model::AppState>, mode: H
     app.hls.proxy.update_config(&app.app_config).await;
 }
 
+async fn get_bound_media(app: &Arc<crate::api::model::AppState>, uri: &str) -> bytes::Bytes {
+    let response = get_response(Arc::clone(app), uri, None).await;
+    assert_eq!(response.status(), StatusCode::OK, "published media must remain readable");
+    response_body(response).await
+}
+
 /// Runs an origin restart in `mode`; `reuse_urls` keeps the segment namespace, `next_count` sets the new segment count.
 async fn restarted_origin_case(mode: HlsStartupMode, reuse_urls: bool, next_count: u64) {
     let phase = Arc::new(AtomicU8::new(0));
@@ -61,8 +68,9 @@ async fn restarted_origin_case(mode: HlsStartupMode, reuse_urls: bool, next_coun
             } else {
                 ("fedcba9876543210", next_count)
             };
-            let mut body = String::from("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:4\n");
-            for seq in 0..count {
+            // A positive start keeps this on the content-verified restart path, even with reused URLs.
+            let mut body = String::from("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:1\n#EXT-X-TARGETDURATION:4\n");
+            for seq in 1..=count {
                 writeln!(body, "#EXTINF:4,\n/{namespace}/{seq}.ts").unwrap();
             }
             Arc::from(body.into_bytes())
@@ -91,9 +99,7 @@ async fn restarted_origin_case(mode: HlsStartupMode, reuse_urls: bool, next_coun
     assert_eq!(warm.status(), StatusCode::OK);
     let warm_body = String::from_utf8(response_body(warm).await.to_vec()).unwrap();
     for uri in warm_body.lines().filter(|line| line.starts_with("/hls/") && !line.contains("/r/")) {
-        let response = get_response(Arc::clone(&app), uri, None).await;
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response_body(response).await.as_ref(), media(0));
+        assert_eq!(get_bound_media(&app, uri).await.as_ref(), media(0));
     }
     let key = super::super::build_hls_origin_source(&input, "12345").session_key();
     let session = app.hls.proxy.sessions().get_by_key(&key).await.unwrap();
@@ -105,6 +111,51 @@ async fn restarted_origin_case(mode: HlsStartupMode, reuse_urls: bool, next_coun
         .await
         .unwrap();
     let old_bytes = tokio::fs::read(&old_metadata.path).await.unwrap();
+    let old_uri = warm_body.lines().find(|line| line.starts_with("/hls/") && !line.contains("/r/")).unwrap();
+    assert_eq!(get_bound_media(&app, old_uri).await.as_ref(), old_bytes.as_slice());
+    let origin_before = origin.segment_requests.load(Ordering::Acquire);
+    backdate_origin_activity(&session).await;
+    phase.store(1, Ordering::Release);
+    let response = canonical_response_for_lease(&app, &input, &url, "restart").await;
+    assert_eq!(response.status(), StatusCode::OK, "{mode:?}");
+    let body = String::from_utf8(response_body(response).await.to_vec()).unwrap();
+    assert!(!body.contains("#EXT-X-ENDLIST"));
+    let first = manifest_media_sequence(&body);
+    assert!(
+        first >= 5,
+        "new lease uses the new epoch: mode={mode:?} reuse_urls={reuse_urls} count={next_count} first={first}",
+    );
+    let session = session.read().await;
+    assert_eq!(session.origin_epoch, 1);
+    assert_eq!(session.origin_seq_highwater, Some(next_count));
+    let current = session.startup.as_ref().unwrap().revisions[&first].clone();
+    assert_ne!(current, previous);
+    drop(session);
+    assert_eq!(
+        tokio::fs::read(current.revision().wait_complete(tokio::time::Instant::now()).await.unwrap().path)
+            .await
+            .unwrap(),
+        media(1)
+    );
+    assert_eq!(tokio::fs::read(old_metadata.path).await.unwrap(), old_bytes);
+    let successor_uri = body.lines().find(|line| line.starts_with("/hls/") && !line.contains("/r/")).unwrap();
+    let successor_digest = Sha256::digest(get_bound_media(&app, successor_uri).await);
+    assert_eq!(successor_digest, Sha256::digest(media(1)));
+    assert_ne!(successor_digest, Sha256::digest(&old_bytes));
+    let origin_after = origin.segment_requests.load(Ordering::Acquire);
+    assert!(
+        origin_after >= origin_before + usize::try_from(next_count).unwrap(),
+        "new epoch needs complete origin proof"
+    );
+    eprintln!("verified_reset mode={mode:?} reuse_urls={reuse_urls} origin_media_gets={origin_before}->{origin_after} first={first} old_digest={:02x?} new_digest={successor_digest:02x?}", Sha256::digest(&old_bytes));
+    assert_eq!(
+        get_bound_media(&app, old_uri).await.as_ref(),
+        old_bytes.as_slice(),
+        "the active old lease retains its published media URL"
+    );
+}
+
+async fn backdate_origin_activity(session: &super::HlsSessionHandle) {
     // Segment completion activity is committed by spawned tasks. On a busy or
     // single-core runtime they can land after the backdating write and reset
     // the activity to "now", so repeat the write until it sticks.
@@ -126,26 +177,6 @@ async fn restarted_origin_case(mode: HlsStartupMode, reuse_urls: bool, next_coun
         }
     }
     assert!(backdated, "session activity stays backdated");
-    phase.store(1, Ordering::Release);
-    let response = canonical_response_for_lease(&app, &input, &url, "restart").await;
-    assert_eq!(response.status(), StatusCode::OK, "{mode:?}");
-    let body = String::from_utf8(response_body(response).await.to_vec()).unwrap();
-    assert!(!body.contains("#EXT-X-ENDLIST"));
-    let first = manifest_media_sequence(&body);
-    assert!(first >= 5, "new lease uses the new epoch");
-    let session = session.read().await;
-    assert_eq!(session.origin_epoch, 1);
-    assert_eq!(session.origin_seq_highwater, Some(next_count - 1));
-    let current = session.startup.as_ref().unwrap().revisions[&first].clone();
-    assert_ne!(current, previous);
-    drop(session);
-    assert_eq!(
-        tokio::fs::read(current.revision().wait_complete(tokio::time::Instant::now()).await.unwrap().path)
-            .await
-            .unwrap(),
-        media(1)
-    );
-    assert_eq!(tokio::fs::read(old_metadata.path).await.unwrap(), old_bytes);
 }
 
 #[tokio::test]
@@ -161,7 +192,8 @@ async fn new_lease_receives_restarted_origin_without_mutating_the_previous_revis
 }
 
 #[tokio::test]
-async fn encrypted_query_rotation_verifies_raw_media_and_key_without_restarting() {
+#[expect(clippy::too_many_lines, reason = "Keep the encrypted publication, query proof and confirmed reload together.")]
+async fn encrypted_query_equivalence_preserves_bound_media_and_key_through_reloads() {
     trace_fixture();
 
     let phase = Arc::new(AtomicU8::new(0));
@@ -202,6 +234,13 @@ async fn encrypted_query_rotation_verifies_raw_media_and_key_without_restarting(
     };
     let app = test_app_state_with_inputs(vec![Arc::new(input.clone())]);
     enable_unstripped_cache(&app, HlsStartupMode::Conservative).await;
+    let mut config = app.app_config.config.load_full().as_ref().clone();
+    let cache = config.reverse_proxy.as_mut().unwrap().hls_cache.as_mut().unwrap();
+    // This fixture verifies six media objects and a shared key serially in one probe.
+    // Give each object and the local staging work a three-second slice of that budget.
+    cache.origin_manifest_timeout_ms = shared::model::Millis::new(24_000);
+    app.app_config.config.store(Arc::new(config));
+    app.hls.proxy.update_config(&app.app_config).await;
     create_active_hls_user_session(&app).await;
     let url = format!("{}/index.m3u8", origin.base_url);
     let response = canonical_response_for_lease(&app, &input, &url, "warm").await;
@@ -225,25 +264,29 @@ async fn encrypted_query_rotation_verifies_raw_media_and_key_without_restarting(
     };
     assert_eq!(key_requests.load(Ordering::Acquire), 1);
     phase.store(1, Ordering::Release);
-    for _ in 0..2 {
-        let commits = {
-            let mut session = session.write().await;
-            session.origin_refresh.next_fetch_allowed_at_ms = 0;
-            session.origin_refresh.last_success_at_ms =
-                Some(super::super::current_time_millis().saturating_sub(10_000));
-            session.origin_manifest_commits()
-        };
-        let response = canonical_response_for_lease(&app, &input, &url, "warm").await;
-        assert_eq!(response.status(), StatusCode::OK);
-        let _ = response_body(response).await;
-        tokio::time::timeout(Duration::from_secs(3), async {
-            while session.read().await.origin_manifest_commits() == commits {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("query verification commits");
+    let commits = {
+        let mut session = session.write().await;
+        session.origin_refresh.next_fetch_allowed_at_ms = 0;
+        session.origin_refresh.last_success_at_ms = Some(super::super::current_time_millis().saturating_sub(10_000));
+        session.mark_authorized_media_access(super::super::current_time_millis());
+        session.origin_manifest_commits()
+    };
+    let started = tokio::time::Instant::now();
+    refresh_playing_lease(&app, &session, &url).await;
+    {
         let session = session.read().await;
+        assert!(
+            session.origin_manifest_commits() > commits,
+            "equal binding was not committed after {:?} ({} candidate media GETs, {} total key GETs)",
+            started.elapsed(),
+            query_requests.load(Ordering::Acquire),
+            key_requests.load(Ordering::Acquire)
+        );
+        assert!(session
+            .origin_control
+            .acceptance_episode
+            .as_ref()
+            .is_none_or(|episode| episode.full_burst_completed && episode.exhaustion_reason().is_none()));
         assert_eq!(session.origin_epoch, 0);
         assert_eq!(session.origin_control.progress_generation, progress);
         assert_eq!(session.segments.values().map(|entry| entry.cache_key.clone()).collect::<Vec<_>>(), cache_keys);
@@ -252,12 +295,66 @@ async fn encrypted_query_rotation_verifies_raw_media_and_key_without_restarting(
             .as_ref()
             .unwrap()
             .resolved_origin_url
-            .ends_with("?synthetic=1")));
+            .ends_with("?synthetic=0")));
     }
-    assert_eq!(query_requests.load(Ordering::Acquire), 6, "unchanged polls reuse the completed proof");
-    assert_eq!(key_requests.load(Ordering::Acquire), 2, "one fresh check of the shared key");
+    assert_eq!(query_requests.load(Ordering::Acquire), 6, "one complete hash check per concrete candidate medium");
+    assert_eq!(key_requests.load(Ordering::Acquire), 2, "the shared held key is verified once");
+    session.write().await.origin_refresh.next_fetch_allowed_at_ms = 0;
+    refresh_playing_lease(&app, &session, &url).await;
+    assert_eq!(query_requests.load(Ordering::Acquire), 6, "a confirmed normal reload needs no equality downloads");
+    assert_eq!(key_requests.load(Ordering::Acquire), 2);
     for uri in uris {
         let response = get_response(Arc::clone(&app), uri, None).await;
         assert_eq!(response_body(response).await.as_ref(), ciphertext.as_ref());
     }
 }
+
+async fn refresh_playing_lease(app: &Arc<crate::api::model::AppState>, session: &super::HlsSessionHandle, url: &str) {
+    refresh_playing_lease_with_directive(app, session, url, tuliprox_hls::api::HlsManifestAcceptanceDirective::none())
+        .await;
+}
+
+pub(super) async fn refresh_playing_lease_with_directive(
+    app: &Arc<crate::api::model::AppState>,
+    session: &super::HlsSessionHandle,
+    url: &str,
+    acceptance_directive: tuliprox_hls::api::HlsManifestAcceptanceDirective,
+) {
+    refresh_playing_lease_with_directive_for(app, session, url, "warm", acceptance_directive).await;
+}
+
+pub(super) async fn refresh_playing_lease_with_directive_for(
+    app: &Arc<crate::api::model::AppState>,
+    session: &super::HlsSessionHandle,
+    url: &str,
+    lease: &str,
+    acceptance_directive: tuliprox_hls::api::HlsManifestAcceptanceDirective,
+) {
+    use super::super::origin_refresh_request::{hls_origin_refresh_request, HlsOriginRefreshOptions};
+    use tuliprox_hls::api::{
+        trigger_origin_refresh_sync, HlsManifestCommitRequirement, HlsOriginAccountSnapshot, HlsPreparedOriginAccount,
+        LiveHlsOriginEntry,
+    };
+    let mut io = super::provider_admission::test_hls_origin_io_context(app);
+    io.account_runtime = session.read().await.origin_account_runtime.clone();
+    let snapshot = HlsOriginAccountSnapshot::from_session(&*session.read().await);
+    let request = hls_origin_refresh_request(
+        app,
+        session,
+        HlsPreparedOriginAccount { entry: LiveHlsOriginEntry::parse(url).unwrap(), snapshot },
+        HlsOriginRefreshOptions {
+            headers: axum::http::HeaderMap::new(),
+            origin_io: io,
+            manifest_commit_requirement: HlsManifestCommitRequirement::CommittedManifestAllowed,
+            acceptance_directive,
+            access_lease_id: Some(super::HlsAccessLeaseId(lease.into())),
+            rewrite_secret: app.get_encrypt_secret().to_vec(),
+            now_ms: super::super::current_time_millis(),
+        },
+    );
+    assert!(trigger_origin_refresh_sync(request).await);
+}
+
+mod segment_contract;
+
+mod rollover;

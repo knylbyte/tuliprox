@@ -408,6 +408,8 @@ async fn run(cli: Cli) -> Result<RunExit, TestkitError> {
                 expect_body_error,
                 max_first_byte_millis,
                 min_prefix_to_eof_millis,
+                client_delivery_rate_bps: None,
+                http_proxy: None,
             };
             let result =
                 tuliprox_testkit::hls_probe::probe(&url, &RunId::new(run_id), expected_marker, &options).await?;
@@ -1280,8 +1282,11 @@ fn has_ts_extension(path: &str) -> bool {
 /// by the advertised segment duration. A client polling faster than one segment then sees the window
 /// advance at the cadence the profile promises instead of once per manifest request count.
 fn hls_realtime_sequence(state: &OriginState) -> u64 {
-    let duration_secs =
-        state.hls_profile.as_ref().and_then(|profile| profile.segment_duration_secs).unwrap_or(4).max(1);
+    let duration_secs = state
+        .hls_profile
+        .as_ref()
+        .map_or(4, |profile| profile.segment_duration_secs.unwrap_or(profile.target_duration_secs))
+        .max(1);
     let segment_millis = u64::from(duration_secs) * 1000;
     let elapsed_millis = u64::try_from(state.origin_started.elapsed().as_millis()).unwrap_or(u64::MAX);
     elapsed_millis / segment_millis
@@ -1332,7 +1337,7 @@ async fn hls_index_manifest(
         format!("&token={encoded}")
     });
     let playlist = if let Some(profile) = &state.hls_profile {
-        let duration = profile.segment_duration_secs.unwrap_or(4);
+        let duration = profile.segment_duration_secs.unwrap_or(profile.target_duration_secs);
         let first = if realtime { sequence_val } else { sequence_val.saturating_sub(1) / 10 };
         let mut playlist =
             format!("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:{duration}\n#EXT-X-MEDIA-SEQUENCE:{first}\n");
@@ -1434,7 +1439,8 @@ async fn profiled_hls_response(
     req_id: u64,
     segment_rate: Option<u64>,
 ) -> Response {
-    let Ok(parts) = tuliprox_testkit::hls_probe::segment_parts(&state.run_id, marker, sequence) else {
+    let Ok(parts) = tuliprox_testkit::hls_probe::segment_parts(&state.run_id, marker, sequence, profile.prefix_frames)
+    else {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
     if let Some(bytes_per_second) = segment_rate {

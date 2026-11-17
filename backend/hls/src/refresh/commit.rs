@@ -36,9 +36,8 @@ use crate::{
         transient_discontinuity_sequence, transient_visible_discontinuity_count, TransientManifestRewriter,
         TransientRewriteOptions, TransientRewriteResult,
     },
-    CacheAccessState, HlsManifestRenderer, HlsSessionMode, MapCacheStatus, RenderedManifestStoreOutcome,
-    RenderedManifestStoreRejectReason, SegmentCacheStatus, TransientPassthroughReason, TransientResourceKind,
-    TransientResourceRef,
+    CacheAccessState, HlsSessionMode, MapCacheStatus, RenderedManifestStoreOutcome, RenderedManifestStoreRejectReason,
+    SegmentCacheStatus, TransientPassthroughReason, TransientResourceKind, TransientResourceRef,
 };
 use axum::http::HeaderMap;
 use log::{debug, error, info, warn};
@@ -115,13 +114,88 @@ pub(super) fn commit_fetched_manifest(
     request: &OriginRefreshRequest,
     fetch_finished_at_ms: u64,
 ) -> Result<(HlsManifestCommitProgressEvidence, bool, bool), HlsManifestCommitError> {
-    commit_fetched_manifest_with_acceptance_mode(
+    commit_fetched_manifest_with_cache_continuity(
         session,
         fetched,
         request,
         fetch_finished_at_ms,
         request.manifest_commit_requirement.acceptance_mode(),
-        None,
+        CacheManifestPolicy::NormalRefresh,
+    )
+}
+
+pub(super) async fn commit_recovery_cache_continuation(
+    request: &OriginRefreshRequest,
+    fetched: &FetchedOriginManifest,
+    mode: HlsManifestCommitAcceptanceMode,
+) -> Result<Option<HlsManifestCommitProgressEvidence>, HlsManifestCommitError> {
+    if matches!(
+        mode,
+        HlsManifestCommitAcceptanceMode::FreshBaseline
+            | HlsManifestCommitAcceptanceMode::FreshPinnedRevalidation
+            | HlsManifestCommitAcceptanceMode::AllowVerifiedContentAnchorHostSwitchCandidate
+            | HlsManifestCommitAcceptanceMode::AllowVerifiedEmergencyHostSwitchCandidate
+    ) || request.manifest_commit_requirement.fresh_reason()
+        == Some(crate::HlsFreshManifestRequiredReason::ExpiredRevalidation)
+        || request.session.read().await.live_entry_revalidation.required
+    {
+        // These modes explicitly require the existing physical-content or lease
+        // handoff proof. Logical continuity does not replace that evidence.
+        return Ok(None);
+    }
+    let OriginManifestParseOutcome::Normal(manifest) =
+        parse_origin_media_manifest(&fetched.body, &fetched.final_manifest_url)
+    else {
+        return Ok(None);
+    };
+    let mut session = request.session.write().await;
+    ensure_refresh_origin_work_generation_is_current(&session, request)?;
+    if !matches!(session.mode, HlsSessionMode::NormalCacheTimeline) {
+        return Ok(None);
+    }
+    let Some(anchor) = super::continuity::HlsCacheOriginAnchor::capture(&session) else { return Ok(None) };
+    if anchor.validate(&session, &manifest).is_err()
+        || super::origin_probe::cache_refresh_requires_revalidation(&session, request, fetched, mode)?
+    {
+        return Ok(None);
+    }
+    commit_fetched_manifest_with_cache_continuity(
+        &mut session,
+        fetched,
+        request,
+        request.hls_proxy.now_ms(),
+        mode,
+        CacheManifestPolicy::Recovery,
+    )
+    .map(|(progress, _, _)| Some(progress))
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum CacheManifestPolicy {
+    NormalRefresh,
+    Recovery,
+    IdleEntry,
+}
+
+pub(super) fn commit_fetched_manifest_with_cache_continuity(
+    session: &mut crate::HlsSession,
+    fetched: &FetchedOriginManifest,
+    request: &OriginRefreshRequest,
+    fetch_finished_at_ms: u64,
+    acceptance_mode: HlsManifestCommitAcceptanceMode,
+    policy: CacheManifestPolicy,
+) -> Result<(HlsManifestCommitProgressEvidence, bool, bool), HlsManifestCommitError> {
+    commit_fetched_manifest_with_options(
+        session,
+        fetched,
+        request,
+        fetch_finished_at_ms,
+        HlsFetchedManifestCommitOptions {
+            acceptance_mode,
+            staged_switch: None,
+            origin_update: None,
+            cache_policy: Some(policy),
+        },
     )
 }
 
@@ -184,6 +258,37 @@ pub(super) fn commit_fetched_manifest_with_origin_update(
     staged_switch: Option<&HlsStagedSwitchCommit>,
     origin_update: Option<&super::origin_probe::PreparedOriginUpdate>,
 ) -> Result<(HlsManifestCommitProgressEvidence, bool, bool), HlsManifestCommitError> {
+    let acceptance_mode = if origin_update.is_some_and(super::origin_probe::PreparedOriginUpdate::is_restart)
+        && acceptance_mode == HlsManifestCommitAcceptanceMode::StrictPinnedHost
+    {
+        HlsManifestCommitAcceptanceMode::FreshPinnedRevalidation
+    } else {
+        acceptance_mode
+    };
+    commit_fetched_manifest_with_options(
+        session,
+        fetched,
+        request,
+        fetch_finished_at_ms,
+        HlsFetchedManifestCommitOptions { acceptance_mode, staged_switch, origin_update, cache_policy: None },
+    )
+}
+
+#[derive(Clone, Copy)]
+struct HlsFetchedManifestCommitOptions<'a> {
+    acceptance_mode: HlsManifestCommitAcceptanceMode,
+    staged_switch: Option<&'a HlsStagedSwitchCommit>,
+    origin_update: Option<&'a super::origin_probe::PreparedOriginUpdate>,
+    cache_policy: Option<CacheManifestPolicy>,
+}
+
+fn commit_fetched_manifest_with_options(
+    session: &mut crate::HlsSession,
+    fetched: &FetchedOriginManifest,
+    request: &OriginRefreshRequest,
+    fetch_finished_at_ms: u64,
+    options: HlsFetchedManifestCommitOptions<'_>,
+) -> Result<(HlsManifestCommitProgressEvidence, bool, bool), HlsManifestCommitError> {
     ensure_refresh_origin_work_generation_is_current(session, request)?;
     let minimum_commit_generation = session
         .next_manifest_commit_identity(fetch_finished_at_ms)
@@ -206,24 +311,26 @@ pub(super) fn commit_fetched_manifest_with_origin_update(
     };
     let manifest_semantics = parse_manifest_semantics(&fetched.body);
     let parsed = parse_origin_media_manifest(&fetched.body, &fetched.final_manifest_url);
+    #[cfg(any(test, feature = "test-support"))]
+    let mut parsed = parsed;
+    #[cfg(any(test, feature = "test-support"))]
+    let gap_outcome = match &mut parsed {
+        OriginManifestParseOutcome::Normal(manifest) if options.cache_policy.is_some() => {
+            session.inject_manifest_successor_gap_for_test(manifest)
+        }
+        _ => None,
+    };
     let result = match (existing_transient_reason, parsed) {
-        (None, OriginManifestParseOutcome::Normal(manifest)) => commit_normal_fetched_manifest(
-            session,
-            fetched,
-            request,
-            fetch_finished_at_ms,
-            acceptance_mode,
-            staged_switch,
-            &manifest,
-            origin_update,
-        ),
+        (None, OriginManifestParseOutcome::Normal(manifest)) => {
+            commit_normal_fetched_manifest(session, fetched, request, fetch_finished_at_ms, &manifest, &options)
+        }
         (Some(reason), _) => commit_transient_fetched_manifest(
             session,
             fetched,
             request,
             fetch_finished_at_ms,
             HlsTransientFetchedCommitOptions {
-                acceptance_mode,
+                acceptance_mode: options.acceptance_mode,
                 reason,
                 manifest_semantics,
                 switch_metric: HlsTransientSwitchMetric::PreserveMode,
@@ -235,19 +342,30 @@ pub(super) fn commit_fetched_manifest_with_origin_update(
             request,
             fetch_finished_at_ms,
             HlsTransientFetchedCommitOptions {
-                acceptance_mode,
+                acceptance_mode: options.acceptance_mode,
                 reason: map_transient_reason(reason),
                 manifest_semantics,
                 switch_metric: HlsTransientSwitchMetric::RecordSwitch,
             },
         ),
     };
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some(outcome) = gap_outcome {
+        let reason = match &result {
+            Err(HlsManifestCommitError::TimelineRejected { reason }) => Some(reason.status_label()),
+            _ => None,
+        };
+        let _ = outcome.send(reason);
+    }
     if result.is_ok() && matches!(session.mode, HlsSessionMode::TransientPassthrough { .. }) {
         session.startup = None;
         session.origin_control.qualification = crate::short_manifest::HlsOriginQualification::Unchecked;
     }
     let configured_target_duration = session.target_duration;
     if let Ok((progress_evidence, _, _)) = &result {
+        if let Some(owner) = &request.work_owner {
+            owner.record_committed_epoch(session.origin_epoch);
+        }
         if let Some(io) = request.origin_io.as_ref() {
             crate::origin::reserve_hls_origin_start(session, io, fetch_finished_at_ms);
         }
@@ -332,46 +450,78 @@ pub(super) fn record_committed_manifest_media_progress(
     origin_control.record_media_progress(committed_at_ms, target_duration_ms);
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Carries both existing switch staging and optional same-host content evidence through one commit."
-)]
 fn commit_normal_fetched_manifest(
     session: &mut crate::HlsSession,
     fetched: &FetchedOriginManifest,
     request: &OriginRefreshRequest,
     fetch_finished_at_ms: u64,
-    acceptance_mode: HlsManifestCommitAcceptanceMode,
-    staged_switch: Option<&HlsStagedSwitchCommit>,
     manifest: &ParsedOriginManifest,
-    origin_update: Option<&super::origin_probe::PreparedOriginUpdate>,
+    options: &HlsFetchedManifestCommitOptions<'_>,
 ) -> Result<(HlsManifestCommitProgressEvidence, bool, bool), HlsManifestCommitError> {
-    let acceptance_mode = if origin_update.is_some_and(super::origin_probe::PreparedOriginUpdate::is_restart)
-        && matches!(acceptance_mode, HlsManifestCommitAcceptanceMode::StrictPinnedHost)
-    {
-        HlsManifestCommitAcceptanceMode::FreshPinnedRevalidation
-    } else {
-        acceptance_mode
-    };
-    let quality = evaluate_manifest_acceptance_for_commit(
+    let HlsFetchedManifestCommitOptions { acceptance_mode, staged_switch, origin_update, cache_policy } = *options;
+    let qualified_bindings = origin_update
+        .filter(|update| !update.is_restart() && staged_switch.is_none())
+        .map(super::origin_probe::PreparedOriginUpdate::continuity_bindings)
+        .transpose()?;
+    let (cache_anchor, restart) = validate_normal_cache_manifest(
         session,
         fetched,
-        ParsedOriginManifestTimeline {
-            origin_manifest_sequence: manifest.origin_manifest_sequence,
-            origin_manifest_segment_cnt: manifest.origin_manifest_segment_cnt,
-        },
-        request,
+        manifest,
         fetch_finished_at_ms,
-        acceptance_mode,
+        cache_policy,
+        qualified_bindings.as_deref(),
     )?;
-    let alternative_host = quality.host_relation == HlsManifestOriginRelation::OtherRedirectHost;
+    let timeline = ParsedOriginManifestTimeline {
+        origin_manifest_sequence: manifest.origin_manifest_sequence,
+        origin_manifest_segment_cnt: manifest.origin_manifest_segment_cnt,
+    };
+    let starts_epoch = restart
+        || (origin_update.is_some_and(super::origin_probe::PreparedOriginUpdate::is_restart)
+            && staged_switch.is_none());
+    let quality = if starts_epoch {
+        // A restart has already passed its acceptance checks and owns a new namespace.
+        evaluate_manifest_origin_quality_with_mode(
+            session,
+            fetched,
+            timeline,
+            &manifest_fetch_context(request, session.target_duration),
+            fetch_finished_at_ms,
+            HlsManifestCommitAcceptanceMode::FreshPinnedRevalidation,
+        )
+    } else if let Some(anchor) = cache_anchor {
+        let context = manifest_fetch_context(request, session.target_duration);
+        crate::manifest_fetch::quality_with_cache_continuity(
+            evaluate_manifest_origin_quality_with_mode(
+                session,
+                fetched,
+                timeline,
+                &context,
+                fetch_finished_at_ms,
+                acceptance_mode,
+            ),
+            anchor.identity.origin_msn(),
+        )
+    } else {
+        evaluate_manifest_acceptance_for_commit(
+            session,
+            fetched,
+            timeline,
+            request,
+            fetch_finished_at_ms,
+            acceptance_mode,
+        )?
+    };
+    let alternative_host = quality.host_relation == HlsManifestOriginRelation::OtherRedirectHost
+        && cache_anchor.is_none()
+        && !starts_epoch;
     if alternative_host != staged_switch.is_some() {
         return Err(switch_staging_error(HlsManifestRejectLogReason::StagedSwitchInvalidated));
     }
-    if !alternative_host {
+    if !alternative_host && cache_anchor.is_none() && !starts_epoch {
         mark_manifest_handoff_discontinuity_if_needed(session, &quality);
     }
     let effective_host_id = fetched_effective_manifest_host(fetched).map_or(0, |host| effective_origin_host_id(&host));
+    let previous_epoch = session.origin_epoch;
     let refresh_timing = commit_normal_manifest(
         session,
         request,
@@ -382,17 +532,104 @@ fn commit_normal_fetched_manifest(
             effective_host_id,
             staged_switch,
             origin_update,
+            continuous_cache: cache_anchor.is_some(),
+            restart,
         },
     )?;
     update_origin_provider_session_headers(session, fetched);
     mark_manifest_acceptance_success(session, fetched, &quality, fetch_finished_at_ms);
-    super::short_manifest::record_origin_qualification(session, manifest.segments.len());
+    record_cache_origin_observation(
+        session,
+        fetched,
+        manifest,
+        cache_anchor,
+        previous_epoch,
+        fetch_finished_at_ms,
+        cache_policy.filter(|_| restart),
+    );
+    super::short_manifest::record_origin_qualification(session, manifest.segments.len(), restart);
     super::short_manifest::record_target_duration_qualification(
         session,
         manifest.target_duration.filter(|duration| *duration > 0),
     );
     queue_and_render_normal_manifest(session, request, fetch_finished_at_ms);
+    session.confirm_recovery_entry_progress(&request.segment_cache, fetch_finished_at_ms);
     Ok((HlsManifestCommitProgressEvidence::CacheTimeline(refresh_timing), true, true))
+}
+
+fn record_cache_origin_observation(
+    session: &mut crate::HlsSession,
+    fetched: &FetchedOriginManifest,
+    manifest: &ParsedOriginManifest,
+    cache_anchor: Option<super::continuity::HlsCacheOriginAnchor>,
+    previous_epoch: u64,
+    now_ms: u64,
+    restart_policy: Option<CacheManifestPolicy>,
+) {
+    if let Some(policy) = restart_policy {
+        session.origin_control.acceptance_episode = None;
+        let reason = if policy == CacheManifestPolicy::IdleEntry { "idle-reentry" } else { "observed-rollover" };
+        debug!(
+            "HLS origin epoch committed: session={} reason={reason} origin_epoch={} first_origin_seq={} segments={}",
+            safe_session_key(&session.key),
+            session.origin_epoch,
+            manifest.origin_manifest_sequence,
+            manifest.segments.len(),
+        );
+    } else if session.origin_epoch == previous_epoch {
+        if let Some(anchor) = cache_anchor {
+            super::continuity::confirm_manifest_host(session, fetched, manifest, anchor, now_ms);
+        }
+    }
+}
+
+fn validate_normal_cache_manifest(
+    session: &mut crate::HlsSession,
+    fetched: &FetchedOriginManifest,
+    manifest: &ParsedOriginManifest,
+    now_ms: u64,
+    policy: Option<CacheManifestPolicy>,
+    qualified_bindings: Option<&[crate::resource_identity::HlsVerifiedOccurrenceBinding]>,
+) -> Result<(Option<super::continuity::HlsCacheOriginAnchor>, bool), HlsManifestCommitError> {
+    if policy.is_none() && qualified_bindings.is_none() {
+        return Ok((None, false));
+    }
+    let Some(anchor) = super::continuity::HlsCacheOriginAnchor::capture(session) else { return Ok((None, false)) };
+    let Err(reason) = anchor.validate_with_bindings(session, manifest, qualified_bindings.unwrap_or_default()) else {
+        return Ok((Some(anchor), false));
+    };
+    if cache_epoch_transition_allowed(session, fetched, manifest, anchor, now_ms, policy)? {
+        return Ok((None, true));
+    }
+    super::continuity::revoke_conflicting_manifest_host(session, fetched, &reason);
+    Err(HlsManifestCommitError::TimelineRejected { reason })
+}
+
+pub(super) fn cache_epoch_transition_allowed(
+    session: &crate::HlsSession,
+    fetched: &FetchedOriginManifest,
+    manifest: &ParsedOriginManifest,
+    anchor: super::continuity::HlsCacheOriginAnchor,
+    now_ms: u64,
+    policy: Option<CacheManifestPolicy>,
+) -> Result<bool, HlsManifestCommitError> {
+    let scope = anchor.identity.playlist_scope();
+    if crate::resource_identity::HlsMediaPlaylistScope::from_session(&session.playlist_source_key()) != Some(scope)
+        || anchor.is_present(session, manifest)
+    {
+        return Ok(false);
+    }
+    session
+        .check_rollover_replay(manifest)
+        .map_err(|error| HlsManifestCommitError::TimelineRejected { reason: error.into() })?;
+    Ok(policy == Some(CacheManifestPolicy::IdleEntry)
+        || (policy == Some(CacheManifestPolicy::NormalRefresh)
+            && manifest.origin_manifest_sequence == 0
+            && fetched.body.lines().any(|line| {
+                line.strip_prefix("#EXT-X-MEDIA-SEQUENCE:").is_some_and(|seq| seq.trim().parse::<u64>() == Ok(0))
+            })
+            && super::continuity::manifest_delivery_host(fetched)
+                .is_some_and(|host| session.origin_control.manifest_host_confirmed(&host, now_ms))))
 }
 
 #[derive(Clone, Copy)]
@@ -478,6 +715,11 @@ fn commit_transient_fetched_manifest(
             );
             HlsManifestCommitError::CommitGenerationExhausted
         }
+        crate::transient::HlsTransientManifestCommitError::OccurrenceConflict => {
+            HlsManifestCommitError::TimelineRejected {
+                reason: HlsManifestRejectLogReason::SwitchResourceUnavailable,
+            }
+        }
     })?;
     let metrics = request.segment_worker_pool.metrics();
     metrics.record_transient_manifest_resources(footprint.resources);
@@ -516,14 +758,16 @@ pub(super) fn refresh_origin_work_generation_is_current(
     session: &crate::HlsSession,
     request: &OriginRefreshRequest,
 ) -> bool {
-    refresh_origin_work_generation_matches(
-        session,
-        request.origin_io.as_ref().and_then(|origin_io| origin_io.started_generation),
-    ) && request
-        .origin_io
-        .as_ref()
-        .and_then(|io| io.prepared_account.as_ref())
-        .is_none_or(|snapshot| snapshot.matches_session_identity(session))
+    request.work_owner.as_ref().is_none_or(|owner| owner.matches_epoch(session.origin_epoch))
+        && refresh_origin_work_generation_matches(
+            session,
+            request.origin_io.as_ref().and_then(|origin_io| origin_io.started_generation),
+        )
+        && request
+            .origin_io
+            .as_ref()
+            .and_then(|io| io.prepared_account.as_ref())
+            .is_none_or(|snapshot| snapshot.matches_session_identity(session))
 }
 
 pub(super) fn refresh_origin_work_generation_matches(
@@ -737,7 +981,7 @@ struct HlsPreparedTransientManifest {
 fn prepare_transient_manifest_rewrite(
     session: &crate::HlsSession,
     input: &HlsTransientManifestCommitInput<'_>,
-) -> Result<HlsPreparedTransientManifest, crate::manifest_limits::HlsManifestLimitViolation> {
+) -> Result<HlsPreparedTransientManifest, crate::transient::HlsTransientManifestCommitError> {
     let previous_provisioning_manifest_body = session
         .last_rendered_manifest
         .as_ref()
@@ -812,6 +1056,9 @@ fn prepare_transient_manifest_rewrite(
             rewrite_options,
         )
     };
+    if !rewritten.checkpoint.has_valid_occurrences() {
+        return Err(crate::transient::HlsTransientManifestCommitError::SnapshotUnavailable);
+    }
     let next_transient_discontinuity_sequence = if handoff_discontinuity_sequence.is_some() {
         if let Some(handoff_body) = materialize_transient_provisioning_handoff_view(
             &rewritten.body,
@@ -881,17 +1128,14 @@ fn commit_transient_manifest(
     let rewrite_checkpoint = rewritten.checkpoint.clone();
     let processed_line_count = rewritten.processed_line_count;
     let footprint = if let Some(template) = incremental_template {
-        session
-            .transient
-            .commit_incremental_rewritten_manifest_with_semantics(
-                rewritten.body,
-                rewritten.resources,
-                template,
-                rendered_at_ms,
-                transient_resource_ttl_ms,
-                manifest_semantics,
-            )
-            .map_err(crate::transient::HlsTransientManifestCommitError::from)?
+        session.transient.commit_incremental_rewritten_manifest_with_semantics(
+            rewritten.body,
+            rewritten.resources,
+            template,
+            rendered_at_ms,
+            transient_resource_ttl_ms,
+            manifest_semantics,
+        )?
     } else {
         session.transient.commit_rewritten_manifest_with_semantics(
             rewritten.body,
@@ -954,6 +1198,7 @@ fn commit_transient_manifest_refresh_timing(
     let previous_highwater = session.origin_seq_highwater;
     if quality.sequence_relation == HlsManifestSequenceRelation::Rebase {
         session.origin_epoch = session.origin_epoch.saturating_add(1);
+        session.origin_control.clear_manifest_hosts();
     }
     if let Some(highwater) = timeline.origin_highwater() {
         session.origin_seq_highwater =
@@ -980,6 +1225,8 @@ struct HlsNormalManifestCommitInput<'a> {
     effective_host_id: u64,
     staged_switch: Option<&'a HlsStagedSwitchCommit>,
     origin_update: Option<&'a super::origin_probe::PreparedOriginUpdate>,
+    continuous_cache: bool,
+    restart: bool,
 }
 
 /// Commits a fetched normal manifest into the session timeline and returns the refresh timing.
@@ -1018,7 +1265,7 @@ fn commit_normal_manifest(
         {
             return Err(switch_staging_error(HlsManifestRejectLogReason::StagedSwitchInvalidated));
         }
-        let Some(first_segment) = staged_switch.preview.segments.first() else {
+        let Some(first_segment) = staged_switch.ready_segment() else {
             return Err(switch_staging_error(HlsManifestRejectLogReason::StagedSwitchInvalidated));
         };
         ensure_staged_switch_media_compatible(session, first_segment, &key_resources, rendered_at_ms)?;
@@ -1046,6 +1293,7 @@ fn commit_normal_manifest(
         if let Some(proof) = &staged_switch.content_anchor {
             proof.publish_gap_repair(session, request, rendered_at_ms);
         }
+        preserve_retained_gap_publication_boundary(session, staged_switch.ready_segment_proxy_seq);
         if let Some(revision) = staged_switch.ready_segment_revision.as_ref() {
             // The origin generation and the segment mapping are final only after
             // the accepted timeline commit above. Preserve the current fence.
@@ -1056,22 +1304,10 @@ fn commit_normal_manifest(
         }
         session.advance_media_readiness_generation();
     } else {
-        let apply_result = if sequence_relation == HlsManifestSequenceRelation::Rebase {
-            let retained_head_in_use = matches!(
-                session.account_binding_protection(rendered_at_ms),
-                crate::HlsAccountBindingProtection::HardActive { .. }
-                    | crate::HlsAccountBindingProtection::SoftActive { .. }
-            );
-            session.apply_origin_rebase_manifest(manifest, effective_host_id, retained_head_in_use)
-        } else {
-            session.apply_origin_manifest_for_host(manifest, effective_host_id)
-        };
-        apply_result.map_err(|err| HlsManifestCommitError::TimelineRejected {
-            reason: HlsManifestRejectLogReason::from(err),
-        })?;
+        apply_unstaged_normal_manifest(session, manifest, input)?;
     }
     session.record_origin_manifest_commit();
-    session.transient.upsert_resources(key_resources);
+    session.transient.upsert_normal_key_resources(&session.proxy_session_id, key_resources, rendered_at_ms);
     session.initial_prefetch_gap_segments = initial_prefetch_gap_segments;
     session.record_live_window_origin_commit(rendered_at_ms);
     if provisioning_handoff {
@@ -1079,7 +1315,9 @@ fn commit_normal_manifest(
     }
     let last_segment_duration_ms = manifest.segments.last().map(|segment| segment.duration_ms);
     let target_duration_ms = manifest.target_duration.map(|duration| u64::from(duration) * 1_000);
-    let progress = if staged_switch.is_some()
+    let progress = if input.restart {
+        HlsManifestProgress::Rollover
+    } else if staged_switch.is_some()
         || input.origin_update.is_some_and(super::origin_probe::PreparedOriginUpdate::is_restart)
     {
         HlsManifestProgress::Advanced
@@ -1087,6 +1325,28 @@ fn commit_normal_manifest(
         manifest_progress_from_highwater(previous_highwater, session.origin_seq_highwater, sequence_relation)
     };
     Ok(build_manifest_refresh_timing(last_segment_duration_ms, target_duration_ms, progress))
+}
+
+fn apply_unstaged_normal_manifest(
+    session: &mut crate::HlsSession,
+    manifest: &ParsedOriginManifest,
+    input: &HlsNormalManifestCommitInput<'_>,
+) -> Result<(), HlsManifestCommitError> {
+    let result = if input.restart {
+        session.apply_manifest_restart(manifest, input.effective_host_id)
+    } else if input.continuous_cache {
+        session.apply_continuous_origin_manifest(manifest, input.effective_host_id)
+    } else if input.sequence_relation == HlsManifestSequenceRelation::Rebase {
+        let retained_head_in_use = matches!(
+            session.account_binding_protection(input.rendered_at_ms),
+            crate::HlsAccountBindingProtection::HardActive { .. }
+                | crate::HlsAccountBindingProtection::SoftActive { .. }
+        );
+        session.apply_origin_rebase_manifest(manifest, input.effective_host_id, retained_head_in_use)
+    } else {
+        session.apply_origin_manifest_for_host(manifest, input.effective_host_id)
+    };
+    result.map_err(|error| HlsManifestCommitError::TimelineRejected { reason: error.into() })
 }
 
 fn queue_and_render_normal_manifest(
@@ -1116,7 +1376,7 @@ fn queue_and_render_normal_manifest(
             queue_report.prefetch_skipped
         );
     }
-    match HlsManifestRenderer::render(session, rendered_at_ms) {
+    match session.render_manifest_for_publication(rendered_at_ms) {
         Ok(rendered) => {
             let segment_count = rendered.segment_proxy_seqs.len();
             let render_gap_segments = rendered.render_gap_segments;
@@ -1202,7 +1462,7 @@ pub(super) fn materialize_normal_key_resources(
             ttl_ms,
             Some(extension.clone()),
         );
-        resource.scope_to_origin_account(origin_account_generation, reverse_proxy_rewrite_secret);
+        resource.bind_normal_key(&encryption.resource_uri, origin_account_generation, reverse_proxy_rewrite_secret);
         encryption.proxy_resource_id = Some(resource.id.0.clone());
         encryption.proxy_resource_extension = Some(extension);
         resources.push(resource);
@@ -1292,6 +1552,22 @@ pub(super) fn transient_reason_log_fields(reason: &TransientPassthroughReason) -
         TransientPassthroughReason::UnsupportedTag { tag } => format!("reason=unsupported_tag tag={tag}"),
         TransientPassthroughReason::ParserUnsupportedFeature { feature } => {
             format!("reason=parser_unsupported_feature feature={feature}")
+        }
+    }
+}
+
+/// The old append-only preview implicitly placed new publication beyond a retained permanent gap.
+/// Keep that boundary while the complete preview also carries unchanged overlap for existing leases.
+fn preserve_retained_gap_publication_boundary(session: &mut crate::HlsSession, continuation: u64) {
+    let retained_gap = session.segments.range(..continuation).any(|(_, entry)| {
+        entry.origin_key.origin_epoch < session.origin_epoch
+            && matches!(entry.status, SegmentCacheStatus::FailedPermanent { .. })
+    });
+    if retained_gap {
+        session.publishable_origin_head_proxy_seq = Some(continuation);
+        if let Some(entry) = session.segments.get_mut(&continuation) {
+            entry.discontinuity_before = true;
+            session.origin_content.proxy_only_discontinuities.insert(continuation);
         }
     }
 }

@@ -28,14 +28,23 @@ impl HlsGarbageCollector {
     }
 
     /// Caller already owns the GC gate. Never calls admission or reacquires GC.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "One bounded lease/session snapshot followed by cancellation-safe filesystem retirement."
-    )]
     pub(super) async fn cleanup_revisions(
         &self,
         sessions: &[HlsSessionHandle],
         report: &mut GarbageCollectionReport,
+    ) -> io::Result<()> {
+        self.cleanup_revisions_at(sessions, report, tuliprox_core::utils::current_time_millis()).await
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "One bounded lease/session snapshot followed by cancellation-safe filesystem retirement."
+    )]
+    pub(super) async fn cleanup_revisions_at(
+        &self,
+        sessions: &[HlsSessionHandle],
+        report: &mut GarbageCollectionReport,
+        now_ms: u64,
     ) -> io::Result<()> {
         self.cache.retry_abandoned_write_deletions().await;
         let before = (
@@ -76,9 +85,11 @@ impl HlsGarbageCollector {
             };
             let id = session.proxy_session_id.clone();
             if let Some(leases) = &mut lease_guard {
-                session.live_window_demands.retain(|lease_id, demand| {
-                    leases.response_snapshot(lease_id, &id, tuliprox_core::utils::current_time_millis()).is_some_and(
-                        |lease| {
+                let ended = session
+                    .live_window_demands
+                    .iter()
+                    .filter(|(lease_id, demand)| {
+                        !leases.response_snapshot(lease_id, &id, now_ms).is_some_and(|lease| {
                             lease.issued_at_ms == demand.issued_at_ms
                                 && matches!(
                                     lease.state,
@@ -86,9 +97,13 @@ impl HlsGarbageCollector {
                                         | crate::HlsAccessLeaseState::Activated
                                         | crate::HlsAccessLeaseState::Idle
                                 )
-                        },
-                    )
-                });
+                        })
+                    })
+                    .map(|(lease_id, _)| lease_id.clone())
+                    .collect::<Vec<_>>();
+                for lease_id in ended {
+                    session.release_publication_retention(&lease_id, now_ms);
+                }
             }
             let floor = session.segments.first_key_value().map_or(u64::MAX, |(seq, _)| *seq);
             let crate::HlsSession { startup, segments, .. } = &mut *session;

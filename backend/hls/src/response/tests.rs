@@ -119,6 +119,7 @@ impl CachedSegmentFixture {
                 origin_byte_range: None,
                 map_ref: None,
                 encryption: None,
+                occurrence_identity: None,
                 retained_resource_identity: None,
                 origin_fetch_ref: None,
                 status: SegmentCacheStatus::Ready { content_length: full_size, ready_at_ms: 1_000 },
@@ -273,6 +274,7 @@ async fn publish_revision_fixture(
         budget,
     });
     let snapshot = crate::HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: Some(Arc::new(crate::HlsManifestRevisions {
             window_plan: None,
             mode: config.mode,
@@ -320,5 +322,6 @@ mod http;
 mod lifecycle;
 mod policy;
 mod recovery;
+mod retention;
 mod revision_recovery;
 mod terminal;

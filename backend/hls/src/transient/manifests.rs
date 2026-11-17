@@ -25,6 +25,47 @@ use tokio::sync::Notify;
 use tuliprox_parser::hls::origin_manifest::{HlsManifestLifecycle, HlsManifestWindowPolicy, ParsedManifestSemantics};
 
 impl TransientPassthroughState {
+    /// Exercises the production rewrite and publication transaction from endpoint tests.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn commit_origin_manifest_for_test(
+        &mut self,
+        body: &str,
+        final_manifest_url: &str,
+        proxy: &crate::ProxySessionId,
+        secret: &[u8],
+        now_ms: u64,
+    ) -> Result<(), String> {
+        let rewritten = crate::transient_manifest::TransientManifestRewriter::rewrite_with_options(
+            body,
+            final_manifest_url,
+            proxy,
+            secret,
+            now_ms,
+            self.resource_ttl_ms,
+            crate::transient_manifest::TransientRewriteOptions {
+                origin_account_generation: self.origin_account_generation(),
+                ..crate::transient_manifest::TransientRewriteOptions::default()
+            },
+        );
+        if !rewritten.checkpoint.has_valid_occurrences() {
+            return Err("invalid occurrence evidence".into());
+        }
+        let duration = tuliprox_parser::hls::origin_manifest::parse_manifest_validity(body)
+            .map(|validity| validity.playlist_duration_ms);
+        self.commit_rewritten_manifest_with_semantics(
+            rewritten.body,
+            rewritten.resources,
+            now_ms,
+            duration,
+            tuliprox_parser::hls::origin_manifest::parse_manifest_semantics(body),
+        )
+        .map(|_| {
+            self.last_manifest_commit_identity =
+                Some(crate::media_reserve::HlsManifestCommitIdentity::committed(self.manifest_generation, now_ms));
+        })
+        .map_err(|error| format!("{error:?}"))
+    }
+
     pub fn new(resource_ttl_ms: u64) -> Self {
         Self {
             resources: HashMap::new(),
@@ -97,6 +138,7 @@ impl TransientPassthroughState {
             parse_hls_transient_manifest_template(&body)?
         }
         .ok_or(HlsTransientManifestCommitError::SnapshotUnavailable)?;
+        let resources = self.bind_manifest_resources(resources)?;
         let footprint = self.validate_manifest_footprint(&TransientManifestFootprintCandidate {
             rewritten_bytes: body.len(),
             resource_count,
@@ -128,7 +170,8 @@ impl TransientPassthroughState {
         rendered_at_ms: u64,
         resource_ttl_ms: u64,
         semantics: ParsedManifestSemantics,
-    ) -> Result<HlsTransientManifestFootprint, HlsManifestLimitViolation> {
+    ) -> Result<HlsTransientManifestFootprint, HlsTransientManifestCommitError> {
+        let appended_resources = self.bind_manifest_resources(appended_resources)?;
         self.ensure_manifest_generation_available(None)?;
         let mut manifest_resource_ids = std::mem::take(&mut self.last_manifest_resource_ids);
         let mut inserted_resource_ids = Vec::new();
@@ -166,7 +209,7 @@ impl TransientPassthroughState {
                     resource_ids.remove(&resource_id);
                 }
                 self.last_manifest_resource_ids = manifest_resource_ids;
-                return Err(violation);
+                return Err(violation.into());
             }
         };
         self.upsert_resources(appended_resources);

@@ -490,5 +490,6 @@ impl Drop for DropCounter {
 mod cache;
 mod decoding;
 mod lifecycle;
+mod occurrence;
 
 mod retry_work;

@@ -27,10 +27,13 @@ pub struct HlsManifestAttemptContext {
     pub requirement: crate::HlsManifestCommitRequirement,
     pub active_live_playback: bool,
     pub revalidation_generation: Option<u64>,
+    pub(crate) retry_entry_407_for_active_playback: bool,
     attempts: AtomicUsize,
     closed: AtomicBool,
     failed: AtomicBool,
     admission_backoff_paid: AtomicBool,
+    idle_reentry: AtomicBool,
+    active_recoveries: AtomicUsize,
     provider_failure: std::sync::Mutex<Option<crate::HlsBoundAccountAcquireErrorKind>>,
 }
 
@@ -38,6 +41,12 @@ impl PartialEq for HlsManifestAttemptContext {
     fn eq(&self, other: &Self) -> bool { std::ptr::eq(self, other) }
 }
 impl Eq for HlsManifestAttemptContext {}
+
+pub(crate) struct HlsManifestRecoveryActivity<'a>(&'a AtomicUsize);
+
+impl Drop for HlsManifestRecoveryActivity<'_> {
+    fn drop(&mut self) { self.0.fetch_sub(1, Ordering::AcqRel); }
+}
 
 impl HlsManifestAttemptContext {
     pub fn new(
@@ -49,15 +58,31 @@ impl HlsManifestAttemptContext {
             requirement,
             active_live_playback,
             revalidation_generation,
+            retry_entry_407_for_active_playback: false,
             attempts: AtomicUsize::new(0),
             closed: AtomicBool::new(false),
             failed: AtomicBool::new(false),
             admission_backoff_paid: AtomicBool::new(false),
+            idle_reentry: AtomicBool::new(false),
+            active_recoveries: AtomicUsize::new(0),
             provider_failure: std::sync::Mutex::new(None),
         }
     }
 
     pub fn is_closed(&self) -> bool { self.closed.load(Ordering::Acquire) }
+
+    pub(crate) fn set_idle_reentry(&self, eligible: bool) { self.idle_reentry.store(eligible, Ordering::Release); }
+
+    pub(crate) fn idle_reentry(&self) -> bool { self.idle_reentry.load(Ordering::Acquire) }
+
+    pub(crate) fn enter_recovery(&self) -> HlsManifestRecoveryActivity<'_> {
+        self.active_recoveries.fetch_add(1, Ordering::AcqRel);
+        HlsManifestRecoveryActivity(&self.active_recoveries)
+    }
+
+    pub(crate) fn recovery_in_progress(&self) -> bool {
+        !self.is_closed() && self.active_recoveries.load(Ordering::Acquire) != 0
+    }
     pub fn failed(&self) -> bool { self.failed.load(Ordering::Acquire) }
     pub fn provider_failure(&self) -> Option<crate::HlsBoundAccountAcquireErrorKind> {
         *self.provider_failure.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -70,7 +95,9 @@ impl HlsManifestAttemptContext {
         self.closed.store(true, Ordering::Release);
     }
     pub fn permits_407_retry(&self) -> bool {
-        self.requirement == crate::HlsManifestCommitRequirement::CommittedManifestAllowed && self.active_live_playback
+        self.active_live_playback
+            && (self.requirement == crate::HlsManifestCommitRequirement::CommittedManifestAllowed
+                || self.retry_entry_407_for_active_playback)
     }
     pub fn logical_attempts(&self) -> usize { self.attempts.load(Ordering::Acquire) }
 
@@ -262,6 +289,9 @@ impl From<TimelineMapError> for HlsManifestRejectLogReason {
             TimelineMapError::OriginSequenceResourceConflict { existing_proxy_seq, candidate_origin_seq } => {
                 Self::OriginSequenceResourceConflict { existing_proxy_seq, candidate_origin_seq }
             }
+            TimelineMapError::OriginRolloverResourceReplay { existing_proxy_seq, candidate_origin_seq } => {
+                Self::OriginRolloverResourceReplay { existing_proxy_seq, candidate_origin_seq }
+            }
         }
     }
 }
@@ -381,6 +411,7 @@ impl FetchedOriginManifest {
 pub struct HlsOriginManifestFetchContext {
     /// Identity captured by the refresh owner; retries must not send an obsolete entry URL.
     pub origin_account_snapshot: Option<crate::origin_account_runtime::HlsOriginAccountSnapshot>,
+    pub(crate) retained_poll_origin: Option<crate::manager::HlsRetainedPollOrigin>,
     pub attempt: Option<Arc<HlsManifestAttemptContext>>,
     pub app_config: Arc<AppConfig>,
     pub session: HlsSessionHandle,
@@ -404,6 +435,13 @@ pub struct HlsOriginManifestFetchContext {
 }
 
 impl HlsOriginManifestFetchContext {
+    pub(super) fn observation_time_ms(&self) -> u64 {
+        self.availability_runtime
+            .as_ref()
+            .and_then(crate::hls_ctx::WeakHlsCtx::upgrade)
+            .map_or_else(tuliprox_core::utils::current_time_millis, |ctx| ctx.hls_proxy.now_ms())
+    }
+
     pub(crate) async fn classify_current_error(&self, error: OriginManifestFetchError) -> OriginManifestFetchError {
         let session = self.session.read().await;
         if self.origin_account_snapshot.as_ref().is_some_and(|snapshot| !snapshot.matches_session_identity(&session)) {
@@ -419,6 +457,18 @@ impl HlsOriginManifestFetchContext {
         }
     }
     pub(crate) async fn ensure_current_origin(&self) -> Result<(), OriginManifestFetchError> {
+        if let Some(origin) = self.retained_poll_origin.as_ref() {
+            let runtime = self.availability_runtime.as_ref().and_then(crate::hls_ctx::WeakHlsCtx::upgrade);
+            let has_demand = match runtime {
+                Some(ctx) => ctx.hls_proxy.retained_poll_has_session_demand(&self.session, origin).await,
+                None => false,
+            };
+            if !has_demand {
+                return Err(OriginManifestFetchError::RecoveryUnavailable {
+                    reason: super::error::HlsManifestRecoveryUnavailableReason::BindingSuperseded,
+                });
+            }
+        }
         if let Some(snapshot) = self.origin_account_snapshot.as_ref() {
             if !snapshot.matches_session_identity(&*self.session.read().await) {
                 return Err(OriginManifestFetchError::RecoveryUnavailable {

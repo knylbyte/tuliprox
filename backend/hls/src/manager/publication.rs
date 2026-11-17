@@ -144,6 +144,7 @@ impl HlsProxyManager {
                 },
                 owns_binding.then(|| state.origin_refresh.attempt.clone()).flatten(),
                 state.live_entry_revalidation_generation(),
+                false,
                 now_ms,
             );
             attempt.record_provider_failure(kind);
@@ -175,21 +176,29 @@ impl HlsProxyManager {
     ) -> Option<Arc<crate::manifest_fetch::HlsManifestAttemptContext>> {
         let access = self
             .with_critical_handoff_state(&request.session, |leases, session| {
+                if request
+                    .retained_poll_origin
+                    .as_ref()
+                    .is_some_and(|origin| !origin.allows_start(leases, session, self.now_ms()))
+                {
+                    return None;
+                }
                 let attempt = leases.manifest_attempt_context(
                     request.access_lease_id.as_ref(),
                     request.manifest_commit_requirement,
                     session.origin_refresh.attempt.clone(),
                     session.live_entry_revalidation_generation(),
+                    session.origin_control.entry_407_recovery_from.is_some(),
                     request.now_ms,
                 );
                 if !session.origin_refresh.in_flight {
                     session.origin_refresh.attempt = Some(Arc::clone(&attempt));
                 }
-                attempt
+                Some(attempt)
             })
             .await;
         match access {
-            HlsCriticalHandoffStateAccess::Acquired(attempt) => Some(attempt),
+            HlsCriticalHandoffStateAccess::Acquired(attempt) => attempt,
             HlsCriticalHandoffStateAccess::LockBusy => None,
         }
     }
@@ -350,6 +359,10 @@ impl HlsProxyManager {
     #[cfg(any(test, feature = "test-support"))]
     pub fn follow_tokio_clock_for_test(&self, base_ms: u64) { self.terminal_commit_clock.follow_tokio_clock(base_ms); }
 
+    /// Hold request timestamps fixed while real HTTP I/O and tokio timers continue.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn freeze_clock_for_test(&self, now_ms: u64) { self.terminal_commit_clock.set_fixed_now_ms(now_ms); }
+
     pub fn transient_resources(&self) -> &Arc<TransientResourceStore> { &self.transient_resources }
 
     pub fn access_leases(&self) -> &Arc<RwLock<HlsAccessLeaseStore>> { &self.access_leases }
@@ -496,6 +509,15 @@ impl HlsProxyManager {
         guard: &HlsRecoveryPressureGuard,
         operation: impl FnOnce(&mut super::super::HlsSession) -> R,
     ) -> HlsRecoveryPressureGuardAccess<R> {
+        self.with_current_recovery_pressure_state(session_handle, guard, |_, state| operation(state))
+    }
+
+    pub(crate) fn with_current_recovery_pressure_state<R>(
+        &self,
+        session_handle: &HlsSessionHandle,
+        guard: &HlsRecoveryPressureGuard,
+        operation: impl FnOnce(&HlsAccessLeaseStore, &mut super::super::HlsSession) -> R,
+    ) -> HlsRecoveryPressureGuardAccess<R> {
         if self.sessions.session_incarnation(session_handle) != Some(guard.session_incarnation) {
             return HlsRecoveryPressureGuardAccess::Superseded;
         }
@@ -520,7 +542,7 @@ impl HlsProxyManager {
             {
                 return HlsRecoveryPressureGuardAccess::Superseded;
             }
-            HlsRecoveryPressureGuardAccess::Acquired(operation(&mut session))
+            HlsRecoveryPressureGuardAccess::Acquired(operation(&leases, &mut session))
         });
         match access {
             HlsCurrentProxySessionAccess::Acquired(access) => access,
@@ -585,14 +607,18 @@ impl HlsProxyManager {
             return Err(HlsLeaseManifestPublicationRejectReason::StripPolicyChanged);
         }
         if expected.entry_strip_policy().is_some() {
-            let current_source =
-                if snapshot.startup_revisions.as_ref().is_some_and(|revisions| revisions.window_plan.is_some()) {
-                    session.live_window_source_identity()
-                } else if snapshot.delivery_mode == HlsManifestDeliveryMode::NormalCacheTimeline {
-                    session.last_normal_manifest_commit_identity()
-                } else {
-                    session.transient.last_manifest_commit_identity()
-                };
+            let current_source = if snapshot
+                .startup_revisions
+                .as_ref()
+                .and_then(|revisions| revisions.window_plan.as_ref())
+                .is_some_and(|window| !window.plan.recovery_entry)
+            {
+                session.live_window_source_identity()
+            } else if snapshot.delivery_mode == HlsManifestDeliveryMode::NormalCacheTimeline {
+                session.last_normal_manifest_commit_identity()
+            } else {
+                session.transient.last_manifest_commit_identity()
+            };
             if current_source != Some(snapshot.source_commit_identity) {
                 return Err(HlsLeaseManifestPublicationRejectReason::ManifestGenerationUnavailable);
             }
@@ -649,6 +675,7 @@ impl HlsProxyManager {
         published_transient_resource_ids: HlsPublishedTransientResourceIds,
         now_ms: u64,
     ) -> HlsLeaseManifestPublicationOutcome {
+        let retention_resources = published_transient_resource_ids.clone();
         if snapshot.startup_revisions.is_some() {
             return self
                 .commit_recovered_startup_manifest(
@@ -699,16 +726,20 @@ impl HlsProxyManager {
                 Some(session) => Some(session.write().await),
                 None => None,
             };
-            if session_guard.as_ref().is_some_and(|session| {
-                leases
-                    .response_snapshot(lease_id, proxy_session_id, now_ms)
-                    .is_none_or(|lease| !session.live_entry_snapshot_allowed_for_lease(&lease, Some(&snapshot)))
-            }) {
-                return HlsLeaseManifestPublicationOutcome::Rejected(
-                    HlsLeaseManifestPublicationRejectReason::ManifestGenerationUnavailable,
-                );
-            }
+            let now_ms = if expected.recovery_entry_snapshot_generation().is_some() {
+                now_ms.max(self.now_ms())
+            } else {
+                now_ms
+            };
             if let (Some(state), Some(handle)) = (session_guard.as_ref(), session.as_ref()) {
+                let Some(lease) = leases
+                    .response_snapshot(lease_id, proxy_session_id, now_ms)
+                    .filter(|lease| state.live_entry_snapshot_allowed_for_lease(lease, Some(&snapshot)))
+                else {
+                    return HlsLeaseManifestPublicationOutcome::Rejected(
+                        HlsLeaseManifestPublicationRejectReason::ManifestGenerationUnavailable,
+                    );
+                };
                 expected = match self.validate_entry_manifest_publication(
                     expected,
                     &snapshot,
@@ -718,8 +749,15 @@ impl HlsProxyManager {
                     Ok(expected) => expected,
                     Err(reason) => return HlsLeaseManifestPublicationOutcome::Rejected(reason),
                 };
+                if let Err(reason) =
+                    self.validate_recovery_entry_continuation(&leases, state, &lease, expected, &snapshot, now_ms)
+                {
+                    return HlsLeaseManifestPublicationOutcome::Rejected(reason);
+                }
             }
-            let published = snapshot.clone();
+            let mut published = snapshot.clone();
+            // Retention starts from successful publication, which can follow rendering.
+            published.delivered_at_ms = now_ms;
             let outcome = leases.commit_manifest_publication_with_resources(
                 lease_id,
                 proxy_session_id,
@@ -730,7 +768,12 @@ impl HlsProxyManager {
             );
             if outcome.is_committed() {
                 if let Some(session) = session_guard.as_mut() {
-                    session.record_live_window_publication(lease_id, lease_issued_at_ms, &published);
+                    session.record_live_window_publication_with_resources(
+                        lease_id,
+                        lease_issued_at_ms,
+                        &published,
+                        retention_resources,
+                    );
                 }
             }
             return outcome;
@@ -772,6 +815,9 @@ impl HlsProxyManager {
             Ok(expected) => expected,
             Err(reason) => return HlsLeaseManifestPublicationOutcome::Rejected(reason),
         };
+        let mut published = snapshot.clone();
+        // Retention starts from successful publication, which can follow rendering.
+        published.delivered_at_ms = now_ms;
         let outcome = leases.commit_manifest_publication_with_resources(
             lease_id,
             proxy_session_id,
@@ -781,6 +827,12 @@ impl HlsProxyManager {
             now_ms,
         );
         if outcome.is_committed() {
+            session.record_live_window_publication_with_resources(
+                lease_id,
+                lease_issued_at_ms,
+                &published,
+                retention_resources,
+            );
             let bound = session.transient.bind_finalized_manifest_generation(TransientManifestLeaseBinding::new(
                 lease_id.clone(),
                 lease_issued_at_ms,

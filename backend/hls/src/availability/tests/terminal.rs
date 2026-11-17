@@ -1,4 +1,5 @@
-use super::*;
+use super::{owner_fixtures::publish_post_refresh_terminal_lease, *};
+use crate::origin_account_runtime::HlsOriginAccountRuntime;
 
 #[tokio::test]
 async fn disabled_custom_responses_do_not_seed_terminal_media_preparation() {
@@ -414,13 +415,33 @@ async fn incompatible_terminal_asset_commits_terminal_unavailable_without_client
 }
 
 #[tokio::test]
-async fn post_refresh_terminal_deferred_while_member_handoff_pending() {
-    let fixture = post_refresh_terminal_fixture("post-refresh-defer-handoff", true).await;
+async fn pending_member_handoff_preserves_each_viewers_reserve_deadline() {
+    let fixture = post_refresh_terminal_fixture_with_progress("post-refresh-handoff-reserve", true, false).await;
     let runtime = crate::member_health::test_support::RecordingMemberRuntime::new(Some(
         crate::member_health::test_support::RecordingMemberRuntime::default_policy(),
     ));
     runtime.set_member_handoff_pending(true);
     fixture.session.write().await.origin_account_runtime = Some(runtime.clone());
+    let slower_lease = publish_post_refresh_terminal_lease(
+        &fixture.ctx,
+        &fixture.proxy_session_id,
+        "slower-viewer",
+        true,
+        12_000,
+        fixture.now_ms,
+    )
+    .await;
+    for (id, played_ms) in [(&fixture.lease_id, 33_000), (&slower_lease, 27_000)] {
+        advance_post_refresh_fixture_playback(
+            &fixture.ctx,
+            &fixture.session,
+            &fixture.proxy_session_id,
+            id,
+            played_ms,
+            fixture.now_ms,
+        )
+        .await;
+    }
 
     let owner_key = fixture
         .ctx
@@ -433,148 +454,43 @@ async fn post_refresh_terminal_deferred_while_member_handoff_pending() {
         fixture.proxy_session_id.clone(),
     );
     let mut cycle = HlsAvailabilityReevaluationCycle::new(fixture.now_ms);
-
-    // 1. Initial deferral sets the 15 s defer bound
-    let decision = evaluate_post_refresh_terminal_attempt(
-        &fixture.ctx,
-        &fixture.session,
-        &owner_key,
-        &ownership,
-        HlsAvailabilityReevaluationMode::PostRefresh(
-            crate::refresh::HlsPostRefreshAvailabilityReason::RetryableManifestFailure,
-        ),
-        &mut cycle,
-        fixture.now_ms,
-    )
-    .await;
-
-    assert_eq!(decision, HlsTerminalReevaluationDecision::Continue { terminal_evaluation_pending: true });
-    assert!(cycle.retain_post_refresh_owner);
-    assert_eq!(cycle.handoff_defer_until_ms, Some(fixture.now_ms + HLS_MEMBER_HANDOFF_TERMINAL_DEFER_MAX_MS));
-
-    // 2. Deferral still active after 2_000 ms past cycle start while pending (e.g. at +2_500 ms)
-    let past_cycle_deadline_ms = fixture.now_ms + 2_500;
-    let decision = evaluate_post_refresh_terminal_attempt(
-        &fixture.ctx,
-        &fixture.session,
-        &owner_key,
-        &ownership,
-        HlsAvailabilityReevaluationMode::PostRefresh(
-            crate::refresh::HlsPostRefreshAvailabilityReason::RetryableManifestFailure,
-        ),
-        &mut cycle,
-        past_cycle_deadline_ms,
-    )
-    .await;
-
-    assert_eq!(decision, HlsTerminalReevaluationDecision::Continue { terminal_evaluation_pending: true });
-    let lease = fixture
-        .ctx
-        .hls_proxy
-        .access_lease_response_snapshot(&fixture.lease_id, &fixture.proxy_session_id, past_cycle_deadline_ms)
-        .await
-        .expect("live lease remains stored");
-    assert!(
-        matches!(lease.playback_mode, HlsLeasePlaybackMode::Live),
-        "terminal tail must not be committed past 2_000 ms while handoff is pending: {:?}",
-        lease.playback_mode
-    );
-
-    // 3. Commits right after pending turns false
-    runtime.set_member_handoff_pending(false);
-    let decision = evaluate_post_refresh_terminal_attempt(
-        &fixture.ctx,
-        &fixture.session,
-        &owner_key,
-        &ownership,
-        HlsAvailabilityReevaluationMode::PostRefresh(
-            crate::refresh::HlsPostRefreshAvailabilityReason::RetryableManifestFailure,
-        ),
-        &mut cycle,
-        past_cycle_deadline_ms,
-    )
-    .await;
-
-    assert_eq!(decision, HlsTerminalReevaluationDecision::Stop);
-    assert_eq!(cycle.handoff_defer_until_ms, Some(fixture.now_ms + HLS_MEMBER_HANDOFF_TERMINAL_DEFER_MAX_MS));
-    let lease = fixture
-        .ctx
-        .hls_proxy
-        .access_lease_response_snapshot(&fixture.lease_id, &fixture.proxy_session_id, past_cycle_deadline_ms)
-        .await
-        .expect("terminal lease remains stored");
-    assert!(
-        matches!(lease.playback_mode, HlsLeasePlaybackMode::TerminalTail(_)),
-        "terminal tail must be committed once handoff is no longer pending: {:?}",
-        lease.playback_mode
-    );
-}
-
-#[tokio::test]
-async fn post_refresh_terminal_committed_at_defer_bound_despite_pending_handoff() {
-    let runtime = crate::member_health::test_support::RecordingMemberRuntime::new(Some(
-        crate::member_health::test_support::RecordingMemberRuntime::default_policy(),
-    ));
-    runtime.set_member_handoff_pending(true);
-
-    let fixture = post_refresh_terminal_fixture("post-refresh-defer-15s-bound", true).await;
-    fixture.session.write().await.origin_account_runtime = Some(runtime.clone());
-    let owner_key = fixture
-        .ctx
-        .hls_proxy
-        .availability_reevaluation_owner_key(&fixture.session, &fixture.proxy_session_id)
-        .await
-        .expect("owner key");
-    let ownership = crate::availability_reevaluation::HlsAvailabilityReevaluationOwnership::for_test(
-        fixture.ctx.hls_proxy.availability_reevaluations(),
-        fixture.proxy_session_id.clone(),
-    );
-    let mut cycle = HlsAvailabilityReevaluationCycle::new(fixture.now_ms);
-
-    // Initial deferral sets the 15 s bound
-    let decision = evaluate_post_refresh_terminal_attempt(
-        &fixture.ctx,
-        &fixture.session,
-        &owner_key,
-        &ownership,
-        HlsAvailabilityReevaluationMode::PostRefresh(
-            crate::refresh::HlsPostRefreshAvailabilityReason::RetryableManifestFailure,
-        ),
-        &mut cycle,
-        fixture.now_ms,
-    )
-    .await;
-    assert_eq!(decision, HlsTerminalReevaluationDecision::Continue { terminal_evaluation_pending: true });
-
-    let defer_bound_ms = cycle.handoff_defer_until_ms.expect("defer bound set");
-    assert_eq!(defer_bound_ms, fixture.now_ms + HLS_MEMBER_HANDOFF_TERMINAL_DEFER_MAX_MS);
-
-    // Terminal commits once the 15 s defer bound is reached even while pending
-    let decision = evaluate_post_refresh_terminal_attempt(
-        &fixture.ctx,
-        &fixture.session,
-        &owner_key,
-        &ownership,
-        HlsAvailabilityReevaluationMode::PostRefresh(
-            crate::refresh::HlsPostRefreshAvailabilityReason::RetryableManifestFailure,
-        ),
-        &mut cycle,
-        defer_bound_ms,
-    )
-    .await;
-
-    assert_eq!(decision, HlsTerminalReevaluationDecision::Stop);
-    let lease = fixture
-        .ctx
-        .hls_proxy
-        .access_lease_response_snapshot(&fixture.lease_id, &fixture.proxy_session_id, defer_bound_ms)
-        .await
-        .expect("terminal lease remains stored");
-    assert!(
-        matches!(lease.playback_mode, HlsLeasePlaybackMode::TerminalTail(_)),
-        "terminal tail must be committed when 15 s defer bound is reached: {:?}",
-        lease.playback_mode
-    );
+    for (elapsed_ms, first_terminal, second_terminal) in
+        [(0, false, false), (2_999, false, false), (3_000, true, false), (9_000, true, true)]
+    {
+        let now_ms = fixture.now_ms + elapsed_ms;
+        let _ = evaluate_post_refresh_terminal_attempt(
+            &fixture.ctx,
+            &fixture.session,
+            &owner_key,
+            &ownership,
+            HlsAvailabilityReevaluationMode::PostRefresh(
+                crate::refresh::HlsPostRefreshAvailabilityReason::RetryableManifestFailure,
+            ),
+            &mut cycle,
+            now_ms,
+        )
+        .await;
+        assert!(runtime.member_handoff_pending());
+        for (id, terminal) in [(&fixture.lease_id, first_terminal), (&slower_lease, second_terminal)] {
+            let lease = fixture
+                .ctx
+                .hls_proxy
+                .access_lease_response_snapshot(id, &fixture.proxy_session_id, now_ms)
+                .await
+                .expect("stored lease");
+            assert_eq!(
+                matches!(lease.playback_mode, HlsLeasePlaybackMode::TerminalTail(_)),
+                terminal,
+                "terminal state for {id:?} after {elapsed_ms} ms"
+            );
+        }
+        if elapsed_ms == 0 {
+            assert_eq!(
+                cycle.live_reserve_deadline.expect("guaranteed reserve").latest_safe_terminal_commit_at_ms,
+                fixture.now_ms + 3_000
+            );
+        }
+    }
 }
 
 #[tokio::test]
@@ -620,7 +536,7 @@ async fn post_refresh_terminal_commits_without_runtime() {
 }
 
 #[tokio::test]
-async fn post_refresh_terminal_defers_and_notifies_terminal_pending_when_policy_present() {
+async fn post_refresh_terminal_notifies_member_and_commits_at_exhaustion() {
     let fixture = post_refresh_terminal_fixture("post-refresh-defer-terminal-pending", true).await;
     let runtime = crate::member_health::test_support::RecordingMemberRuntime::new(Some(
         crate::member_health::test_support::RecordingMemberRuntime::default_policy(),
@@ -639,7 +555,6 @@ async fn post_refresh_terminal_defers_and_notifies_terminal_pending_when_policy_
     );
     let mut cycle = HlsAvailabilityReevaluationCycle::new(fixture.now_ms);
 
-    // 1. Initial evaluation: policy present, no pending handoff -> records TerminalPending notice and defers
     let decision = evaluate_post_refresh_terminal_attempt(
         &fixture.ctx,
         &fixture.session,
@@ -653,32 +568,13 @@ async fn post_refresh_terminal_defers_and_notifies_terminal_pending_when_policy_
     )
     .await;
 
-    assert_eq!(decision, HlsTerminalReevaluationDecision::Continue { terminal_evaluation_pending: true });
-    assert!(cycle.retain_post_refresh_owner);
-    assert_eq!(cycle.handoff_defer_until_ms, Some(fixture.now_ms + HLS_MEMBER_HANDOFF_TERMINAL_DEFER_MAX_MS));
-    assert_eq!(runtime.reasons(), vec![crate::origin_account_runtime::HlsMemberUnhealthyReason::TerminalPending]);
-
-    // 2. Next evaluation after runtime reports pending=false (it already does) commits terminal; no second notice
-    let past_ms = fixture.now_ms + 1_000;
-    let decision = evaluate_post_refresh_terminal_attempt(
-        &fixture.ctx,
-        &fixture.session,
-        &owner_key,
-        &ownership,
-        HlsAvailabilityReevaluationMode::PostRefresh(
-            crate::refresh::HlsPostRefreshAvailabilityReason::RetryableManifestFailure,
-        ),
-        &mut cycle,
-        past_ms,
-    )
-    .await;
-
     assert_eq!(decision, HlsTerminalReevaluationDecision::Stop);
+    assert!(cycle.member_handoff_requested);
     assert_eq!(runtime.reasons(), vec![crate::origin_account_runtime::HlsMemberUnhealthyReason::TerminalPending]);
     let lease = fixture
         .ctx
         .hls_proxy
-        .access_lease_response_snapshot(&fixture.lease_id, &fixture.proxy_session_id, past_ms)
+        .access_lease_response_snapshot(&fixture.lease_id, &fixture.proxy_session_id, fixture.now_ms)
         .await
         .expect("terminal lease remains stored");
     assert!(matches!(lease.playback_mode, HlsLeasePlaybackMode::TerminalTail(_)));
@@ -717,7 +613,7 @@ async fn post_refresh_terminal_commits_immediately_without_policy() {
 
     assert_eq!(decision, HlsTerminalReevaluationDecision::Stop);
     assert_eq!(runtime.reasons(), Vec::new());
-    assert_eq!(cycle.handoff_defer_until_ms, None);
+    assert!(!cycle.member_handoff_requested);
     let lease = fixture
         .ctx
         .hls_proxy
@@ -727,126 +623,8 @@ async fn post_refresh_terminal_commits_immediately_without_policy() {
     assert!(matches!(lease.playback_mode, HlsLeasePlaybackMode::TerminalTail(_)));
 }
 
-#[tokio::test(start_paused = true)]
-async fn handoff_deferral_on_the_retained_worker_path_advances_the_backoff() {
-    let fixture = post_refresh_terminal_fixture("post-refresh-defer-retained-worker", true).await;
-    let runtime = crate::member_health::test_support::RecordingMemberRuntime::new(Some(
-        crate::member_health::test_support::RecordingMemberRuntime::default_policy(),
-    ));
-    runtime.set_member_handoff_pending(true);
-    fixture.session.write().await.origin_account_runtime = Some(runtime);
-
-    let owner_key = fixture
-        .ctx
-        .hls_proxy
-        .availability_reevaluation_owner_key(&fixture.session, &fixture.proxy_session_id)
-        .await
-        .expect("owner key");
-    let now_ms = fixture.ctx.hls_proxy.now_ms();
-    let (tx, rx) = oneshot::channel();
-    let ctx = fixture.ctx.clone();
-    let session = Arc::clone(&fixture.session);
-    let key = owner_key.clone();
-    assert_eq!(
-        ctx.hls_proxy.availability_reevaluations().register(
-            owner_key,
-            HlsAvailabilityReevaluationMode::PostRefresh(
-                crate::refresh::HlsPostRefreshAvailabilityReason::RetryableManifestFailure,
-            ),
-            move |ownership| async move {
-                let mut session = session;
-                let mut key = key;
-                let mut cycle = HlsAvailabilityReevaluationCycle::new(now_ms);
-                let mut retry_delays = Vec::new();
-                let mut attempts = Vec::new();
-                for _ in 0..3 {
-                    // The retained owner runs without a refresh request while the handoff defers.
-                    let mut refresh_request: Option<OriginRefreshRequest> = None;
-                    let decision = run_hls_availability_reevaluation_attempt(
-                        &ctx,
-                        &mut session,
-                        &mut key,
-                        &ownership,
-                        &mut refresh_request,
-                        &mut cycle,
-                    )
-                    .await;
-                    assert_eq!(decision, HlsAvailabilityCycleDecision::FinishCycle);
-                    let deadline = cycle.live_reserve_deadline.expect("handoff defer deadline");
-                    retry_delays.push(deadline.next_reevaluation_at_ms.saturating_sub(now_ms));
-                    attempts.push(cycle.attempts_completed);
-                    cycle = cycle.restart(now_ms);
-                }
-                let _ = tx.send((retry_delays, attempts));
-            },
-        ),
-        HlsAvailabilityReevaluationRegistration::Scheduled
-    );
-
-    let (retry_delays, attempts) = rx.await.expect("worker reports its retained-cycle backoff");
-    assert_eq!(attempts, vec![1, 2, 3], "each handoff deferral must count as a completed attempt");
-    assert_eq!(retry_delays, vec![1, 1, 2], "the deferred retry must keep backing off across restarts");
-}
-
 #[tokio::test]
-async fn handoff_defer_retry_backoff_grows_across_restarts_and_resets_when_deferral_ends() {
-    let fixture = post_refresh_terminal_fixture("post-refresh-defer-backoff-growth", true).await;
-    let runtime = crate::member_health::test_support::RecordingMemberRuntime::new(Some(
-        crate::member_health::test_support::RecordingMemberRuntime::default_policy(),
-    ));
-    runtime.set_member_handoff_pending(true);
-    fixture.session.write().await.origin_account_runtime = Some(runtime);
-
-    let owner_key = fixture
-        .ctx
-        .hls_proxy
-        .availability_reevaluation_owner_key(&fixture.session, &fixture.proxy_session_id)
-        .await
-        .expect("owner key");
-    let ownership = crate::availability_reevaluation::HlsAvailabilityReevaluationOwnership::for_test(
-        fixture.ctx.hls_proxy.availability_reevaluations(),
-        fixture.proxy_session_id.clone(),
-    );
-
-    let defer_until_ms = fixture.now_ms + 10;
-    let mut cycle = HlsAvailabilityReevaluationCycle::new(fixture.now_ms);
-    cycle.handoff_defer_until_ms = Some(defer_until_ms);
-
-    let mut retry_delays = Vec::new();
-
-    for _ in 0..6 {
-        let decision = evaluate_post_refresh_terminal_attempt(
-            &fixture.ctx,
-            &fixture.session,
-            &owner_key,
-            &ownership,
-            HlsAvailabilityReevaluationMode::PostRefresh(
-                crate::refresh::HlsPostRefreshAvailabilityReason::RetryableManifestFailure,
-            ),
-            &mut cycle,
-            fixture.now_ms,
-        )
-        .await;
-
-        assert_eq!(decision, HlsTerminalReevaluationDecision::Continue { terminal_evaluation_pending: true });
-        let deadline = cycle.live_reserve_deadline.expect("defer deadline");
-        let retry_delay = deadline.next_reevaluation_at_ms.saturating_sub(fixture.now_ms);
-        retry_delays.push(retry_delay);
-
-        cycle.attempts_completed = cycle.attempts_completed.saturating_add(1);
-        cycle = cycle.restart(fixture.now_ms);
-    }
-
-    assert_eq!(retry_delays, vec![1, 1, 2, 4, 8, 10]);
-
-    cycle.handoff_defer_until_ms = None;
-    let restarted = cycle.restart(fixture.now_ms);
-    assert_eq!(restarted.attempts_completed, 0);
-    assert_eq!(restarted.handoff_defer_until_ms, None);
-}
-
-#[tokio::test]
-async fn member_handoff_deferral_ends_with_its_handoff_on_new_evidence() {
+async fn member_handoff_requests_are_scoped_to_current_evidence() {
     let fixture = post_refresh_terminal_fixture("post-refresh-defer-handoff-completed", true).await;
     let runtime = crate::member_health::test_support::RecordingMemberRuntime::new(Some(
         crate::member_health::test_support::RecordingMemberRuntime::default_policy(),
@@ -876,17 +654,10 @@ async fn member_handoff_deferral_ends_with_its_handoff_on_new_evidence() {
 }
 
 #[test]
-fn handoff_defer_is_kept_for_the_same_handoff_and_dropped_after_it() {
+fn handoff_request_is_kept_for_the_same_handoff_and_dropped_after_it() {
     let now_ms = 1_000;
     let mut cycle = HlsAvailabilityReevaluationCycle::new(now_ms);
-    cycle.handoff_defer_until_ms = Some(now_ms + 10_000);
-    cycle.attempts_completed = 3;
-
-    let same = cycle.successor(now_ms, true);
-    assert_eq!(same.handoff_defer_until_ms, Some(now_ms + 10_000));
-    assert_eq!(same.attempts_completed, 3);
-
-    let successor = cycle.successor(now_ms, false);
-    assert_eq!(successor.handoff_defer_until_ms, None, "a cycle after the handoff must not inherit the deferral");
-    assert_eq!(successor.attempts_completed, 0);
+    cycle.member_handoff_requested = true;
+    assert!(cycle.successor(now_ms, true).member_handoff_requested);
+    assert!(!cycle.successor(now_ms, false).member_handoff_requested);
 }

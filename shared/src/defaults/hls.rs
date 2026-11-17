@@ -22,7 +22,7 @@ pub const fn default_hls_max_segments_prefetch() -> usize { 6 }
 pub const fn default_hls_max_concurrent_segment_fetches_per_session() -> usize { 2 }
 pub const fn default_hls_max_concurrent_segment_fetches_global() -> usize { 64 }
 pub const fn default_hls_origin_manifest_timeout_ms() -> Millis { Millis::new(3_000) }
-pub const fn default_hls_min_origin_target_duration_secs() -> Secs { Secs::new(0) }
+pub const fn default_hls_min_origin_target_duration_secs() -> Secs { Secs::new(4) }
 pub const fn default_hls_origin_segment_timeout_ms() -> HlsSegmentTimeout { HlsSegmentTimeout::Auto }
 pub const fn default_hls_initial_manifest_wait_timeout_secs() -> Secs { Secs::new(90) }
 pub const fn default_hls_session_idle_timeout() -> Secs { Secs::new(300) }

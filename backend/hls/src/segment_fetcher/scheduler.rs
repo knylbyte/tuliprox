@@ -88,6 +88,55 @@ pub(super) struct SegmentFetchSnapshot {
     pub(super) complete_object: bool,
     pub(super) key_dependency: Option<SegmentKeyDependency>,
     pub(super) origin_work_generation: u64,
+    pub(super) startup_request: Option<Arc<StartupSegmentRequest>>,
+}
+
+#[derive(Debug)]
+pub(super) struct StartupSegmentRequest {
+    pub(super) predecessor: Option<Arc<Semaphore>>,
+    pub(super) headers: Arc<Semaphore>,
+}
+
+impl Drop for StartupSegmentRequest {
+    fn drop(&mut self) { self.headers.close(); }
+}
+
+impl super::super::HlsSession {
+    fn order_startup_segment_request(
+        &mut self,
+        proxy_seq: u64,
+        priority: SegmentFetchPriority,
+    ) -> Option<Arc<StartupSegmentRequest>> {
+        if !matches!(priority, SegmentFetchPriority::RenderWindow | SegmentFetchPriority::Prefetch)
+            || self.origin_playback_kind() != tuliprox_core::model::PlaybackKind::LiveHls
+            || self.startup_mode().publishes_pending_successors()
+        {
+            return None;
+        }
+        if self.published_live_origin_baseline.is_some() {
+            let tail = self.startup_segment_order_tail?;
+            if priority != SegmentFetchPriority::RenderWindow || proxy_seq > tail {
+                return None;
+            }
+            if proxy_seq == tail {
+                self.startup_segment_order_tail = None;
+            }
+        }
+        let generation = self.activity.origin_work_generation;
+        let predecessor = self
+            .startup_segment_headers
+            .take()
+            .filter(|(previous_generation, headers)| *previous_generation == generation && !headers.is_closed())
+            .map(|(_, headers)| headers);
+        // A failed head can free a slot for prefetch while the startup
+        // successors are still waiting to reach the origin.
+        if predecessor.is_none() && priority != SegmentFetchPriority::RenderWindow {
+            return None;
+        }
+        let headers = Arc::new(Semaphore::new(0));
+        self.startup_segment_headers = Some((generation, Arc::clone(&headers)));
+        Some(Arc::new(StartupSegmentRequest { predecessor, headers }))
+    }
 }
 
 enum SegmentWorkerTask {
@@ -149,6 +198,7 @@ impl fmt::Debug for SegmentFetchSnapshot {
                 }),
             )
             .field("origin_work_generation", &self.origin_work_generation)
+            .field("startup_request", &self.startup_request)
             .finish()
     }
 }
@@ -434,6 +484,7 @@ impl HlsSegmentWorkerPool {
                 complete_object: candidate.complete_object,
                 key_dependency,
                 origin_work_generation,
+                startup_request: session.order_startup_segment_request(proxy_seq, priority),
             });
         }
 
@@ -451,10 +502,19 @@ impl HlsSegmentWorkerPool {
         let finished_at_ms = current_time_millis();
         let mut completion = {
             let mut session = context.session.write().await;
-            self.apply_segment_fetch_result(&mut session, &snapshot, &policy, result, finished_at_ms)
+            let success = result.is_ok();
+            let completion = self.apply_segment_fetch_result(&mut session, &snapshot, &policy, result, finished_at_ms);
+            if success && completion.generation_valid {
+                session.confirm_recovery_entry_progress(&context.segment_cache, finished_at_ms);
+            }
+            completion
         };
         if let Some(notice) = completion.member_unhealthy.take() {
             notice.send(&context.session);
+        }
+        // A terminal failure before response headers still releases the next request.
+        if let Some(request) = &snapshot.startup_request {
+            request.headers.close();
         }
         if let Some(generation) = completion.recovery_generation {
             // A terminal failure can invalidate queued work during this commit.

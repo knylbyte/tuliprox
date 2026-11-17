@@ -409,22 +409,30 @@ async fn hls_cache_entry_prefers_item_bitrate_then_loads_db_without_target_rebui
     tree.store(&db_path).expect("input M3U metadata");
     let request_url = "http://origin.example.com/live.m3u8";
 
-    let db_response = super::super::create_hls_cache_entry_master_playlist_response(
-        &app_state,
-        &test_fingerprint(),
-        &user,
-        super::super::build_hls_origin_source(&input, "channel-a"),
-        70001,
-        None,
-        None,
-        None,
-        request_url,
-        &input,
-        UserConnectionPermission::Allowed,
-        Some(ConnectionKind::Normal),
-        None,
-    )
-    .await;
+    let entry_master = |fingerprint, bitrate| {
+        let app_state = &app_state;
+        let user = &user;
+        let input = &input;
+        async move {
+            super::super::create_hls_cache_entry_master_playlist_response(
+                app_state,
+                &fingerprint,
+                user,
+                super::super::build_hls_origin_source(input, "channel-a"),
+                70001,
+                None,
+                bitrate,
+                None,
+                request_url,
+                input,
+                UserConnectionPermission::Allowed,
+                Some(ConnectionKind::Normal),
+                None,
+            )
+            .await
+        }
+    };
+    let db_response = entry_master(test_fingerprint(), None).await;
     let (db_bandwidth, db_variant_uri) = single_variant_master_playlist(db_response).await;
     assert_eq!(db_bandwidth, 3_000_000);
     let proxy_session_id = ProxySessionId(proxy_session_id_from_variant_uri(&db_variant_uri).to_string());
@@ -437,42 +445,29 @@ async fn hls_cache_entry_prefers_item_bitrate_then_loads_db_without_target_rebui
         .expect("DB-backed access lease");
     assert_eq!(lease.known_bitrate_bps, Some(2_500_000));
 
-    std::fs::write(&db_path, b"invalid metadata tree").expect("corrupt test metadata");
-    let item_response = super::super::create_hls_cache_entry_master_playlist_response(
-        &app_state,
-        &test_fingerprint_with_addr(test_addr_with_port(55127)),
-        &user,
-        super::super::build_hls_origin_source(&input, "channel-a"),
-        70001,
-        None,
-        Some(3_000_000),
-        None,
-        request_url,
-        &input,
-        UserConnectionPermission::Allowed,
-        Some(ConnectionKind::Normal),
-        None,
+    let write_lock = app_state.app_config.file_locks.write_lock(&db_path).await;
+    tokio::time::pause();
+    let started = tokio::time::Instant::now();
+    let locked_response = tokio::time::timeout(
+        Duration::from_secs(2),
+        entry_master(test_fingerprint_with_addr(test_addr_with_port(55126)), None),
     )
-    .await;
+    .await
+    .expect("master response while the input database is still locked");
+    let elapsed_ms = started.elapsed().as_millis();
+    assert!((500..=501).contains(&elapsed_ms), "lookup timed out after {elapsed_ms} ms");
+    assert_eq!(locked_response.status(), StatusCode::OK);
+    let (locked_bandwidth, _) = single_variant_master_playlist(locked_response).await;
+    assert_eq!(locked_bandwidth, 1_000_000);
+    drop(write_lock);
+    tokio::time::resume();
+
+    std::fs::write(&db_path, b"invalid metadata tree").expect("corrupt test metadata");
+    let item_response = entry_master(test_fingerprint_with_addr(test_addr_with_port(55127)), Some(3_000_000)).await;
     let (item_bandwidth, _) = single_variant_master_playlist(item_response).await;
     assert_eq!(item_bandwidth, 3_600_000);
 
-    let fallback_response = super::super::create_hls_cache_entry_master_playlist_response(
-        &app_state,
-        &test_fingerprint_with_addr(test_addr_with_port(55128)),
-        &user,
-        super::super::build_hls_origin_source(&input, "channel-a"),
-        70001,
-        None,
-        None,
-        None,
-        request_url,
-        &input,
-        UserConnectionPermission::Allowed,
-        Some(ConnectionKind::Normal),
-        None,
-    )
-    .await;
+    let fallback_response = entry_master(test_fingerprint_with_addr(test_addr_with_port(55128)), None).await;
     let (fallback_bandwidth, _) = single_variant_master_playlist(fallback_response).await;
     assert_eq!(fallback_bandwidth, 1_000_000);
 }

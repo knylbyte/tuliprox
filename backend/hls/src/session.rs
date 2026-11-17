@@ -12,17 +12,17 @@ use super::{
     media_reserve::HlsManifestCommitIdentity,
     origin_progress::{HlsBoundedRecoverySamples, HlsOriginPathCondition, HlsOriginProgressPhase},
     recovery_timing::HlsAcceptanceEpisodeTiming,
-    resource_identity::HlsPublishedResourceHistory,
+    resource_identity::{HlsMediaResourceIdentity, HlsPublishedResourceHistory},
     terminal_tail::{HlsTerminalKeyBinding, HlsTerminalTailGeneration},
     HlsAccessLeaseId, HlsAccountBindingProtection, HlsAccountOverlapTiming, HlsEffectiveOriginAcquirePolicy,
     HlsEffectiveOriginAcquirePolicyState, HlsFreshManifestRequiredReason, HlsOriginAccountBinding,
     HlsOriginAccountIoLease, HlsOriginAccountRebindState, HlsOriginSource, HlsSessionKey, MapCacheStatus, MapEntry,
-    OriginMapKey, OriginRefreshState, OriginSegmentKey, ProxyMapId, ProxySessionId, RenderPolicy, RenderedManifest,
+    OriginRefreshState, OriginSegmentKey, ProxyMapId, ProxySessionId, RenderPolicy, RenderedManifest,
     SegmentCacheStatus, SegmentEntry, SegmentFetchPriority, SegmentPrefetchQueue, TransientPassthroughState,
 };
 use axum::http::HeaderMap;
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     fmt,
     sync::Arc,
 };
@@ -131,6 +131,12 @@ pub struct HlsPublishedLiveOriginBaseline {
     pub rendered_at_ms: u64,
 }
 
+pub(crate) struct HlsRecoveryEntryLeases {
+    pub(crate) first_new_proxy_seq: u64,
+    pub(crate) established: Vec<(HlsAccessLeaseId, u64)>,
+    pub(crate) closed: Option<&'static str>,
+}
+
 /// Entry-only barrier. Existing live leases retain their own media reserve.
 #[derive(Debug, Clone, Default)]
 pub struct HlsLiveEntryRevalidation {
@@ -156,10 +162,13 @@ pub struct HlsSessionOriginControl {
     pub pinned_host: Option<String>,
     pub manifest_origin_binding: Option<HlsManifestOriginBinding>,
     pub origin_epoch: u64,
+    known_hosts: HashMap<String, u64>,
     host_local_highwaters: HashMap<(u64, String), HlsHostLocalHighwaterEntry>,
     host_local_highwater_observation_order: u64,
     pub acceptance_episode: Option<HlsManifestAcceptanceEpisode>,
     pub recovery_samples: HlsBoundedRecoverySamples,
+    /// First new proxy sequence that can supersede a hard 407 from an entering lease.
+    pub(crate) entry_407_recovery_from: Option<u64>,
     pub(crate) qualification: crate::short_manifest::HlsOriginQualification,
     pub(crate) target_duration_qualification: Option<crate::short_manifest::HlsTargetDurationQualification>,
 }
@@ -184,10 +193,12 @@ impl Default for HlsSessionOriginControl {
             pinned_host: None,
             manifest_origin_binding: None,
             origin_epoch: 0,
+            known_hosts: HashMap::new(),
             host_local_highwaters: HashMap::new(),
             host_local_highwater_observation_order: 0,
             acceptance_episode: None,
             recovery_samples: HlsBoundedRecoverySamples::default(),
+            entry_407_recovery_from: None,
             qualification: crate::short_manifest::HlsOriginQualification::default(),
             target_duration_qualification: None,
         }
@@ -196,6 +207,22 @@ impl Default for HlsSessionOriginControl {
 
 impl HlsSessionOriginControl {
     const MAX_HOST_LOCAL_HIGHWATERS: usize = 32;
+
+    pub(crate) fn confirm_manifest_host(&mut self, host: String, duration_ms: u64, now_ms: u64) {
+        self.known_hosts.retain(|_, expiry| *expiry > now_ms);
+        self.known_hosts.insert(host, now_ms.saturating_add(duration_ms.saturating_mul(2)));
+    }
+
+    pub(crate) fn manifest_host_confirmed(&self, host: &str, now_ms: u64) -> bool {
+        self.known_hosts.get(host).is_some_and(|expiry| now_ms < *expiry)
+    }
+
+    pub(crate) fn revoke_manifest_host(&mut self, host: &str) { self.known_hosts.remove(host); }
+
+    pub(crate) fn clear_manifest_hosts(&mut self) { self.known_hosts.clear(); }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn manifest_host_expiry_for_test(&self, host: &str) -> Option<u64> { self.known_hosts.get(host).copied() }
 
     pub fn record_origin_response(&mut self, now_ms: u64) { self.last_origin_response_at_ms = Some(now_ms); }
 
@@ -306,12 +333,18 @@ pub struct HlsSession {
     pub key: HlsSessionKey,
     pub proxy_session_id: ProxySessionId,
     pub origin_source: HlsOriginSource,
+    /// First proxy slot of the last independent group member, if the previous one had a timeline.
+    pub(crate) group_member_start_proxy_seq: Option<u64>,
     pub origin_account_binding: Option<HlsOriginAccountBinding>,
     pub origin_account_io_lease: Option<Arc<HlsOriginAccountIoLease>>,
     pub(crate) binding_inactivity: crate::availability::binding_protection::HlsBindingInactivity,
     pub(crate) origin_work_cancellation: tokio_util::sync::CancellationToken,
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) origin_retry_barrier: Option<Arc<crate::resource_fetch::HlsResourceRetryBarrier>>,
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) startup_request_barrier: Option<(u64, Arc<crate::resource_fetch::HlsResourceRetryBarrier>)>,
+    #[cfg(any(test, feature = "test-support"))]
+    origin_successor_gap_for_test: Option<(u64, tokio::sync::oneshot::Sender<Option<String>>)>,
     pub origin_account_rebind: HlsOriginAccountRebindState,
     pub origin_account_prepare_lock: Arc<tokio::sync::Mutex<()>>,
     pub origin_account_runtime: Option<Arc<dyn crate::origin_account_runtime::HlsOriginAccountRuntime>>,
@@ -325,6 +358,7 @@ pub struct HlsSession {
     pub origin_refresh: OriginRefreshState,
     pub live_entry_revalidation: HlsLiveEntryRevalidation,
     pub origin_control: HlsSessionOriginControl,
+    pub(crate) recovery_entry_leases: Option<HlsRecoveryEntryLeases>,
     pub render_policy: RenderPolicy,
     pub startup: Option<super::HlsSessionStartup>,
     /// None before an origin commit; Some(empty) is an explicitly empty origin window.
@@ -342,11 +376,16 @@ pub struct HlsSession {
     /// `origin_manifest_commits` when the current committed manifest was stored.
     committed_manifest_origin_commits: u64,
     last_normal_manifest_commit_identity: Option<HlsManifestCommitIdentity>,
+    last_normal_manifest_origin_commits: u64,
     pub(crate) published_live_origin_baseline: Option<HlsPublishedLiveOriginBaseline>,
     pub(crate) missing_head_limit: Option<u64>,
     pub longest_rendered_playlist_duration_ms: u64,
     pub initial_prefetch_gap_segments: usize,
     pub segment_prefetch_queue: SegmentPrefetchQueue,
+    /// Latest ordered startup segment request, scoped to its origin work generation.
+    pub(crate) startup_segment_headers: Option<(u64, Arc<tokio::sync::Semaphore>)>,
+    /// Last queued `RenderWindow` sequence at the first origin publication.
+    pub(crate) startup_segment_order_tail: Option<u64>,
     pub active_segment_fetches: usize,
     pub segment_fetch_notifiers: HashMap<u64, Arc<Notify>>,
     pub origin_request_headers: HeaderMap,
@@ -365,13 +404,21 @@ pub struct HlsSession {
     pub published_resource_history: HlsPublishedResourceHistory,
     pub(crate) origin_content: crate::refresh::origin_probe::HlsOriginContentEvidence,
     pub discontinuity_sequence: u64,
+    // Highest proxy sequence published in a live cache window, even after eviction.
+    pub(crate) live_discontinuity_published_through: Option<u64>,
+    // Logical recovery position and the earliest head that has displayed its tag.
+    pub(crate) live_recovery_discontinuities: BTreeMap<u64, Option<u64>>,
+    // Inclusive proxy ranges of obsolete, unplayable mappings before the next publication.
+    pub(crate) retired_live_mappings: BTreeMap<u64, u64>,
+    // Cache eviction can remove a boundary while an older segment is still retained.
+    pub(crate) evicted_discontinuities: BTreeSet<u64>,
     pub transient_discontinuity_sequence: Option<u64>,
     pub pending_handoff_discontinuity_sequence: Option<u64>,
     pub pending_origin_epoch_handoff: bool,
     pub segments: BTreeMap<u64, SegmentEntry>,
     pub active_map_fetches: usize,
     pub maps: BTreeMap<ProxyMapId, MapEntry>,
-    pub origin_map_to_proxy: HashMap<OriginMapKey, ProxyMapId>,
+    pub(crate) origin_map_to_proxy: HashMap<(u64, HlsMediaResourceIdentity), ProxyMapId>,
     pub next_proxy_map_id: u64,
     pub publishable_origin_head_proxy_seq: Option<u64>,
     pub publishable_origin_tail_proxy_seq: Option<u64>,
@@ -388,10 +435,69 @@ pub struct HlsSession {
 }
 
 impl HlsSession {
+    pub(crate) fn playlist_source_key(&self) -> std::borrow::Cow<'_, HlsSessionKey> {
+        if self.key.is_group_key() {
+            std::borrow::Cow::Owned(self.origin_source.session_key())
+        } else {
+            std::borrow::Cow::Borrowed(&self.key)
+        }
+    }
+
+    pub(crate) fn idle_for_origin_reentry(&self, now_ms: u64) -> bool {
+        matches!(self.mode, HlsSessionMode::NormalCacheTimeline)
+            && self.target_duration.filter(|target| *target > 0).is_some_and(|target| {
+                self.activity
+                    .last_delivered_media_at_ms
+                    .is_some_and(|last| now_ms.saturating_sub(last) > u64::from(target) * 3_000)
+            })
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn clear_origin_content_evidence_for_test(&mut self) {
+        self.origin_content = crate::refresh::origin_probe::HlsOriginContentEvidence::default();
+    }
+
+    /// Arms a one-shot gap after parsing a candidate with this final MSN.
+    ///
+    /// # Panics
+    /// Panics if `msn` has no successor.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn skip_manifest_successor_for_test(&mut self, msn: u64) -> tokio::sync::oneshot::Receiver<Option<String>> {
+        assert!(msn < u64::MAX);
+        let (outcome, receiver) = tokio::sync::oneshot::channel();
+        self.origin_successor_gap_for_test = Some((msn, outcome));
+        receiver
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn inject_manifest_successor_gap_for_test(
+        &mut self,
+        manifest: &mut tuliprox_parser::hls::origin_manifest::ParsedOriginManifest,
+    ) -> Option<tokio::sync::oneshot::Sender<Option<String>>> {
+        let last = manifest.segments.last_mut()?;
+        let (msn, _) = self.origin_successor_gap_for_test.as_ref()?;
+        if last.origin_seq != *msn {
+            return None;
+        }
+        let (msn, outcome) = self.origin_successor_gap_for_test.take()?;
+        last.origin_seq = msn + 1;
+        Some(outcome)
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn pause_next_origin_retry_for_test(&mut self) -> Arc<crate::resource_fetch::HlsResourceRetryBarrier> {
         let barrier = Arc::new(crate::resource_fetch::HlsResourceRetryBarrier::default());
         self.origin_retry_barrier = Some(Arc::clone(&barrier));
+        barrier
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn pause_startup_segment_request_for_test(
+        &mut self,
+        proxy_seq: u64,
+    ) -> Arc<crate::resource_fetch::HlsResourceRetryBarrier> {
+        let barrier = Arc::new(crate::resource_fetch::HlsResourceRetryBarrier::default());
+        self.startup_request_barrier = Some((proxy_seq, Arc::clone(&barrier)));
         barrier
     }
     pub fn new(key: HlsSessionKey, reverse_proxy_rewrite_secret: &[u8], now_ms: u64) -> Self {
@@ -410,12 +516,17 @@ impl HlsSession {
             key,
             proxy_session_id,
             origin_source,
+            group_member_start_proxy_seq: None,
             origin_account_binding: None,
             origin_account_io_lease: None,
             binding_inactivity: crate::availability::binding_protection::HlsBindingInactivity::default(),
             origin_work_cancellation: tokio_util::sync::CancellationToken::new(),
             #[cfg(any(test, feature = "test-support"))]
             origin_retry_barrier: None,
+            #[cfg(any(test, feature = "test-support"))]
+            startup_request_barrier: None,
+            #[cfg(any(test, feature = "test-support"))]
+            origin_successor_gap_for_test: None,
             origin_account_rebind: HlsOriginAccountRebindState::default(),
             origin_account_prepare_lock: Arc::new(tokio::sync::Mutex::new(())),
             origin_account_runtime: None,
@@ -429,6 +540,7 @@ impl HlsSession {
             origin_refresh: OriginRefreshState::default(),
             live_entry_revalidation: HlsLiveEntryRevalidation::default(),
             origin_control: HlsSessionOriginControl::default(),
+            recovery_entry_leases: None,
             origin_window_proxy_seqs: None,
             origin_window_durations_ms: Vec::new(),
             live_window_origin_commit_identity: None,
@@ -446,11 +558,14 @@ impl HlsSession {
             origin_manifest_commits: 0,
             committed_manifest_origin_commits: 0,
             last_normal_manifest_commit_identity: None,
+            last_normal_manifest_origin_commits: 0,
             published_live_origin_baseline: None,
             missing_head_limit: None,
             longest_rendered_playlist_duration_ms: 0,
             initial_prefetch_gap_segments: 0,
             segment_prefetch_queue: SegmentPrefetchQueue::default(),
+            startup_segment_headers: None,
+            startup_segment_order_tail: None,
             active_segment_fetches: 0,
             segment_fetch_notifiers: HashMap::new(),
             origin_request_headers: HeaderMap::new(),
@@ -467,6 +582,10 @@ impl HlsSession {
             published_resource_history: HlsPublishedResourceHistory::default(),
             origin_content: crate::refresh::origin_probe::HlsOriginContentEvidence::default(),
             discontinuity_sequence: 0,
+            live_discontinuity_published_through: None,
+            live_recovery_discontinuities: BTreeMap::new(),
+            retired_live_mappings: BTreeMap::new(),
+            evicted_discontinuities: BTreeSet::new(),
             transient_discontinuity_sequence: None,
             pending_handoff_discontinuity_sequence: None,
             pending_origin_epoch_handoff: false,
@@ -552,9 +671,17 @@ impl HlsSession {
         self.last_normal_manifest_commit_identity
     }
 
+    pub(crate) const fn last_normal_manifest_origin_commits(&self) -> u64 { self.last_normal_manifest_origin_commits }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn recovery_entry_established_leases_for_test(&self) -> &[(HlsAccessLeaseId, u64)] {
+        self.recovery_entry_leases.as_ref().map_or(&[], |entry| entry.established.as_slice())
+    }
+
     pub fn record_normal_manifest_commit_identity(&mut self, identity: HlsManifestCommitIdentity) {
         self.record_manifest_commit_identity(identity);
         self.last_normal_manifest_commit_identity = Some(identity);
+        self.last_normal_manifest_origin_commits = self.origin_manifest_commits;
     }
 
     pub fn established_manifest_recovery_binding(&self) -> Option<HlsManifestOriginBinding> {
@@ -638,7 +765,11 @@ impl HlsSession {
                 }
             }
         }
-        if self.origin_source != source {
+        if self.origin_source.session_key() != source.session_key() {
+            self.group_member_start_proxy_seq = self.proxy_next_seq;
+            if let Some(next) = self.proxy_next_seq {
+                self.published_resource_history.begin_restart(next);
+            }
             // Member inputs and stream references differ; drop the old member's user agent so
             // the next manifest request rebuilds origin headers for the new bound member.
             self.origin_request_headers.clear();
@@ -954,13 +1085,20 @@ impl HlsSession {
             && self.terminal_tail_protections.is_empty()
             && self.segment_prefetch_queue.is_empty()
             && !self.segments.values().any(|segment| {
-                segment.access.active_readers() > 0 || matches!(segment.status, SegmentCacheStatus::Fetching { .. })
+                segment.access.active_readers() > 0
+                    || segment.access.retention.protects(now_ms)
+                    || matches!(segment.status, SegmentCacheStatus::Fetching { .. })
             })
             && !self.maps.values().any(|map| {
                 map.access.active_readers() > 0
                     || matches!(map.status, MapCacheStatus::Queued { .. } | MapCacheStatus::Fetching { .. })
             })
             && !self.transient.has_active_resource_readers()
+            && !self
+                .transient
+                .resources
+                .values()
+                .any(|resource| self.transient.retained_cached_resource(resource, now_ms))
     }
 
     pub fn install_terminal_tail_protection(
@@ -1135,6 +1273,7 @@ impl HlsSession {
         self.origin_work_cancellation = tokio_util::sync::CancellationToken::new();
         self.binding_inactivity.reset();
         self.activity.origin_work_generation = self.activity.origin_work_generation.saturating_add(1);
+        self.startup_segment_order_tail = None;
         let queued_segment_seqs = self.segment_prefetch_queue.proxy_seqs();
         for proxy_seq in queued_segment_seqs {
             self.segment_prefetch_queue.remove(proxy_seq);
@@ -1168,7 +1307,10 @@ impl fmt::Debug for HlsSession {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug = f.debug_struct("HlsSession");
         #[cfg(any(test, feature = "test-support"))]
-        debug.field("origin_retry_barrier", &self.origin_retry_barrier);
+        debug
+            .field("origin_retry_barrier", &self.origin_retry_barrier)
+            .field("startup_request_barrier", &self.startup_request_barrier)
+            .field("origin_successor_gap_for_test", &self.origin_successor_gap_for_test);
         debug
             .field("key", &self.key)
             .field("proxy_session_id", &self.proxy_session_id)
@@ -1197,6 +1339,7 @@ impl fmt::Debug for HlsSession {
             .field("origin_manifest_commits", &self.origin_manifest_commits)
             .field("committed_manifest_origin_commits", &self.committed_manifest_origin_commits)
             .field("last_normal_manifest_commit_identity", &self.last_normal_manifest_commit_identity)
+            .field("last_normal_manifest_origin_commits", &self.last_normal_manifest_origin_commits)
             .field("published_live_origin_baseline", &self.published_live_origin_baseline)
             .field("longest_rendered_playlist_duration_ms", &self.longest_rendered_playlist_duration_ms)
             .field("origin_window_proxy_seqs", &self.origin_window_proxy_seqs)
@@ -1208,6 +1351,8 @@ impl fmt::Debug for HlsSession {
             .field("last_warned_short_startup_window", &self.last_warned_short_startup_window)
             .field("initial_prefetch_gap_segments", &self.initial_prefetch_gap_segments)
             .field("segment_prefetch_queue_len", &self.segment_prefetch_queue.len())
+            .field("startup_segment_headers", &self.startup_segment_headers)
+            .field("startup_segment_order_tail", &self.startup_segment_order_tail)
             .field("active_segment_fetches", &self.active_segment_fetches)
             .field("segment_fetch_notifiers_len", &self.segment_fetch_notifiers.len())
             .field("origin_request_headers_len", &self.origin_request_headers.len())
@@ -1215,6 +1360,10 @@ impl fmt::Debug for HlsSession {
             .field("origin_provider_session_headers_len", &self.origin_provider_session_headers.len())
             .field("activity", &self.activity)
             .field("origin_control", &self.origin_control)
+            .field(
+                "recovery_entry_leases",
+                &self.recovery_entry_leases.as_ref().map(|capture| (capture.established.len(), capture.closed)),
+            )
             .field("origin_epoch", &self.origin_epoch)
             .field("origin_content", &self.origin_content)
             .field("origin_epoch_host_bound", &self.origin_epoch_effective_host_id.is_some())
@@ -1225,6 +1374,10 @@ impl fmt::Debug for HlsSession {
             .field("origin_to_proxy_len", &self.origin_to_proxy.len())
             .field("published_resource_history", &self.published_resource_history.generation())
             .field("discontinuity_sequence", &self.discontinuity_sequence)
+            .field("live_discontinuity_published_through", &self.live_discontinuity_published_through)
+            .field("live_recovery_discontinuities", &self.live_recovery_discontinuities)
+            .field("retired_live_mappings", &self.retired_live_mappings)
+            .field("evicted_discontinuities", &self.evicted_discontinuities)
             .field("transient_discontinuity_sequence", &self.transient_discontinuity_sequence)
             .field("pending_handoff_discontinuity_sequence", &self.pending_handoff_discontinuity_sequence)
             .field("pending_origin_epoch_handoff", &self.pending_origin_epoch_handoff)
@@ -1310,6 +1463,7 @@ mod tests {
             origin_byte_range: None,
             map_ref: None,
             encryption: None,
+            occurrence_identity: None,
             retained_resource_identity: None,
             origin_fetch_ref: None,
             status: SegmentCacheStatus::Ready { content_length, ready_at_ms: 1 },

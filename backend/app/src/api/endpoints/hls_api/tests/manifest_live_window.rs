@@ -1,5 +1,6 @@
 mod activation;
 mod publication_handoff;
+mod recovery_entry;
 mod retained;
 mod startup_recovery;
 

@@ -75,7 +75,7 @@ impl HlsTerminalCommitClock {
             Some((base_ms, tokio::time::Instant::now()));
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn set_fixed_now_ms(&self, now_ms: u64) { self.fixed_now_ms.store(now_ms, Ordering::Release); }
 
     #[cfg(test)]
@@ -1395,6 +1395,7 @@ mod tests {
             terminal_media_preparation: HlsTerminalMediaPreparationState::Failed { key: None },
             reserve,
             manifest_snapshot: HlsLeaseManifestSnapshot {
+                cached_source: None,
                 startup_revisions: None,
                 delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
                 source_commit_identity: HlsManifestCommitIdentity::new(1),

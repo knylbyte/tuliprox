@@ -106,9 +106,13 @@ async fn short_qualification_survives_ten_refreshes_and_larger_intermediate_wind
         assert!(trigger_origin_refresh_sync(request.clone()).await);
         let generation = request.session.read().await.origin_control.acceptance_generation;
         let startup_requests = server.requests.lock().await.len();
+        let mut previous_tail = 100 + short_count - 1;
         for cycle in 1..=10 {
-            head.store(100 + cycle * 4, Ordering::SeqCst);
-            count.store(if cycle % 2 == 1 { short_count + 2 } else { short_count }, Ordering::SeqCst);
+            let window_count = if cycle % 2 == 1 { short_count + 2 } else { short_count };
+            // Grow/shrink around the current occurrence; losing it is a separate recovery case.
+            head.store(previous_tail, Ordering::SeqCst);
+            count.store(window_count, Ordering::SeqCst);
+            previous_tail += window_count - 1;
             {
                 let mut session = request.session.write().await;
                 session.origin_refresh.next_fetch_allowed_at_ms = 0;
@@ -432,14 +436,14 @@ async fn short_permission_does_not_release_empty_replayed_or_failed_media() {
         SegmentCacheStatus::Ready { content_length: 128, ready_at_ms: request.now_ms };
     session.render_and_store_manifest(request.now_ms).unwrap();
     let commits = session.origin_manifest_commits();
-    let mut replay = fetched_manifest(&playlist(101, 1).replace("segment-101.ts", "segment-100.ts"));
+    let mut replay = fetched_manifest(&playlist(100, 1).replace("segment-100.ts", "changed.ts"));
     replay.final_manifest_url = format!("{}/live/user/pass/12345.m3u8", server.base_url);
     replay.resolved_request_url.clone_from(&replay.final_manifest_url);
     replay.redirect_host = None;
     assert!(matches!(
         commit_fetched_manifest(&mut session, &replay, &request, request.now_ms + 1),
         Err(HlsManifestCommitError::TimelineRejected {
-            reason: HlsManifestRejectLogReason::PublishedResourceReplay { .. }
+            reason: HlsManifestRejectLogReason::OriginSequenceResourceConflict { .. }
         })
     ));
     assert!(session.allows_short_origin_windows());
@@ -669,7 +673,7 @@ async fn segment_count_change_preserves_regular_qualification_without_starting_a
     let origin_count = Arc::clone(&count);
     let server = spawn_test_origin(Arc::new(move |_| {
         let count = origin_count.load(Ordering::SeqCst);
-        (200, Vec::new(), playlist(if count == 3 { 100 } else { 104 }, count))
+        (200, Vec::new(), playlist(if count == 3 { 100 } else { 102 }, count))
     }))
     .await;
     let mut request = request_for_origin(&server);

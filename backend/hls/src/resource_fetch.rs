@@ -413,11 +413,12 @@ impl HlsOriginResourceFetchError {
 
 type HlsOriginResourceResponsePrepareFuture<R> = BoxFuture<'static, Result<R, HlsOriginResourceFetchError>>;
 
-struct HlsOriginResourceRetryRun<'a> {
-    target: HlsOriginResourceFetchTarget,
-    clients: HlsOriginResourceClients,
-    policy: &'a SegmentFetchPolicy,
-    identity: &'a HlsLogIdentity,
+pub(crate) struct HlsOriginResourceRetryRun<'a> {
+    pub(crate) target: HlsOriginResourceFetchTarget,
+    pub(crate) clients: HlsOriginResourceClients,
+    pub(crate) policy: &'a SegmentFetchPolicy,
+    pub(crate) identity: &'a HlsLogIdentity,
+    pub(crate) response_headers: Option<std::sync::Arc<tokio::sync::Semaphore>>,
 }
 
 fn origin_resource_kind(kind: HlsResourceFetchKind) -> crate::origin_telemetry::OriginResourceKind {
@@ -485,16 +486,43 @@ where
         G,
     ) -> BoxFuture<'static, Result<T, HlsOriginResourceFetchError>>,
 {
-    let coding_object_kind = match target.kind {
+    run_hls_origin_resource_retry_loop_observing_headers(
+        HlsOriginResourceRetryRun { target, clients, policy, identity, response_headers: None },
+        prepare_attempt,
+        cleanup_attempt,
+        commit,
+    )
+    .await
+}
+
+pub(crate) async fn run_hls_origin_resource_retry_loop_observing_headers<T, G, P, C, F>(
+    run: HlsOriginResourceRetryRun<'_>,
+    prepare_attempt: P,
+    cleanup_attempt: C,
+    commit: F,
+) -> Result<T, HlsOriginResourceFetchError>
+where
+    T: Send + 'static,
+    G: Send + 'static,
+    P: FnMut(HlsResourceFetchAttempt) -> BoxFuture<'static, Result<G, HlsOriginResourceFetchError>>,
+    C: FnMut(G) -> BoxFuture<'static, ()>,
+    F: FnMut(
+        DecodedHttpResponse,
+        HlsResourceFetchAttempt,
+        HlsOriginResourceBodyDeadline,
+        G,
+    ) -> BoxFuture<'static, Result<T, HlsOriginResourceFetchError>>,
+{
+    let coding_object_kind = match run.target.kind {
         HlsResourceFetchKind::Segment => HlsOriginContentCodingObjectKind::Segment,
         HlsResourceFetchKind::Map => HlsOriginContentCodingObjectKind::Map,
         HlsResourceFetchKind::Key => HlsOriginContentCodingObjectKind::Key,
         HlsResourceFetchKind::Part => HlsOriginContentCodingObjectKind::Part,
         HlsResourceFetchKind::Other => HlsOriginContentCodingObjectKind::Other,
     };
-    let range_requested = target.headers.contains_key(header::RANGE);
+    let range_requested = run.target.headers.contains_key(header::RANGE);
     run_hls_origin_resource_raw_retry_core(
-        HlsOriginResourceRetryRun { target, clients, policy, identity },
+        run,
         prepare_attempt,
         cleanup_attempt,
         |response, deadline| {
@@ -591,7 +619,7 @@ where
         G,
     ) -> BoxFuture<'static, Result<T, HlsOriginResourceFetchError>>,
 {
-    let HlsOriginResourceRetryRun { target, clients, policy, identity } = run;
+    let HlsOriginResourceRetryRun { target, clients, policy, identity, response_headers } = run;
     let cancellation = if let Some(session) = clients.session.as_ref() {
         session.read().await.origin_work_cancellation.clone()
     } else {
@@ -663,6 +691,7 @@ where
                         &target,
                         &clients,
                         Duration::from_millis(timeout.effective_ms),
+                        response_headers.as_deref(),
                     )
                     .await
                     {
@@ -700,7 +729,14 @@ where
                     log_hls_resource_attempt_succeeded(identity, target.log_context(), attempt_started_at.elapsed());
                     return Ok(output);
                 }
-                Err(err) if err.aborts_without_retry() || attempt_index + 1 == attempts => {
+                // No HTTP request was sent. A capacity denial during ordered startup must
+                // settle this attempt before its successors queue the same acquisition retries.
+                Err(err)
+                    if err.aborts_without_retry()
+                        || attempt_index + 1 == attempts
+                        || (response_headers.as_ref().is_some_and(|headers| !headers.is_closed())
+                            && matches!(&err, HlsOriginResourceFetchError::ProviderUnavailable(kind) if kind.is_capacity_denial())) =>
+                {
                     if matches!(err, HlsOriginResourceFetchError::Timeout) {
                         log_hls_resource_timeout(
                             identity,
@@ -764,7 +800,7 @@ async fn fetch_hls_origin_resource_response(
     target: &HlsOriginResourceFetchTarget,
     clients: &HlsOriginResourceClients,
 ) -> Result<reqwest::Response, HlsOriginResourceFetchError> {
-    fetch_hls_origin_resource_response_with_timeout(target, clients, Duration::from_secs(10))
+    fetch_hls_origin_resource_response_with_timeout(target, clients, Duration::from_secs(10), None)
         .await
         .map(|(response, _)| response)
 }
@@ -773,6 +809,7 @@ async fn fetch_hls_origin_resource_response_with_timeout(
     target: &HlsOriginResourceFetchTarget,
     clients: &HlsOriginResourceClients,
     timeout: Duration,
+    response_headers: Option<&tokio::sync::Semaphore>,
 ) -> Result<(reqwest::Response, HlsOriginResourceBodyDeadline), HlsOriginResourceFetchError> {
     let mut url = Url::parse(&target.origin_url).map_err(|_| HlsOriginResourceFetchError::InvalidOriginUrl)?;
     let mut headers = target.headers.clone();
@@ -800,6 +837,11 @@ async fn fetch_hls_origin_resource_response_with_timeout(
         )
         .await?;
         if !clients.use_manual_redirects || !response.status().is_redirection() {
+            // Headers confirm the origin has seen the request, including HTTP errors.
+            // The next startup request can now overlap this response's body.
+            if let Some(headers) = response_headers {
+                headers.close();
+            }
             let response = classify_hls_origin_resource_response(response, target.byte_range_expectation)?;
             let deadline = deadline
                 .ok_or_else(|| HlsOriginResourceFetchError::Transport("HLS connection deadline unavailable".into()))?;
@@ -1918,6 +1960,7 @@ mod tests {
                 &fetch_target(format!("http://{address}/first")),
                 &fetch_clients(manual),
                 Duration::from_millis(450),
+                None,
             )
             .await;
             assert!(matches!(result, Err(HlsOriginResourceFetchError::Timeout)), "manual={manual}: {result:?}");

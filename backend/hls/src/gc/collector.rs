@@ -107,7 +107,7 @@ impl HlsGarbageCollector {
             let id = handle.read().await.proxy_session_id.clone();
             self.cache.capacity_usage(&id).await?;
         }
-        self.cleanup_revisions(&sessions, &mut report).await?;
+        self.cleanup_revisions_at(&sessions, &mut report, now_ms).await?;
         let mut active_session_ids = HashSet::with_capacity(sessions.len());
         for session in &sessions {
             active_session_ids.insert(session.read().await.proxy_session_id.clone());
@@ -130,7 +130,7 @@ impl HlsGarbageCollector {
 
         self.retry_pending_cache_deletions(&mut report, &mut deletion_attempt_budget).await;
         let mut global_deletions = self.reserve_cache_deletion_batch();
-        self.collect_global_size_deletions(&sessions, &policy, &mut report, &mut global_deletions).await;
+        self.collect_global_size_deletions(&sessions, now_ms, &policy, &mut report, &mut global_deletions).await;
         global_deletions.persist(&mut report);
         self.retry_pending_cache_deletions(&mut report, &mut deletion_attempt_budget).await;
 
@@ -138,7 +138,7 @@ impl HlsGarbageCollector {
             self.remove_idle_session_if_still_idle(session, now_ms, &policy, &mut report).await;
         }
 
-        self.cleanup_revisions(&sessions, &mut report).await?;
+        self.cleanup_revisions_at(&sessions, &mut report, now_ms).await?;
         report.cache_object_deletions_deferred = self.pending_cache_deletion_count();
         self.record_report_metrics(&report);
         if report.did_cleanup_or_invalidate() {

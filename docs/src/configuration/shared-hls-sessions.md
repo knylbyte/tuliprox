@@ -223,6 +223,10 @@ Tuliprox stores HLS segment and MAP cache objects below `reverse_proxy.hls_cache
 - `cache_duration`, the retention baseline for unprotected objects;
 - active reader and origin-work protection, so files are not removed while in use.
 
+Cacheable segments removed from a delivered playlist keep their original bytes and URI for the minimum
+[publication retention](./shared-hls-runtime-flow.md#retention-of-published-media). A valid lease is still required.
+If protected objects fill the budget, new cache work can wait or fail with a capacity error.
+
 The HLS cache is separate from `reverse_proxy.cache`, which is used for logos, images, and other rewritten resources.
 
 ## Transient passthrough mode
@@ -232,7 +236,8 @@ certain encryption-key resources or unsupported HLS tags. In those cases, Tulipr
 passthrough mode.
 
 In transient mode, Tuliprox still validates the user’s access lease. It then fetches and serves the needed resource
-through a short-lived, controlled resource path instead of pretending that the resource is a normal cached segment.
+through a controlled resource path. Overlapping occurrences keep their published routes when the bindings match.
+Direct responses that are not cacheable are not stored for local retention.
 
 ## User-visible fallback behavior
 

@@ -106,6 +106,7 @@ pub(in crate::manager::tests) fn access_lease(lease_id: &str, proxy_session_id: 
 
 pub(in crate::manager::tests) fn manifest_snapshot(source_rendered_at_ms: u64) -> HlsLeaseManifestSnapshot {
     HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
         source_commit_identity: HlsManifestCommitIdentity::new(source_rendered_at_ms),

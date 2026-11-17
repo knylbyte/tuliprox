@@ -159,6 +159,10 @@ mod config;
 mod lease_completion;
 mod lifecycle;
 mod publication;
+mod recovery_entry;
+mod recovery_poll;
+pub use recovery_entry::HlsRecoveryEntryCommit;
+pub use recovery_poll::{HlsRecoveryPoll, HlsRetainedPollOrigin, HlsRetainedPollOriginGuard};
 mod revision_recovery;
 mod terminal;
 

@@ -186,6 +186,7 @@ pub struct HlsLeaseManifestPublicationGuard {
     entry_generation: u64,
     strip_policy: Option<(shared::model::HlsStripMode, u64)>,
     admits_live_entry: bool,
+    recovery_entry_snapshot_generation: Option<u64>,
     source: Option<HlsLeasePublicationSource>,
 }
 

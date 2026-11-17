@@ -44,8 +44,8 @@ use std::sync::{
 };
 use tuliprox_core::model::PlaybackKind;
 use tuliprox_hls::api::{
-    build_hls_origin_session_owner, build_proxy_session_id, extract_hls_provider_session_headers,
-    HlsMemberUnhealthyReason, HlsOriginSource, HlsSessionKey,
+    build_hls_origin_session_owner, build_proxy_session_id, extract_hls_provider_session_headers, HlsOriginSource,
+    HlsSessionKey,
 };
 use tuliprox_repository::{
     target_stream_item::{classify_virtual_id, ResolvedStreamTarget},
@@ -185,43 +185,8 @@ pub(in crate::api) async fn handle_hls_stream_request(
 
     if hls_cache_enabled_for_user(app_state, target, user) {
         if let Some(group) = entry_group {
-            // The shared origin belongs to the selected member, so viewers of the same member share
-            // it. The cache path reserves its own provider account; the selection only picks.
-            let playback = group_playback_settings(app_state, target);
-            let kind = connection_kind.unwrap_or(crate::api::model::ConnectionKind::Normal);
-            let now_ts = chrono::Utc::now().timestamp();
-            let mode =
-                archive_reference.map_or(SelectionMode::Live, |start_ts| SelectionMode::Archive { start_ts, now_ts });
-            let req = GroupSelectionRequest {
-                mode,
-                prefer: prefer_member,
-                allow_provider_grace: playback.allow_provider_grace,
-                bypass_maintenance: user.is_recording_proxy_user(),
-                allow_preempt: false,
-                ..GroupSelectionRequest::new(
-                    target.name.as_str(),
-                    &group,
-                    playback.start,
-                    &fingerprint.addr,
-                    &user.username,
-                    connection_priority_for_kind(user, kind),
-                    kind,
-                )
-            };
-            let Ok((resolved, probed)) = super::group_start::resolve_checked_hls_group_entry(
-                app_state,
-                target,
-                Arc::clone(&group),
-                req,
-                req_headers,
-                false,
-                None,
-                true,
-                fingerprint,
-            )
-            .await
-            else {
-                return hls_panel_provisioning_or_status_response(
+            let unavailable = || {
+                hls_panel_provisioning_or_status_response(
                     app_state,
                     user,
                     input,
@@ -230,99 +195,111 @@ pub(in crate::api) async fn handle_hls_stream_request(
                     server_info.path.as_deref(),
                     StatusCode::SERVICE_UNAVAILABLE,
                 )
-                .await;
             };
-            // In shared cache mode, the cache reserves its own provider account during stream startup.
-            // Accepted limitation: one extra manifest probe request per fresh entry, and a potential
-            // provider account change between probe and cache worker start.
-            let mut selection_handle = resolved.acquired.handle;
-            let allocated = selection_handle
-                .handle()
-                .and_then(|handle| handle.allocation.get_provider_name())
-                .unwrap_or_else(|| Arc::clone(&resolved.member.input_name));
-            app_state.connection_manager.release_provider_handle(selection_handle.take());
-
-            // A live group session is keyed by the logical group. Once it exists, every viewer joins
-            // it and reuses its bound member (`origin_source`), so `prefer` only affects the first
-            // creation. Archive group playback keeps the per-member key below.
-            let existing_group_session = if archive_reference.is_none() {
-                super::group_start::shared_cache_group_session_origin(app_state, target, &group, group.group_vid.get())
+            let playback = group_playback_settings(app_state, target);
+            let group_key = HlsSessionKey::for_group(target.id, group.group_vid.get());
+            let proxy_id = build_proxy_session_id(&group_key, &app_state.get_encrypt_secret());
+            let active_protected = archive_reference.is_none()
+                && !playback.failover.enabled
+                && app_state.hls.proxy.sessions().get_by_key(&group_key).await.is_some()
+                && app_state
+                    .hls
+                    .proxy
+                    .access_leases()
+                    .read()
                     .await
+                    .has_active_live_lease(&proxy_id, app_state.hls.proxy.now_ms());
+
+            let selected = if active_protected {
+                None
+            } else {
+                let kind = connection_kind.unwrap_or(crate::api::model::ConnectionKind::Normal);
+                let now_ts = chrono::Utc::now().timestamp();
+                let mode = archive_reference
+                    .map_or(SelectionMode::Live, |start_ts| SelectionMode::Archive { start_ts, now_ts });
+                let req = GroupSelectionRequest {
+                    mode,
+                    prefer: prefer_member,
+                    allow_provider_grace: playback.allow_provider_grace,
+                    bypass_maintenance: user.is_recording_proxy_user(),
+                    allow_preempt: false,
+                    ..GroupSelectionRequest::new(
+                        target.name.as_str(),
+                        &group,
+                        playback.start,
+                        &fingerprint.addr,
+                        &user.username,
+                        connection_priority_for_kind(user, kind),
+                        kind,
+                    )
+                };
+                super::group_start::resolve_checked_hls_group_entry(
+                    app_state,
+                    target,
+                    Arc::clone(&group),
+                    req,
+                    req_headers,
+                    false,
+                    None,
+                    true,
+                    fingerprint,
+                )
+                .await
+                .ok()
+                .map(|(mut resolved, probed)| {
+                    let allocated = resolved
+                        .acquired
+                        .handle
+                        .handle()
+                        .and_then(|handle| handle.allocation.get_provider_name())
+                        .unwrap_or_else(|| Arc::clone(&resolved.member.input_name));
+                    app_state.connection_manager.release_provider_handle(resolved.acquired.handle.take());
+                    (resolved, probed, allocated)
+                })
+            };
+
+            let existing = if archive_reference.is_none() {
+                app_state.hls.proxy.sessions().get_by_key(&group_key).await
             } else {
                 None
             };
-
-            let selected_matches_bound = existing_group_session.as_ref().is_some_and(|(bound_source, _)| {
-                bound_source.input_name.as_ref() == resolved.member.input_name.as_ref()
-                    && bound_source.stream_ref.as_str() == resolved.member.input_stream_id.as_ref()
-            });
-
-            let (member_source, member_url, member_input) = if let Some((bound_source, bound_url)) =
-                existing_group_session
-            {
-                if selected_matches_bound {
-                    let Some(bound_input) = app_state.app_config.get_input_by_name(&bound_source.input_name) else {
-                        return hls_panel_provisioning_or_status_response(
-                            app_state,
-                            user,
-                            input,
-                            virtual_id,
-                            original_hls_entry_path,
-                            server_info.path.as_deref(),
-                            StatusCode::SERVICE_UNAVAILABLE,
-                        )
-                        .await;
-                    };
-                    (bound_source, bound_url, bound_input)
-                } else {
-                    // R2: a fresh selection disagreed with the bound member of a non-reusable group
-                    // session. Trigger the member handoff (single-flight, coalesced with R3 triggers)
-                    // and serve the freshly selected member for this entry response.
-                    if probed.is_some() {
-                        let session_key = HlsSessionKey::for_group(target.id, group.group_vid.get());
-                        if let Some(group_session) = app_state.hls.proxy.sessions().get_by_key(&session_key).await {
-                            let runtime = group_session.read().await.origin_account_runtime.clone();
-                            if let Some(runtime) = runtime {
-                                runtime
-                                    .notify_member_unhealthy(&group_session, HlsMemberUnhealthyReason::ManifestFailure);
-                            }
-                        }
-                    }
-                    let Some(member_url) = (if let Some(ref probed) = probed {
-                        Some(probed.request_url.clone())
-                    } else {
-                        super::group_start::build_hls_group_member_origin_url(
-                            app_state,
-                            target,
-                            &resolved.input,
-                            &resolved.member,
-                            &allocated,
-                            None,
-                        )
-                        .await
-                    }) else {
-                        return hls_panel_provisioning_or_status_response(
-                            app_state,
-                            user,
-                            input,
-                            virtual_id,
-                            original_hls_entry_path,
-                            server_info.path.as_deref(),
-                            StatusCode::SERVICE_UNAVAILABLE,
-                        )
-                        .await;
-                    };
-                    let member_source = build_hls_origin_source_for_playback(
-                        &resolved.input,
-                        resolved.member.input_stream_id.to_string(),
-                        archive_reference,
-                        Some(member_url.as_str()),
-                    );
-                    (member_source, member_url, Arc::clone(&resolved.input))
+            let (member_source, member_url, member_input) = if let Some(session) = existing {
+                let Some((bound_source, bound_url)) = super::group_start::shared_cache_group_session_origin(
+                    app_state,
+                    target,
+                    &group,
+                    group.group_vid.get(),
+                )
+                .await
+                else {
+                    return unavailable().await;
+                };
+                let Some(bound_input) = app_state.app_config.get_input_by_name(&bound_source.input_name) else {
+                    return unavailable().await;
+                };
+                if selected.as_ref().is_some_and(|(resolved, probed, _)| {
+                    probed.is_some()
+                        && (bound_source.input_name != resolved.member.input_name
+                            || bound_source.stream_ref != resolved.member.input_stream_id.as_ref())
+                }) {
+                    super::super::origin_account_runtime::request_hls_group_entry_member_handoff(
+                        app_state,
+                        &session,
+                        &bound_source,
+                        &bound_url,
+                        fingerprint,
+                    )
+                    .await;
                 }
+                // The entry lease is admitted against the existing session. Only the runtime may
+                // publish a different member, after it rechecks the current active leases.
+                (bound_source, bound_url, bound_input)
             } else {
-                let Some(member_url) = (if let Some(ref probed) = probed {
-                    Some(probed.request_url.clone())
+                let Some((resolved, probed, allocated)) = selected else {
+                    return unavailable().await;
+                };
+                let member_url = if let Some(probed) = probed {
+                    Some(probed.request_url)
                 } else {
                     super::group_start::build_hls_group_member_origin_url(
                         app_state,
@@ -333,25 +310,15 @@ pub(in crate::api) async fn handle_hls_stream_request(
                         None,
                     )
                     .await
-                }) else {
-                    return hls_panel_provisioning_or_status_response(
-                        app_state,
-                        user,
-                        input,
-                        virtual_id,
-                        original_hls_entry_path,
-                        server_info.path.as_deref(),
-                        StatusCode::SERVICE_UNAVAILABLE,
-                    )
-                    .await;
                 };
-                let member_source = build_hls_origin_source_for_playback(
+                let Some(member_url) = member_url else { return unavailable().await };
+                let source = build_hls_origin_source_for_playback(
                     &resolved.input,
                     resolved.member.input_stream_id.to_string(),
                     archive_reference,
                     Some(member_url.as_str()),
                 );
-                (member_source, member_url, Arc::clone(&resolved.input))
+                (source, member_url, resolved.input)
             };
 
             if archive_reference.is_some() {
@@ -379,7 +346,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
                 fingerprint,
                 user,
                 member_source,
-                HlsSessionKey::for_group(target.id, group.group_vid.get()),
+                group_key,
                 group.group_vid.get(),
                 user_session,
                 stream_context.known_bitrate_bps(),

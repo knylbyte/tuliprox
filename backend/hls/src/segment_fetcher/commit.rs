@@ -57,6 +57,38 @@ pub(super) struct SegmentFetchCommit {
     pub(super) generation_valid: bool,
 }
 
+#[derive(Debug)]
+pub(super) enum SegmentFetchFailure {
+    Media(SegmentFetchError),
+    KeyUnavailable(SegmentFetchError),
+}
+
+impl From<SegmentFetchError> for SegmentFetchFailure {
+    fn from(error: SegmentFetchError) -> Self { Self::Media(error) }
+}
+
+impl SegmentFetchFailure {
+    pub(super) fn from_key_transfer(error: SegmentFetchError) -> Self {
+        if matches!(
+            error,
+            SegmentFetchError::LocalCacheCapacity { .. }
+                | SegmentFetchError::CacheObjectLimit { .. }
+                | SegmentFetchError::CacheCommit(_)
+                | SegmentFetchError::ProviderUnavailable(_)
+        ) {
+            Self::Media(error)
+        } else {
+            Self::KeyUnavailable(error)
+        }
+    }
+
+    fn origin_error(&self) -> &SegmentFetchError {
+        match self {
+            Self::Media(error) | Self::KeyUnavailable(error) => error,
+        }
+    }
+}
+
 pub(super) use crate::origin_attempt::HlsMediaOriginWorkFinish as SegmentOriginWorkFinish;
 
 pub(super) fn segment_fetch_attempt_matches(entry: &SegmentEntry, snapshot: &SegmentFetchSnapshot) -> bool {
@@ -81,7 +113,7 @@ impl HlsSegmentWorkerPool {
         session: &mut super::super::HlsSession,
         snapshot: &SegmentFetchSnapshot,
         policy: &SegmentFetchPolicy,
-        result: Result<SegmentFetchCommit, SegmentFetchError>,
+        result: Result<SegmentFetchCommit, SegmentFetchFailure>,
         finished_at_ms: u64,
     ) -> SegmentFetchCompletion {
         session.active_segment_fetches = session.active_segment_fetches.saturating_sub(1);
@@ -101,8 +133,9 @@ impl HlsSegmentWorkerPool {
         // entry in `Fetching` until stale cleanup finishes so no rebound attempt can install newer bytes at the same
         // stable cache path and then lose them to this worker's cleanup.
         let stale_commit_cleanup_reserved = fetch_succeeded && !generation_valid && attempt_matches;
+        let origin_error = result.as_ref().err().map(SegmentFetchFailure::origin_error);
         let capacity_retry = if generation_valid {
-            result.as_ref().err().and_then(|error| {
+            origin_error.and_then(|error| {
                 error.capacity_revision().cloned().zip(error.projected_write_bytes()).map(
                     |(revision, projected_write_bytes)| ScheduledSegmentRetry {
                         wake: SegmentRetryWake::CapacityRevision { revision, projected_write_bytes },
@@ -115,7 +148,7 @@ impl HlsSegmentWorkerPool {
         };
         let mut member_unhealthy = None;
         if generation_valid {
-            if let Err(error) = &result {
+            if let Some(error) = origin_error {
                 session.record_start_provider_failure(error);
             }
             match result {
@@ -131,12 +164,20 @@ impl HlsSegmentWorkerPool {
                         finished_at_ms.saturating_sub(snapshot.started_at_ms),
                     );
                 }
-                Err(err) => {
+                Err(SegmentFetchFailure::KeyUnavailable(_)) => {
+                    // The media itself has not been fetched. Let the next manifest
+                    // retry it with a renewed key without opening a missing-media hole.
+                    super::mark_segment_discovered(session, snapshot.proxy_seq);
+                    session.origin_control.path_condition =
+                        super::super::origin_progress::HlsOriginPathCondition::SegmentReadinessFailure;
+                }
+                Err(failure) => {
+                    let err = failure.origin_error();
                     if matches!(
-                        commit_failed_segment_fetch(session, snapshot, policy, &err, finished_at_ms),
+                        commit_failed_segment_fetch(session, snapshot, policy, err, finished_at_ms),
                         SegmentFetchOriginFailure::Permanent
                     ) {
-                        member_unhealthy = session.member_unhealthy_after_media_failure(&err);
+                        member_unhealthy = session.member_unhealthy_after_media_failure(err);
                     }
                 }
             }
@@ -163,7 +204,7 @@ impl HlsSegmentWorkerPool {
                 }
             }
         }
-        let notifier = (!stale_commit_cleanup_reserved && scheduled_retry.is_none())
+        let notifier = (!stale_commit_cleanup_reserved && scheduled_retry.is_none() && attempt_matches)
             .then(|| session.segment_fetch_notifiers.remove(&snapshot.proxy_seq))
             .flatten();
         let evidence_changed_for = generation_valid.then(|| session.proxy_session_id.clone());

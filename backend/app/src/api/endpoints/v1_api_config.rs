@@ -1551,7 +1551,7 @@ mod tests {
             ..Default::default()
         });
         tokio::fs::write(&file, serde_saphyr::to_string(&dto).unwrap()).await.unwrap();
-        assert_eq!(app.hls.proxy.min_origin_target_duration_secs(), Secs::new(0));
+        assert_eq!(app.hls.proxy.min_origin_target_duration_secs(), Secs::new(4));
         let router = axum::Router::new()
             .route("/config/main", axum::routing::post(super::save_config_main))
             .with_state(Arc::clone(&app));

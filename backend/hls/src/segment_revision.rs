@@ -73,6 +73,7 @@ struct RevisionOriginBinding {
     cache_key: SegmentCacheKey,
     fetch_ref: Option<crate::OriginSegmentFetchRef>,
     encryption: Option<crate::HlsSegmentEncryption>,
+    access: Arc<crate::CacheAccessState>,
 }
 
 impl fmt::Debug for SegmentRevision {
@@ -97,8 +98,13 @@ impl SegmentRevision {
                 cache_key: entry.cache_key.clone(),
                 fetch_ref: entry.origin_fetch_ref.clone(),
                 encryption: entry.encryption.clone(),
+                access: Arc::clone(&entry.access),
             });
         }
+    }
+
+    pub(crate) fn retention_is_active(&self, now_ms: u64) -> bool {
+        self.origin_binding.lock_unpoisoned().as_ref().is_some_and(|binding| binding.access.retention.protects(now_ms))
     }
 
     pub(crate) fn origin_binding_is_current(&self, session: &crate::HlsSession) -> bool {

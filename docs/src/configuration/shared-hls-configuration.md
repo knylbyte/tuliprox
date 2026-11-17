@@ -56,11 +56,11 @@ reverse_proxy:
     max_concurrent_segment_fetches_per_session: 2
     max_concurrent_segment_fetches_global: 64
     origin_manifest_timeout_ms: 3000
-    min_origin_target_duration_secs: 0
+    min_origin_target_duration_secs: 4
     origin_segment_timeout_ms: auto
     session_idle_timeout: 300
     manifest_recovery_burst:
-      level: "off"
+      level: "balanced"
     segment_repair:
       max_level: "off"
       apply_to_first_segments: 1
@@ -115,11 +115,11 @@ The two switches are separate because HLS and MPEG-TS sharing have different run
 | `max_segments_prefetch` | `6` | `6` | Maximum prefetch queue depth per shared HLS session. |
 | `max_concurrent_segment_fetches_per_session` | `2` | `2` | Maximum concurrent future segment fetches for one shared HLS session. |
 | `max_concurrent_segment_fetches_global` | `64` | `64` | Global cap for concurrent future segment fetches across all HLS sessions. |
-| `min_origin_target_duration_secs` | `0` | `0` | Minimum preferred origin target duration in whole seconds; `0` disables the check. Checked at live session start and genuine revalidation; uses the configured recovery burst. |
+| `min_origin_target_duration_secs` | `4` | `4` | Minimum preferred origin target duration in whole seconds. Checked at live session start and genuine revalidation using the configured recovery burst. `0` disables the check. |
 | `origin_manifest_timeout_ms` | `3000` | `3000` | Timeout for upstream HLS manifests, Keys and MAPs. |
 | `origin_segment_timeout_ms` | `auto` | `10000` | AUTO uses the full shared-session target duration in milliseconds (fallback 10000 ms if missing/zero). Positive numbers remain fixed timeouts. |
 | `session_idle_timeout` | `300` | `300` | Access-lease validity window and idle cleanup baseline, in seconds. |
-| `manifest_recovery_burst.level` | `off` | `off`, then `friendly` or `balanced` only if needed | Optional extra recovery pressure when manifest refresh needs help. |
+| `manifest_recovery_burst.level` | `balanced` | `balanced` | Controls how many origin manifest candidates are fetched per recovery burst. |
 | `segment_repair.max_level` | `off` | `off`, then `low` only if needed | Maximum codec-aware MPEG-TS repair level. |
 | `segment_repair.apply_to_first_segments` | `1` | `1` | Number of visible TS objects checked per lease activation. Maximum is `6`. |
 | `segment_repair.max_parallel_repairs` | `1` | `1` | Maximum concurrent repair jobs. Must not exceed `max_segments_prefetch` when repair is enabled. |
@@ -193,16 +193,15 @@ reverse_proxy:
   hls_cache:
     cache_path: "/var/lib/tuliprox/cache/hls"
     manifest_recovery_burst:
-      level: "friendly"
+      level: "balanced"
 ```
 
-Use recovery burst levels gradually. Start with `friendly`. Move to stronger levels only when logs show manifest refresh
-instability and the provider can tolerate additional requests.
+Start with `balanced`. Move to stronger levels only when logs show manifest refresh instability and the provider can
+tolerate additional requests.
 
-Shared HLS also checks the final live media manifest's `EXT-X-TARGETDURATION` at startup and genuine
-revalidation when `min_origin_target_duration_secs` is greater than `0`. It defaults to `0` (disabled);
-only values strictly below a configured positive threshold start a search. Individual `EXTINF` values do not
-trigger it. Missing or invalid target durations, archive playback and full-manifest playlists retain their
+Shared HLS checks the final live media manifest's `EXT-X-TARGETDURATION` at startup and genuine revalidation. The default
+minimum is `4` seconds. Only target durations strictly below a positive minimum start a search. Individual `EXTINF`
+values do not trigger it. Missing or invalid target durations, archive playback and full-manifest playlists retain their
 existing handling.
 
 The search reuses the configured `manifest_recovery_burst.level` and any lifecycle recovery already in

@@ -118,6 +118,8 @@ impl SegmentPrefetchQueue {
 
     pub fn prefetch_len(&self) -> usize { self.prefetch.len() }
 
+    pub(crate) fn last_render_window_proxy_seq(&self) -> Option<u64> { self.render_window.last().copied() }
+
     pub fn proxy_seqs(&self) -> Vec<u64> { self.queued.keys().copied().collect() }
 
     fn insert_into_priority(&mut self, proxy_seq: u64, priority: SegmentFetchPriority) {

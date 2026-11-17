@@ -140,6 +140,7 @@ pub(in crate::api::endpoints::hls_api::tests) async fn publish_ready_test_manife
         .await
         .expect("test lease accepts publication");
     let snapshot = HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
         source_commit_identity: HlsManifestCommitIdentity::new(now_ms),

@@ -1,6 +1,6 @@
 use super::{
     HlsAlternativeOriginWindow, HlsHostLocalSequenceRelation, HlsManifestCandidateObservation,
-    HlsManifestSegmentFingerprint, HlsManifestTechnicalSignature,
+    HlsManifestSegmentFingerprint, HlsManifestTechnicalSignature, HlsManifestTimelineFingerprint,
 };
 
 pub fn classify_host_local_sequence(
@@ -61,8 +61,7 @@ pub(super) fn host_local_windows_compatible(
     let right_fingerprint = &right.fingerprint;
     if HlsManifestTechnicalSignature::from_fingerprint(left_fingerprint)
         != HlsManifestTechnicalSignature::from_fingerprint(right_fingerprint)
-        || left_fingerprint.segment_samples.is_empty()
-        || right_fingerprint.segment_samples.is_empty()
+        || !playlist_scopes_match(left_fingerprint, right_fingerprint)
     {
         return false;
     }
@@ -85,7 +84,7 @@ pub(super) fn host_local_windows_compatible(
 
     // Adjacent local windows are monotonic only when their non-resource shape
     // and technical signatures agree. Origin sequence is used solely inside
-    // this already host-local cohort.
+    // this already playlist-scoped, host-local cohort.
     let gap = if left_highwater < right.host_local_media_sequence {
         right.host_local_media_sequence.saturating_sub(left_highwater)
     } else {
@@ -95,6 +94,18 @@ pub(super) fn host_local_windows_compatible(
         && left_fingerprint.segment_count == right_fingerprint.segment_count
         && left_fingerprint.duration_pattern_hash == right_fingerprint.duration_pattern_hash
         && left_fingerprint.discontinuity_pattern_hash == right_fingerprint.discontinuity_pattern_hash
+}
+
+fn playlist_scopes_match(left: &HlsManifestTimelineFingerprint, right: &HlsManifestTimelineFingerprint) -> bool {
+    let Some(reference) = left.segment_samples.first() else { return false };
+    !right.segment_samples.is_empty()
+        && left.segment_samples.iter().chain(&right.segment_samples).all(|segment| {
+            match (reference.occurrence_identity, segment.occurrence_identity) {
+                (Some(left), Some(right)) => left.same_scope(right),
+                (None, None) => true,
+                (Some(_), None) | (None, Some(_)) => false,
+            }
+        })
 }
 
 fn segment_in_window(window: &HlsAlternativeOriginWindow, sequence: u64) -> Option<&HlsManifestSegmentFingerprint> {
@@ -109,6 +120,7 @@ pub(super) fn strong_anchor_overlap(
     if alternative.timeline_fingerprint.map_and_encryption_hash != pinned.timeline_fingerprint.map_and_encryption_hash
         || alternative.timeline_fingerprint.container_signature_hash
             != pinned.timeline_fingerprint.container_signature_hash
+        || !playlist_scopes_match(&alternative.timeline_fingerprint, &pinned.timeline_fingerprint)
     {
         return 0;
     }
@@ -160,9 +172,13 @@ fn pdt_intervals_overlap(left: &HlsManifestSegmentFingerprint, right: &HlsManife
 fn segment_shape_matches(left: &HlsManifestSegmentFingerprint, right: &HlsManifestSegmentFingerprint) -> bool {
     left.duration_ms == right.duration_ms
         && left.discontinuity_before == right.discontinuity_before
-        && match (left.normalized_resource_identity, right.normalized_resource_identity) {
-            (Some(left), Some(right)) => left.matches(right),
-            (None, None) => true,
+        && match (left.occurrence_identity, right.occurrence_identity) {
+            (Some(left), Some(right)) => left == right,
+            (None, None) => match (left.normalized_resource_identity, right.normalized_resource_identity) {
+                (Some(left), Some(right)) => left.matches(right),
+                (None, None) => true,
+                (Some(_), None) | (None, Some(_)) => false,
+            },
             (Some(_), None) | (None, Some(_)) => false,
         }
 }

@@ -124,6 +124,7 @@ pub struct TransientResourceRef {
     pub access: Arc<CacheAccessState>,
     revision: TransientResourceRevision,
     pub(crate) origin_account_generation: u64,
+    occurrence_binding: Option<Arc<crate::transient_manifest::occurrence::TransientOccurrenceBinding>>,
 }
 
 #[derive(Clone, Eq, PartialEq)]

@@ -13,6 +13,8 @@ async fn update_config_applies_hls_runtime_settings_to_existing_manager() {
     };
     let initial_config = HlsCacheConfig::from(&initial_dto);
     let manager = HlsProxyManager::with_hls_cache_config(&initial_config);
+    assert_eq!(manager.manifest_recovery_burst().level, HlsManifestRecoveryBurstLevel::Balanced);
+    assert_eq!(manager.min_origin_target_duration_secs(), shared::model::Secs::new(4));
     let (session, _) =
         manager.get_or_create_session_with_outcome(HlsSessionKey::new(1, "stream-a"), b"secret", 100).await;
 
@@ -24,7 +26,7 @@ async fn update_config_applies_hls_runtime_settings_to_existing_manager() {
     updated_dto.origin_segment_timeout_ms = shared::model::HlsSegmentTimeout::Fixed(shared::model::Millis::new(5_678));
     updated_dto.cache_duration = shared::model::Secs::new(99);
     updated_dto.session_idle_timeout = shared::model::Secs::new(55);
-    updated_dto.manifest_recovery_burst.level = shared::model::HlsManifestRecoveryBurstLevel::Balanced;
+    updated_dto.manifest_recovery_burst.level = HlsManifestRecoveryBurstLevel::Off;
     updated_dto.strip = HlsStripConfigDto { mode: HlsStripMode::Seconds, value: 7 };
     let app_config = test_app_config(config_with_hls_cache(updated_dto));
 
@@ -38,7 +40,7 @@ async fn update_config_applies_hls_runtime_settings_to_existing_manager() {
     assert_eq!(manager.cache_duration_seconds(), 99);
     assert_eq!(manager.transient_resource_ttl_ms(), 99_000);
     assert_eq!(manager.session_idle_timeout_ms(), 55_000);
-    assert_eq!(manager.manifest_recovery_burst().level, HlsManifestRecoveryBurstLevel::Balanced);
+    assert_eq!(manager.manifest_recovery_burst().level, HlsManifestRecoveryBurstLevel::Off);
     assert_eq!(manager.strip().mode, HlsStripMode::Seconds);
     assert_eq!(manager.strip().value, 7);
     assert_eq!(session.read().await.segment_prefetch_queue.max_prefetch_depth(), 4);

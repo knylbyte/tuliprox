@@ -135,7 +135,8 @@ pub use self::switch_staging::stage_hls_switch_resource;
 pub(crate) use self::{commit::recompute_unpublished_live_head, startup_fill::reliable_decoded_content_length};
 use self::{
     commit::{
-        segment_fetch_attempt_matches, segment_fetch_binding_matches, SegmentFetchCommit, SegmentOriginWorkFinish,
+        segment_fetch_attempt_matches, segment_fetch_binding_matches, SegmentFetchCommit, SegmentFetchFailure,
+        SegmentOriginWorkFinish,
     },
     error::SegmentFetchError,
     key_dependency::{

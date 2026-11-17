@@ -185,6 +185,14 @@ pub(crate) fn reconcile_in_snapshot(
         return None;
     }
     session.binding_inactivity.provider = Arc::downgrade(provider);
+    // A newly acquired account may have no recovery protection yet. Its
+    // retained-poll refresh still loses its right to run with the last lease.
+    if session.origin_refresh.retained_poll_owned
+        && !leases.has_current_origin_work_lease(&session.proxy_session_id, now_ms)
+    {
+        release_unused_origin(leases, session, now_ms);
+        return None;
+    }
     // Startup has its own admission and Pending deadlines. Recovery protection
     // observes established playback only; a manifest alone supplies no cursor.
     session.activity.last_delivered_media_at_ms?;

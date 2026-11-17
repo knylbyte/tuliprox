@@ -36,7 +36,7 @@ async fn capacity_deferred_segment_requeues_only_after_capacity_revision_changes
             revision,
         };
         let mut session = context.session.write().await;
-        worker.apply_segment_fetch_result(&mut session, &snapshot, &policy, Err(error), 21)
+        worker.apply_segment_fetch_result(&mut session, &snapshot, &policy, Err(error.into()), 21)
     };
     let retry = completion.scheduled_retry.expect("capacity deferral owns a revision retry");
     assert!(completion.notifier.is_none(), "deferred work retains its existing demand notifier");

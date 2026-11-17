@@ -396,7 +396,11 @@ async fn protected_map_remains_and_unreferenced_map_is_deleted() {
         let unreferenced_map =
             crate::MapEntry::new(&session.proxy_session_id, ProxyMapId(1), unreferenced_key.clone(), "mp4".to_string());
         session.maps.insert(ProxyMapId(1), unreferenced_map);
-        session.origin_map_to_proxy.insert(unreferenced_key, ProxyMapId(1));
+        let resource = crate::resource_identity::HlsMediaResourceIdentity::from_url(
+            &unreferenced_key.resolved_origin_uri,
+            unreferenced_key.byte_range,
+        );
+        session.origin_map_to_proxy.insert((unreferenced_key.origin_epoch, resource), ProxyMapId(1));
         session.maps.get_mut(&ProxyMapId(1)).expect("map").status =
             MapCacheStatus::Ready { content_length: 10, ready_at_ms: 0 };
         session.render_and_store_manifest(1).expect("manifest should render");

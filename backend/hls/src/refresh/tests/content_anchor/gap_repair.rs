@@ -110,7 +110,21 @@ async fn gap_case_with_discontinuity(missing: bool, discontinuity: GapDiscontinu
             }
             fetched
         };
-        commit_fetched_manifest(&mut state, &fetched, &request, current_time_millis()).unwrap();
+        if matches!(discontinuity, GapDiscontinuity::None) {
+            commit_fetched_manifest(&mut state, &fetched, &request, current_time_millis()).unwrap();
+        } else {
+            // Seed the already existing discontinuous gap for the repair test. Ordinary refresh
+            // must now recover before a window that omits the current origin anchor can commit.
+            super::super::super::commit::commit_fetched_manifest_with_acceptance_mode(
+                &mut state,
+                &fetched,
+                &request,
+                current_time_millis(),
+                HlsManifestCommitAcceptanceMode::StrictPinnedHost,
+                None,
+            )
+            .unwrap();
+        }
         let manifest = rendered_snapshot(&state, measured_at_ms - 10);
         assert!(manifest.visible_proxy_seqs().any(|seq| seq == 51), "438 has an existing client URI");
         let mut cursor = HlsLeasePlaybackCursor::default();
@@ -225,7 +239,10 @@ async fn r1_fills_proxy_51_from_verified_b_without_moving_media() {
             .starts_with("http://localhost:"));
         assert_eq!(state.segments[&52].cache_key, case.anchor_slot.cache_key);
         assert_eq!(state.segments[&53].origin_key.host_local_sequence, 440);
-        assert!(state.segments[&53].discontinuity_before);
+        assert!(
+            !state.segments[&53].discontinuity_before,
+            "repaired contiguous overlap needs no host-only discontinuity"
+        );
         assert_eq!(state.segments[&54].origin_key.host_local_sequence, 441);
     }
     assert_eq!(demand(&case.request, 54).await, SegmentDemandFetchOutcome::Ready);

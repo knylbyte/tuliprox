@@ -737,7 +737,7 @@ impl HlsProxyManager {
             }
             return outcome;
         }
-        session.live_window_demands.remove(lease_id);
+        session.release_publication_retention(lease_id, now_ms);
         let tail = if let (HlsTerminalLeaseDecision::Tail(plan), false) = (decision, protection_capacity_exceeded) {
             Some(plan.as_ref())
         } else {
@@ -778,7 +778,7 @@ impl HlsProxyManager {
             session.rollback_terminal_tail_protection(lease_id.clone(), previous_protection);
             return outcome;
         }
-        session.live_window_demands.remove(lease_id);
+        session.release_publication_retention(lease_id, now_ms);
         Self::finish_terminal_commit(leases, session, command, None, now_ms);
         HlsTerminalCommitOutcome::Committed
     }

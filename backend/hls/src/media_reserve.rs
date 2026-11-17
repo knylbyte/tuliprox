@@ -82,6 +82,7 @@ impl HlsManifestCommitIdentity {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HlsLeaseManifestSnapshot {
     pub startup_revisions: Option<Arc<super::HlsManifestRevisions>>,
+    pub cached_source: Option<Arc<super::manifest_snapshot::HlsCachedManifestSource>>,
     pub delivery_mode: HlsManifestDeliveryMode,
     pub source_commit_identity: HlsManifestCommitIdentity,
     pub uri_materialization: Option<HlsLeaseManifestUriMaterialization>,
@@ -101,6 +102,14 @@ pub struct HlsLeaseManifestSnapshot {
 }
 
 impl HlsLeaseManifestSnapshot {
+    pub fn is_recovery_entry(&self) -> bool { self.cached_source.as_ref().is_some_and(|source| source.recovery_entry) }
+
+    pub(crate) fn recovery_entry_origin_order(&self, candidate: &Self) -> Option<std::cmp::Ordering> {
+        let previous = self.cached_source.as_ref().filter(|source| source.recovery_entry)?;
+        let next = candidate.cached_source.as_ref().filter(|source| !source.recovery_entry)?;
+        Some(next.origin_commits.cmp(&previous.origin_commits))
+    }
+
     pub fn visible_proxy_seqs(&self) -> impl Iterator<Item = u64> + '_ {
         self.visible_segments.iter().map(|segment| segment.proxy_seq)
     }
@@ -573,6 +582,9 @@ pub struct HlsStartupAdmissionSnapshot {
     pub visible_contiguous_ready_duration_ms: u64,
     pub prospective_lease_reserve_ms: u64,
     pub transition_margin: HlsTransitionMarginMs,
+    pub minimum_visible_ready_duration_ms: u64,
+    pub degraded_reserve_threshold_ms: u64,
+    pub origin_state: HlsStartupAdmissionOriginState,
     pub decision: HlsStartupAdmissionDecision,
 }
 
@@ -597,6 +609,9 @@ pub fn evaluate_startup_admission(input: HlsStartupAdmissionInput<'_>) -> HlsSta
             visible_contiguous_ready_duration_ms: 0,
             prospective_lease_reserve_ms: 0,
             transition_margin: HlsTransitionMarginMs::from_millis(input.manifest.target_duration_ms),
+            minimum_visible_ready_duration_ms: minimum_startup_duration_ms,
+            degraded_reserve_threshold_ms: 0,
+            origin_state: input.origin_state,
             decision,
         };
     }
@@ -628,11 +643,12 @@ pub fn evaluate_startup_admission(input: HlsStartupAdmissionInput<'_>) -> HlsSta
                 .get(&input.manifest.first_proxy_seq)
                 .is_some_and(|head| head.revision().is_startup_head_ready(publication.mode))
     });
+    let degraded_reserve_threshold_ms =
+        input.recovery_trigger_budget.as_millis().saturating_add(transition_margin.as_millis());
     let decision = if !accelerated && visible_contiguous_ready_duration_ms < minimum_startup_duration_ms {
         HlsStartupAdmissionDecision::Reject(HlsStartupAdmissionRejection::InsufficientVisibleReadyMedia)
     } else if input.origin_state == HlsStartupAdmissionOriginState::Degraded
-        && prospective_lease_reserve_ms
-            <= input.recovery_trigger_budget.as_millis().saturating_add(transition_margin.as_millis())
+        && prospective_lease_reserve_ms <= degraded_reserve_threshold_ms
     {
         HlsStartupAdmissionDecision::Reject(HlsStartupAdmissionRejection::InsufficientDegradedReserve)
     } else {
@@ -643,6 +659,9 @@ pub fn evaluate_startup_admission(input: HlsStartupAdmissionInput<'_>) -> HlsSta
         visible_contiguous_ready_duration_ms,
         prospective_lease_reserve_ms,
         transition_margin,
+        minimum_visible_ready_duration_ms: minimum_startup_duration_ms,
+        degraded_reserve_threshold_ms,
+        origin_state: input.origin_state,
         decision,
     }
 }
@@ -654,6 +673,7 @@ mod tests {
 
     fn manifest() -> HlsLeaseManifestSnapshot {
         HlsLeaseManifestSnapshot {
+            cached_source: None,
             startup_revisions: None,
             delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
             source_commit_identity: HlsManifestCommitIdentity::new(1),

@@ -176,16 +176,15 @@ Live HLS group streams fail over at start and while playing:
   The player keeps its playlist URL and does not reconnect. Triggers:
   - Manifest refresh: two hard failures in a row (`404`, `410`, `5xx`, transport errors, timeouts), an exhausted
     refresh retry budget (such as persistent `503` errors or a frozen manifest whose segment list no longer advances),
-    or repeated failures without a successful refresh for `failover.no_data_timeout_secs`. Terminal availability commit
-    is deferred while a member handoff runs. A single transient retryable error that recovers inside its retries never
-    switches.
+    or repeated failures without a successful refresh for `failover.no_data_timeout_secs`. A single transient retryable
+    error that recovers inside its retries never switches.
   - Segment or initialization map: a fetch that still fails after its retries (`404`, `410`, `5xx`, transport
     errors).
   - Stall: no new segment for `failover.no_data_timeout_secs` or two target durations, whichever is longer.
   - Slow delivery (shared cache only): segments arrive at less than `failover.slow_source_pct` of real time, measured
     over `failover.slow_source_secs` with at least three segments.
   - Last resort (shared cache only): before the shared cache ends a playback that still has active players, it
-    requests one switch to the next member. The playback ends only when no member can take over.
+    requests one switch to the next member.
 
   The switch follows the [MPEG-TS switch rules](#failover-while-watching-mpeg-ts): `same_source_retries` (performing a
   real same-member reopen, then moving to the next member if it fails), `stable_after_secs`, `max_outage_secs` and
@@ -199,11 +198,14 @@ Live HLS group streams fail over at start and while playing:
   - Transport (connection errors, resets, or timeouts).
   - Invalid content (empty playlists, invalid playlist bodies, or other HTTP errors).
 - **Shared cache.** With the shared HLS cache enabled, one origin session serves all viewers of a live group channel,
-  also viewers that open it through a member's own channel ID. A runtime switch moves this session, so all viewers
-  switch together; the old member's provider connection is released before the new one is held. When the session is
-  healthy (committed origin manifests, no consecutive refresh failures, no degraded path), a new viewer joins without
-  an extra probe. If the session is degraded or failing, a new viewer re-probes and the session switches if another
-  member is selected.
+  also viewers that open it through a member's own channel ID. When the session is healthy, a new viewer joins without
+  an extra probe. With runtime failover enabled, a degraded or failing session can switch members after a successful
+  probe. Viewers use the new member once it has a playable window. Until then, each viewer can keep using its last valid
+  playlist and cached media while it has playable media in reserve. If the session is still degraded when a viewer's
+  reserve is confirmed exhausted, that viewer's playback ends even if a switch is pending.
+  With runtime failover disabled, new viewers use the currently bound member while the session has an active live
+  lease. A cold start can use start failover, and a session with only pending or idle leases can switch after a
+  successful probe if no live lease has become active by the time the switch is applied.
 - **Without shared cache.** Each player session switches on its own, on manifest and segment failures only (no stall
   or slow-delivery detection). Tuliprox rewrites the new member's playlist so the media sequence continues. In master/child
   setups, stale child playlist URLs of the previous member that a player continues polling after a member switch are

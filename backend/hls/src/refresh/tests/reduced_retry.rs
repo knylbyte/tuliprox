@@ -125,16 +125,10 @@ async fn conflict_then_reduced_retry(permanent_conflict: bool) {
         requests.load(Ordering::Acquire),
         records.len()
     );
-    assert!(
-        records[0].0.contains("origin-sequence-resource-conflict"),
-        "first commit must encounter the real conflict: {}",
-        records[0].0
-    );
     if permanent_conflict {
         assert!(result.is_err());
         assert_eq!(requests.load(Ordering::Acquire), 16);
-        assert_eq!(records.len(), 5, "all reduced candidates must reach the real commit guard");
-        assert!(records.iter().all(|(label, _)| label.contains("origin-sequence-resource-conflict")));
+        assert!(records.is_empty(), "known conflicting bindings are rejected before the commit callback");
         assert!(matches!(
             crate::manifest_acceptance::manifest_acceptance_episode_status(
                 Some(episode),
@@ -152,8 +146,8 @@ async fn conflict_then_reduced_retry(permanent_conflict: bool) {
             records.len()
         );
         assert_eq!(requests.load(Ordering::Acquire), 13);
-        assert_eq!(records.len(), 2);
-        assert_eq!(records[1].0, "committed");
+        assert_eq!(records.len(), 1, "only the repaired occurrence window reaches commit");
+        assert_eq!(records[0].0, "committed");
         assert_eq!(s.origin_seq_highwater, Some(1008));
     }
     assert_eq!(episode.full_bursts_completed, 1);
@@ -272,7 +266,7 @@ async fn superseded_reduced_response_preserves_successor(account_handoff: bool, 
                 let gate = Arc::clone(&commit_gate);
                 let request_ref = &request;
                 async move {
-                    if after_selection && number == 2 {
+                    if after_selection && number == 1 {
                         gate.entered.notify_one();
                         gate.release.notified().await;
                     }
@@ -303,7 +297,7 @@ async fn superseded_reduced_response_preserves_successor(account_handoff: bool, 
     ));
     assert_eq!(
         callbacks.load(Ordering::Acquire),
-        if after_selection { 2 } else { 1 },
+        usize::from(after_selection),
         "old response must not reach another commit"
     );
     assert_eq!(requests.load(Ordering::Acquire), 14, "old chain stops before another attempt");

@@ -1,6 +1,6 @@
 use super::{
     deletion::{CacheObjectDeletion, SegmentCacheDeletionReason},
-    policy::protected_set_for_cache_reclamation,
+    policy::{protected_set_for_cache_reclamation, protected_set_for_cache_reclamation_at},
     CacheDeletionBatch, CapacityReclamationEvidence, GarbageCollectionPolicy, GlobalSegmentCandidate,
     GlobalTransientObjectCandidate, HlsSegmentCache, HlsSession, HlsSessionHandle, MapCacheStatus, MapEntryDeletion,
     ProtectedSet, ProxyMapId, ProxySessionId, SegmentCacheKey, SegmentCacheStatus, SegmentDeleteCandidate,
@@ -68,6 +68,23 @@ pub(super) async fn oldest_global_fifo_head_candidate(
     excluded_path: Option<&std::path::Path>,
     skipped_sessions: &HashSet<ProxySessionId>,
 ) -> Option<GlobalSegmentCandidate> {
+    oldest_global_fifo_head_candidate_at(
+        sessions,
+        cache,
+        excluded_path,
+        skipped_sessions,
+        tuliprox_core::utils::current_time_millis(),
+    )
+    .await
+}
+
+pub(super) async fn oldest_global_fifo_head_candidate_at(
+    sessions: &[HlsSessionHandle],
+    cache: &HlsSegmentCache,
+    excluded_path: Option<&std::path::Path>,
+    skipped_sessions: &HashSet<ProxySessionId>,
+    now_ms: u64,
+) -> Option<GlobalSegmentCandidate> {
     let mut candidates = Vec::new();
     for session in sessions {
         let session_guard = session.read().await;
@@ -76,7 +93,7 @@ pub(super) async fn oldest_global_fifo_head_candidate(
         }
         if let Some(candidate) = fifo_head_size_candidate(
             &session_guard,
-            &protected_set_for_cache_reclamation(&session_guard, cache, excluded_path, None),
+            &protected_set_for_cache_reclamation_at(&session_guard, cache, excluded_path, None, now_ms),
         ) {
             candidates.push(GlobalSegmentCandidate {
                 session: Arc::clone(session),
@@ -96,13 +113,30 @@ pub(super) async fn oldest_global_transient_object_candidate(
     excluded_path: Option<&std::path::Path>,
     skipped_sessions: &HashSet<ProxySessionId>,
 ) -> Option<GlobalTransientObjectCandidate> {
+    oldest_global_transient_object_candidate_at(
+        sessions,
+        cache,
+        excluded_path,
+        skipped_sessions,
+        tuliprox_core::utils::current_time_millis(),
+    )
+    .await
+}
+
+pub(super) async fn oldest_global_transient_object_candidate_at(
+    sessions: &[HlsSessionHandle],
+    cache: &HlsSegmentCache,
+    excluded_path: Option<&std::path::Path>,
+    skipped_sessions: &HashSet<ProxySessionId>,
+    now_ms: u64,
+) -> Option<GlobalTransientObjectCandidate> {
     let mut candidates = Vec::new();
     for session in sessions {
         let session_guard = session.read().await;
         if skipped_sessions.contains(&session_guard.proxy_session_id) {
             continue;
         }
-        let protected = protected_set_for_cache_reclamation(&session_guard, cache, excluded_path, None);
+        let protected = protected_set_for_cache_reclamation_at(&session_guard, cache, excluded_path, None, now_ms);
         candidates.extend(session_guard.transient.object_cache.values().filter_map(|entry| {
             entry.ready_content_length()?;
             if entry.access.active_readers() > 0
@@ -166,6 +200,18 @@ pub(super) fn remove_obsolete_segment_metadata(session: &mut HlsSession, protect
         })
         .collect::<Vec<_>>();
     for seq in obsolete {
+        let segment = &session.segments[&seq];
+        if !crate::is_hls_provisioning_segment(segment)
+            && !crate::is_hls_provisioning_gap_segment(segment)
+            && segment.last_rendered_at_ms.is_none()
+            && session
+                .startup
+                .as_ref()
+                .and_then(|startup| startup.revisions.get(&seq))
+                .is_none_or(|revision| !revision.revision().is_publishable())
+        {
+            session.record_retired_live_mapping(seq, segment.discontinuity_before);
+        }
         let _ = remove_segment_entry(session, seq);
     }
 }
@@ -185,6 +231,7 @@ pub(super) fn duration_expired_head_segment(
         SegmentCacheStatus::FailedRetryable { .. }
         | SegmentCacheStatus::FailedPermanent { .. }
         | SegmentCacheStatus::Expired => policy.failed_segment_retention_ms,
+        SegmentCacheStatus::Ready { .. } if segment.access.retention.was_published() => policy.cache_duration_ms,
         SegmentCacheStatus::Ready { .. } => policy
             .cache_duration_ms
             .max(segment.duration_ms.saturating_add(session.longest_rendered_playlist_duration_ms)),
@@ -321,9 +368,23 @@ pub(super) fn remove_segment_entry(session: &mut HlsSession, proxy_seq: u64) -> 
         session.segments.insert(proxy_seq, metadata);
     } else {
         session.origin_to_proxy.retain(|_, mapped_seq| *mapped_seq != proxy_seq);
-    }
-    if segment.discontinuity_before && !retain_origin_metadata {
-        session.discontinuity_sequence = session.discontinuity_sequence.saturating_add(1);
+        if segment.discontinuity_before && !session.live_recovery_discontinuities.contains_key(&proxy_seq) {
+            session.evicted_discontinuities.insert(proxy_seq);
+        }
+        let first_retained = session.segments.first_key_value().map(|(&seq, _)| seq);
+        session.live_recovery_discontinuities.retain(|_, first_published| {
+            if first_published.is_some_and(|published| first_retained.is_none_or(|first| published < first)) {
+                session.discontinuity_sequence = session.discontinuity_sequence.saturating_add(1);
+                false
+            } else {
+                true
+            }
+        });
+        while session.evicted_discontinuities.first().is_some_and(|&seq| first_retained.is_none_or(|first| seq < first))
+        {
+            let _ = session.evicted_discontinuities.pop_first();
+            session.discontinuity_sequence = session.discontinuity_sequence.saturating_add(1);
+        }
     }
     if removed_ready_media {
         session.advance_media_readiness_generation();

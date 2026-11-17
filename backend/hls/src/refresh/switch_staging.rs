@@ -86,6 +86,10 @@ pub(super) struct HlsStagedSwitchCommit {
 }
 
 impl HlsStagedSwitchCommit {
+    pub(super) fn ready_segment(&self) -> Option<&SegmentEntry> {
+        self.preview.segments.iter().find(|segment| segment.proxy_seq == self.ready_segment_proxy_seq)
+    }
+
     pub(super) fn disarm_cleanup(&mut self) {
         self.segment_cleanup.disarm();
         if let Some(cleanup) = self.map_cleanup.as_mut() {
@@ -242,7 +246,7 @@ fn handoff_key_readiness(
         candidate.is_valid_at(now_ms)
             && session.transient.resources.get(&candidate.id).is_some_and(|current| {
                 current.kind == candidate.kind
-                    && current.resolved_origin_uri == candidate.resolved_origin_uri
+                    && current.origin_account_generation() == candidate.origin_account_generation()
                     && current.file_ext_hint == candidate.file_ext_hint
             })
             && session
@@ -364,7 +368,8 @@ pub(super) async fn stage_alternative_manifest_switch(
     };
     let first_segment = preview
         .segments
-        .first()
+        .iter()
+        .find(|segment| segment.proxy_seq >= generation.proxy_next_seq.unwrap_or_default())
         .cloned()
         .ok_or_else(|| switch_staging_error(HlsManifestRejectLogReason::SwitchResourceUnavailable))?;
     let required_map = first_segment
@@ -956,7 +961,7 @@ async fn capture_content_anchor_probe(
         if candidate.map_ref.is_some()
             || candidate.encryption.is_some()
             || !anchor.identity.same_path_and_range(HlsMediaResourceIdentity::from_url(
-                &candidate.resolved_origin_url,
+                &candidate.resource_uri,
                 candidate.origin_byte_range,
             ))
         {

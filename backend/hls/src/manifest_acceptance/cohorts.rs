@@ -94,12 +94,11 @@ pub fn classify_reduced_retry_landscape(
         return HlsReducedRetryLandscapeChange::TimelineConflict;
     }
     for cohort in alternative_cohorts(observations) {
-        let Some((_, previous_window)) =
-            previous.alternatives.iter().find(|(identity, _)| identity == &cohort.identity)
-        else {
+        let mut matching = previous.alternatives.iter().filter(|(identity, _)| identity == &cohort.identity).peekable();
+        if matching.peek().is_none() {
             return HlsReducedRetryLandscapeChange::NewCohort;
-        };
-        if !host_local_windows_compatible(previous_window, &cohort.window) {
+        }
+        if !matching.any(|(_, window)| host_local_windows_compatible(window, &cohort.window)) {
             return HlsReducedRetryLandscapeChange::TimelineConflict;
         }
     }

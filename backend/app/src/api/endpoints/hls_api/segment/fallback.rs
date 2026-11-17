@@ -187,11 +187,19 @@ pub(in crate::api::endpoints::hls_api) async fn hls_unpublished_lease_channel_un
         }
     }
     if let Some(lease) = lease.filter(|lease| lease.permits_unpublished_standalone_tail(reason)) {
+        let fallback = if lease.archive_origin_url.is_none()
+            && lease.manifest_start_attempt.as_ref().is_some_and(|attempt| attempt.failed())
+            && !crate::api::model::is_custom_video_stream_enabled(&app_state.app_config)
+        {
+            crate::api::model::get_custom_stream_response_error_status(&app_state.app_config)
+        } else {
+            StatusCode::NOT_FOUND
+        };
         return hls_custom_video_manifest_response_for_lease(
             app_state,
             &lease,
             CustomVideoStreamType::ChannelUnavailable,
-            StatusCode::NOT_FOUND,
+            fallback,
         )
         .await;
     }

@@ -40,7 +40,7 @@ async fn apply(
             &mut session,
             &fixture.snapshot,
             &fixture.policy,
-            result,
+            result.map_err(Into::into),
             finished_at_ms,
         )
     };

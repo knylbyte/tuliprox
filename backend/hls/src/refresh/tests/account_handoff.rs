@@ -257,7 +257,7 @@ async fn account_handoff_renews_the_fetch_reference_of_an_unchanged_uncached_map
 async fn account_handoff_rejects_changed_resource_or_byte_range_at_existing_sequence() {
     for body in [
         STARTUP_MANIFEST_203.replace("1025125_203.ts", "different_203.ts"),
-        STARTUP_MANIFEST_203.replace(
+        STARTUP_MANIFEST_203.replace("#EXT-X-VERSION:3", "#EXT-X-VERSION:4").replace(
             "/hls/634a94edeffb7663ecc730c99396b673/1025125_203.ts",
             "#EXT-X-BYTERANGE:512@0\n/hls/634a94edeffb7663ecc730c99396b673/1025125_203.ts",
         ),

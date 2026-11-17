@@ -3,6 +3,7 @@
 use super::rewrite_hls_url;
 use shared::utils::CONSTANTS;
 use std::{borrow::Cow, collections::HashMap, fmt};
+use url::{Position, Url};
 
 /// Result of parsing an origin media playlist for the live HLS cache proxy.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,6 +94,8 @@ impl ParsedManifestSemantics {
 #[derive(Clone, PartialEq, Eq)]
 pub struct ParsedOriginEncryption {
     pub resolved_origin_uri: String,
+    /// Effective path and query from the playlist reference.
+    pub resource_uri: String,
     pub iv: Option<String>,
     pub key_format: Option<String>,
     pub key_format_versions: Option<String>,
@@ -104,6 +107,7 @@ impl fmt::Debug for ParsedOriginEncryption {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ParsedOriginEncryption")
             .field("resolved_origin_uri", &"<redacted>")
+            .field("resource_uri", &"<redacted>")
             .field("iv", &self.iv)
             .field("key_format", &self.key_format)
             .field("key_format_versions", &self.key_format_versions)
@@ -188,6 +192,10 @@ impl fmt::Debug for ParsedOriginManifest {
 pub struct ParsedOriginSegment {
     pub origin_seq: u64,
     pub duration_ms: u64,
+    /// Original playlist URI spelling, retained independently of download rewriting.
+    pub original_uri: String,
+    /// Full path/query after ordinary URI resolution; no account token propagation.
+    pub resource_uri: String,
     /// Concrete absolute segment fetch URL resolved against the final manifest URL after redirects.
     ///
     /// This may intentionally contain a provider mirror, redirect target, or CDN host. It is request-local fetch
@@ -206,6 +214,8 @@ impl fmt::Debug for ParsedOriginSegment {
         f.debug_struct("ParsedOriginSegment")
             .field("origin_seq", &self.origin_seq)
             .field("duration_ms", &self.duration_ms)
+            .field("original_uri", &"<redacted>")
+            .field("resource_uri", &"<redacted>")
             .field("resolved_origin_url", &"<redacted>")
             .field("discontinuity_before", &self.discontinuity_before)
             .field("program_date_time", &self.program_date_time)
@@ -224,6 +234,8 @@ pub struct ParsedOriginMap {
     /// Concrete absolute MAP URI resolved against the final manifest URL after
     /// redirects. It is a fetch URI, not a provider-failover identity.
     pub resolved_origin_uri: String,
+    /// Effective path and query from the playlist reference.
+    pub resource_uri: String,
     pub byte_range: Option<ParsedByteRange>,
 }
 
@@ -232,6 +244,7 @@ impl fmt::Debug for ParsedOriginMap {
         f.debug_struct("ParsedOriginMap")
             .field("map_id", &self.map_id)
             .field("resolved_origin_uri", &"<redacted>")
+            .field("resource_uri", &"<redacted>")
             .field("byte_range", &self.byte_range)
             .finish()
     }
@@ -434,7 +447,6 @@ struct OriginManifestParser<'a> {
     current_encryption: Option<ParsedOriginEncryption>,
     maps: Vec<ParsedOriginMap>,
     segments_without_seq: Vec<ParsedOriginSegment>,
-    next_byte_range_offset_by_uri: HashMap<String, u64>,
 }
 
 impl<'a> OriginManifestParser<'a> {
@@ -456,7 +468,6 @@ impl<'a> OriginManifestParser<'a> {
             current_encryption: None,
             maps: Vec::new(),
             segments_without_seq: Vec::new(),
-            next_byte_range_offset_by_uri: HashMap::new(),
         }
     }
 
@@ -493,7 +504,9 @@ impl<'a> OriginManifestParser<'a> {
             }
             "#EXT-X-MAP" => self.current_map_ref = Some(self.parse_map(line)?),
             "#EXT-X-KEY" => self.current_encryption = self.parse_key(line)?,
-            "#EXT-X-BYTERANGE" => self.pending_byte_range = Some(parse_byterange_tag(line)?),
+            "#EXT-X-BYTERANGE" => {
+                self.pending_byte_range = Some(parse_byterange_tag(line)?);
+            }
             "#EXT-X-PROGRAM-DATE-TIME" => {
                 self.pending_program_date_time = Some(parse_tag_value(line, tag)?.to_string());
             }
@@ -536,6 +549,7 @@ impl<'a> OriginManifestParser<'a> {
         }
         Ok(Some(ParsedOriginEncryption {
             resolved_origin_uri: resolve_uri(self.final_manifest_url, uri),
+            resource_uri: resolve_resource_uri(self.final_manifest_url, uri)?,
             iv,
             key_format,
             key_format_versions,
@@ -553,9 +567,10 @@ impl<'a> OriginManifestParser<'a> {
         };
 
         let resolved_origin_uri = resolve_uri(self.final_manifest_url, uri);
+        let resource_uri = resolve_resource_uri(self.final_manifest_url, uri)?;
         let byte_range = parse_attribute(line, "BYTERANGE").map(parse_map_byterange).transpose()?;
         let map_id = self.maps.len();
-        self.maps.push(ParsedOriginMap { map_id, resolved_origin_uri, byte_range });
+        self.maps.push(ParsedOriginMap { map_id, resolved_origin_uri, resource_uri, byte_range });
         Ok(map_id)
     }
 
@@ -564,10 +579,13 @@ impl<'a> OriginManifestParser<'a> {
             return Err(parser_feature("segment_uri_without_extinf"));
         };
         let resolved_origin_url = resolve_uri(self.final_manifest_url, line);
-        let origin_byte_range = self.resolve_pending_byte_range(&resolved_origin_url)?;
+        let resource_uri = resolve_resource_uri(self.final_manifest_url, line)?;
+        let origin_byte_range = self.resolve_pending_byte_range(&resource_uri)?;
         self.segments_without_seq.push(ParsedOriginSegment {
             origin_seq: 0,
             duration_ms,
+            original_uri: line.to_string(),
+            resource_uri,
             resolved_origin_url,
             discontinuity_before: std::mem::take(&mut self.pending_discontinuity),
             program_date_time: self.pending_program_date_time.take(),
@@ -581,7 +599,7 @@ impl<'a> OriginManifestParser<'a> {
 
     fn resolve_pending_byte_range(
         &mut self,
-        resolved_origin_url: &str,
+        resource_uri: &str,
     ) -> Result<Option<ParsedByteRange>, OriginManifestTransientReason> {
         let Some(pending) = self.pending_byte_range.take() else {
             return Ok(None);
@@ -589,19 +607,25 @@ impl<'a> OriginManifestParser<'a> {
         let byte_range = match pending {
             PendingByteRange::WithOffset(byte_range) => byte_range,
             PendingByteRange::WithoutOffset(length) => {
-                let Some(offset) = self.next_byte_range_offset_by_uri.get(resolved_origin_url).copied() else {
+                let Some(previous) =
+                    self.segments_without_seq.last().filter(|segment| segment.resource_uri == resource_uri)
+                else {
                     return Err(parser_feature("byterange_without_resolvable_offset"));
                 };
+                let Some(previous_range) = previous.origin_byte_range else {
+                    return Err(parser_feature("byterange_without_resolvable_offset"));
+                };
+                let offset = previous_range
+                    .offset
+                    .checked_add(previous_range.length)
+                    .ok_or_else(|| parser_feature("byterange_offset_overflow"))?;
                 ParsedByteRange { length, offset }
             }
         };
-        self.next_byte_range_offset_by_uri.insert(
-            resolved_origin_url.to_string(),
-            byte_range
-                .offset
-                .checked_add(byte_range.length)
-                .ok_or_else(|| parser_feature("byterange_offset_overflow"))?,
-        );
+        if byte_range.length == 0 {
+            return Err(parser_feature("invalid_byterange_length"));
+        }
+        byte_range.offset.checked_add(byte_range.length).ok_or_else(|| parser_feature("byterange_offset_overflow"))?;
         Ok(Some(byte_range))
     }
 
@@ -611,6 +635,14 @@ impl<'a> OriginManifestParser<'a> {
         }
         if self.pending_extinf_duration_ms.is_some() {
             return Err(parser_feature("extinf_without_segment_uri"));
+        }
+        if self.pending_byte_range.is_some() {
+            return Err(parser_feature("byterange_without_segment_uri"));
+        }
+        if self.segments_without_seq.iter().any(|segment| segment.origin_byte_range.is_some())
+            && self.version.is_none_or(|version| version < 4)
+        {
+            return Err(parser_feature("byterange_requires_version_4"));
         }
 
         let origin_manifest_sequence = self.media_sequence.unwrap_or(0);
@@ -770,13 +802,19 @@ fn parse_map_byterange(value: &str) -> Result<ParsedByteRange, OriginManifestTra
 
 fn parse_byterange_value(value: &str) -> Result<PendingByteRange, OriginManifestTransientReason> {
     let trimmed = value.trim().trim_matches('"');
+    let parse_integer = |value: &str, feature| {
+        if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(parser_feature(feature));
+        }
+        value.parse_numeric(feature)
+    };
     if let Some((length, offset)) = trimmed.split_once('@') {
         return Ok(PendingByteRange::WithOffset(ParsedByteRange {
-            length: length.parse_numeric("invalid_byterange_length")?,
-            offset: offset.parse_numeric("invalid_byterange_offset")?,
+            length: parse_integer(length, "invalid_byterange_length")?,
+            offset: parse_integer(offset, "invalid_byterange_offset")?,
         }));
     }
-    Ok(PendingByteRange::WithoutOffset(trimmed.parse_numeric("invalid_byterange_length")?))
+    Ok(PendingByteRange::WithoutOffset(parse_integer(trimmed, "invalid_byterange_length")?))
 }
 
 fn parse_attribute<'a>(line: &'a str, name: &str) -> Option<&'a str> {
@@ -792,6 +830,13 @@ fn resolve_uri(base: &str, reference: &str) -> String {
         Cow::Borrowed(value) => value.to_string(),
         Cow::Owned(value) => value,
     }
+}
+
+/// Ordinary URI resolution only. Transport/account rewriting belongs to the separate fetch URL.
+fn resolve_resource_uri(base: &str, reference: &str) -> Result<String, OriginManifestTransientReason> {
+    let resolved =
+        Url::parse(base).and_then(|base| base.join(reference)).map_err(|_| parser_feature("invalid_resource_uri"))?;
+    Ok(resolved[Position::BeforePath..Position::AfterQuery].to_string())
 }
 
 fn parser_feature(feature: &str) -> OriginManifestTransientReason {
@@ -1030,8 +1075,25 @@ mod tests {
     }
 
     #[test]
+    fn dependency_references_keep_their_own_query_and_exclude_inherited_transport_tokens() {
+        let body = "#EXTM3U\n#EXT-X-MAP:URI=\"../init.mp4?map=1\",BYTERANGE=\"4@2\"\n#EXT-X-KEY:METHOD=AES-128,URI=\"/keys/a.bin?key=2\",IV=0x01010101010101010101010101010101\n#EXTINF:4,\nsegment.m4s\n";
+        let OriginManifestParseOutcome::Normal(manifest) =
+            parse_origin_media_manifest(body, "https://origin.example/live/rotating/index.m3u8?token=fixture")
+        else {
+            panic!("normal dependencies");
+        };
+        let map = &manifest.maps[0];
+        assert_eq!(map.resource_uri, "/live/init.mp4?map=1");
+        assert_eq!(map.resolved_origin_uri, "https://origin.example/live/init.mp4?map=1&token=fixture");
+        assert_eq!(map.byte_range, Some(ParsedByteRange { length: 4, offset: 2 }));
+        let key = manifest.segments[0].encryption.as_ref().unwrap();
+        assert_eq!(key.resource_uri, "/keys/a.bin?key=2");
+        assert_eq!(key.resolved_origin_uri, "https://origin.example/keys/a.bin?key=2&token=fixture");
+    }
+
+    #[test]
     fn byterange_with_explicit_offset_is_parsed() {
-        let manifest = normal_manifest("#EXTM3U\n#EXT-X-BYTERANGE:500@1000\n#EXTINF:4.0,\nbig.m4s\n");
+        let manifest = normal_manifest("#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-BYTERANGE:500@1000\n#EXTINF:4.0,\nbig.m4s\n");
 
         assert_eq!(manifest.segments[0].origin_byte_range, Some(ParsedByteRange { length: 500, offset: 1_000 }));
     }
@@ -1039,7 +1101,7 @@ mod tests {
     #[test]
     fn byterange_without_offset_uses_previous_offset_for_same_uri() {
         let manifest = normal_manifest(
-            "#EXTM3U\n#EXT-X-BYTERANGE:500@1000\n#EXTINF:4.0,\nbig.m4s\n#EXT-X-BYTERANGE:250\n#EXTINF:4.0,\nbig.m4s\n",
+            "#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-BYTERANGE:500@1000\n#EXTINF:4.0,\nbig.m4s\n#EXT-X-BYTERANGE:250\n#EXTINF:4.0,\nbig.m4s\n",
         );
 
         assert_eq!(manifest.segments[1].origin_byte_range, Some(ParsedByteRange { length: 250, offset: 1_500 }));
@@ -1047,7 +1109,10 @@ mod tests {
 
     #[test]
     fn byterange_without_previous_offset_fails_controlled() {
-        let outcome = parse_origin_media_manifest("#EXTM3U\n#EXT-X-BYTERANGE:250\n#EXTINF:4.0,\nbig.m4s\n", BASE_URL);
+        let outcome = parse_origin_media_manifest(
+            "#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-BYTERANGE:250\n#EXTINF:4.0,\nbig.m4s\n",
+            BASE_URL,
+        );
 
         assert_eq!(
             outcome,
@@ -1061,7 +1126,7 @@ mod tests {
 
     #[test]
     fn byterange_offset_overflow_triggers_parser_unsupported_feature() {
-        let body = "#EXTM3U\n#EXT-X-BYTERANGE:2@18446744073709551614\n#EXTINF:4.0,\nbig.m4s\n";
+        let body = "#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-BYTERANGE:2@18446744073709551614\n#EXTINF:4.0,\nbig.m4s\n";
         let outcome = parse_origin_media_manifest(body, BASE_URL);
 
         assert_eq!(
@@ -1155,5 +1220,143 @@ mod tests {
         assert_eq!(validity.playlist_duration_ms, 30_000);
         assert_eq!(validity.segment_count, 2);
         assert_eq!(validity.source, ParsedManifestValiditySource::Fallback);
+    }
+    #[test]
+    fn segment_msn_defaults_slides_and_checks_overflow() {
+        let default = normal_manifest("#EXTM3U\n#EXTINF:4,\na.ts\n#EXTINF:4,\nb.ts\n");
+        assert_eq!(default.segments.iter().map(|s| s.origin_seq).collect::<Vec<_>>(), [0, 1]);
+        let first = normal_manifest("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:100\n#EXTINF:4,\na.ts\n#EXTINF:4,\nb.ts\n");
+        let slid = normal_manifest("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:101\n#EXTINF:4,\nb.ts\n");
+        assert_eq!(first.segments[1].origin_seq, slid.segments[0].origin_seq);
+        let maximum = format!("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:{}\n#EXTINF:4,\na.ts\n", u64::MAX);
+        assert_eq!(normal_manifest(&maximum).segments[0].origin_seq, u64::MAX);
+        assert_eq!(
+            parse_origin_media_manifest(&format!("{maximum}#EXTINF:4,\nb.ts\n"), BASE_URL),
+            OriginManifestParseOutcome::TransientPassthrough {
+                reason: super::parser_feature("origin_sequence_overflow")
+            }
+        );
+    }
+
+    #[test]
+    fn segment_uri_evidence_uses_final_basis_and_preserves_fetch_targets() {
+        let base = "https://manifest-a.example:9443/live/index.m3u8";
+        for (reference, expected_fetch) in [
+            ("seg101.ts?token=x", "https://manifest-a.example:9443/live/seg101.ts?token=x"),
+            ("./seg101.ts?token=x", "https://manifest-a.example:9443/live/seg101.ts?token=x"),
+            ("/live/seg101.ts?token=x", "https://manifest-a.example:9443/live/seg101.ts?token=x"),
+            ("../live/seg101.ts?token=x", "https://manifest-a.example:9443/live/seg101.ts?token=x"),
+            (
+                "//segment-b.example:8080/live/seg101.ts?token=x",
+                "https://segment-b.example:8080/live/seg101.ts?token=x",
+            ),
+            (
+                "http://segment-b.example:8080/live/seg101.ts?token=x",
+                "http://segment-b.example:8080/live/seg101.ts?token=x",
+            ),
+        ] {
+            let body = format!("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:101\n#EXTINF:4,\n{reference}\n");
+            let OriginManifestParseOutcome::Normal(manifest) = parse_origin_media_manifest(&body, base) else {
+                panic!("valid URI");
+            };
+            let segment = &manifest.segments[0];
+            assert_eq!(segment.original_uri, reference);
+            assert_eq!(segment.resource_uri, "/live/seg101.ts?token=x");
+            assert_eq!(segment.resolved_origin_url, expected_fetch);
+            assert!(!format!("{manifest:?}{segment:?}").contains("token=x"));
+        }
+        let body = "#EXTM3U\n#EXTINF:4,\nseg101.ts\n";
+        let OriginManifestParseOutcome::Normal(other) =
+            parse_origin_media_manifest(body, "https://mirror.example/other/index.m3u8")
+        else {
+            panic!("valid URI");
+        };
+        assert_eq!(other.segments[0].resource_uri, "/other/seg101.ts");
+    }
+
+    #[test]
+    fn segment_uri_evidence_does_not_inherit_account_query_rewriting() {
+        let body = "#EXTM3U\n#EXTINF:4,\nseg.ts?x=1&x=2\n";
+        let OriginManifestParseOutcome::Normal(manifest) =
+            parse_origin_media_manifest(body, "https://origin.example/live/index.m3u8?token=fixture")
+        else {
+            panic!("valid URI");
+        };
+        assert_eq!(manifest.segments[0].resource_uri, "/live/seg.ts?x=1&x=2");
+        // The existing provider fetch rewriter still supplies the account token.
+        assert!(manifest.segments[0].resolved_origin_url.contains("token=fixture"));
+    }
+
+    #[test]
+    fn byterange_only_uses_immediate_same_resource_and_consumes_tag() {
+        let body = "#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-MEDIA-SEQUENCE:100\n#EXT-X-BYTERANGE:500@0\n#EXTINF:4,\nbig.ts?x=1\n#EXT-X-BYTERANGE:500\n#EXTINF:4,\nhttps://mirror.example/live/final/big.ts?x=1\n#EXTINF:4,\nbig.ts?x=1\n";
+        let manifest = normal_manifest(body);
+        assert_eq!(manifest.segments[1].origin_byte_range, Some(ParsedByteRange { length: 500, offset: 500 }));
+        assert_eq!(manifest.segments[2].origin_byte_range, None);
+        for middle in [
+            "#EXTINF:4,\nbig.ts?x=1\n",
+            "#EXT-X-BYTERANGE:100@0\n#EXTINF:4,\nother.ts?x=1\n",
+            "#EXT-X-BYTERANGE:100@0\n#EXTINF:4,\nbig.ts?x=2\n",
+        ] {
+            let body = format!("#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-BYTERANGE:500@0\n#EXTINF:4,\nbig.ts?x=1\n{middle}#EXT-X-BYTERANGE:500\n#EXTINF:4,\nbig.ts?x=1\n");
+            assert_eq!(
+                parse_origin_media_manifest(&body, BASE_URL),
+                OriginManifestParseOutcome::TransientPassthrough {
+                    reason: super::parser_feature("byterange_without_resolvable_offset")
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn byterange_rejects_invalid_lengths_offsets_and_dangling_tags() {
+        for (tag, reason) in [
+            ("0@0", "invalid_byterange_length"),
+            ("-1@0", "invalid_byterange_length"),
+            ("+1@0", "invalid_byterange_length"),
+            ("1@-1", "invalid_byterange_offset"),
+            ("1@+1", "invalid_byterange_offset"),
+            ("18446744073709551616@0", "invalid_byterange_length"),
+            ("1@18446744073709551615", "byterange_offset_overflow"),
+            ("18446744073709551615", "byterange_offset_overflow"),
+        ] {
+            let body = format!("#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-BYTERANGE:1@0\n#EXTINF:4,\nbig.ts\n#EXT-X-BYTERANGE:{tag}\n#EXTINF:4,\nbig.ts\n");
+            assert_eq!(
+                parse_origin_media_manifest(&body, BASE_URL),
+                OriginManifestParseOutcome::TransientPassthrough { reason: super::parser_feature(reason) }
+            );
+        }
+        assert_eq!(
+            parse_origin_media_manifest("#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-BYTERANGE:1@0\n", BASE_URL),
+            OriginManifestParseOutcome::TransientPassthrough {
+                reason: super::parser_feature("byterange_without_segment_uri")
+            }
+        );
+    }
+
+    #[test]
+    fn byterange_requires_declared_compatibility_version_four_or_later() {
+        for version in [None, Some(3), Some(4), Some(7)] {
+            let tag = version.map_or_else(String::new, |v| format!("#EXT-X-VERSION:{v}\n"));
+            let body = format!("#EXTM3U\n{tag}#EXT-X-BYTERANGE:500@0\n#EXTINF:4,\nbig.ts\n");
+            match parse_origin_media_manifest(&body, BASE_URL) {
+                OriginManifestParseOutcome::Normal(manifest) => {
+                    assert!(version.is_some_and(|v| v >= 4));
+                    assert_eq!(
+                        manifest.segments[0].origin_byte_range,
+                        Some(ParsedByteRange { length: 500, offset: 0 })
+                    );
+                }
+                outcome @ OriginManifestParseOutcome::TransientPassthrough { .. } => {
+                    assert!(version.is_none_or(|v| v < 4));
+                    assert_eq!(
+                        outcome,
+                        OriginManifestParseOutcome::TransientPassthrough {
+                            reason: super::parser_feature("byterange_requires_version_4")
+                        }
+                    );
+                }
+            }
+        }
     }
 }

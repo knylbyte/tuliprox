@@ -897,6 +897,7 @@ async fn warm_fmp4_at_exhaustion_preserves_the_explicit_incompatible_media_error
         (entry.proxy_seq, entry.duration_ms)
     };
     let snapshot = HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
         source_commit_identity: HlsManifestCommitIdentity::new(now_ms),

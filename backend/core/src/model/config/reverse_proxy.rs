@@ -559,11 +559,13 @@ mod tests {
                 max_concurrent_segment_fetches_per_session: 2,
                 max_concurrent_segment_fetches_global: 64,
                 origin_manifest_timeout_ms: Millis::new(3_000),
-                min_origin_target_duration_secs: shared::model::Secs::new(0),
+                min_origin_target_duration_secs: Secs::new(4),
                 origin_segment_timeout_ms: shared::model::HlsSegmentTimeout::Auto,
                 initial_manifest_wait_timeout_secs: Secs::new(90),
                 session_idle_timeout: Secs::new(300),
-                manifest_recovery_burst: HlsManifestRecoveryBurstConfig::default(),
+                manifest_recovery_burst: HlsManifestRecoveryBurstConfig {
+                    level: HlsManifestRecoveryBurstLevel::Balanced
+                },
                 segment_repair: HlsSegmentRepairConfig {
                     max_level: HlsSegmentRepairMode::Off,
                     apply_to_first_segments: 1,

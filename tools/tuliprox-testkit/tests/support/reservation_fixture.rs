@@ -282,7 +282,7 @@ async fn origin(State(state): State<Arc<Origin>>, uri: Uri) -> Response {
     if state.case.uses_valid_ts() {
         return ([(header::CONTENT_TYPE, "video/mp2t")], origin_segment(state.case, marker, segment)).into_response();
     }
-    let (prefix, tail) = segment_parts(&state.run, marker, segment).unwrap();
+    let (prefix, tail) = segment_parts(&state.run, marker, segment, 1).unwrap();
     let bytes = [prefix.as_ref(), tail.as_ref()].concat();
     ([(header::CONTENT_TYPE, "video/mp2t")], bytes).into_response()
 }

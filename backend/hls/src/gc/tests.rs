@@ -158,6 +158,7 @@ async fn commit_sparse_segment(gc: &HlsGarbageCollector, key: &crate::SegmentCac
 
 fn activated_startup_lease(proxy_session_id: &ProxySessionId) -> HlsAccessLease {
     let snapshot = HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
         source_commit_identity: HlsManifestCommitIdentity::new(10),
@@ -218,6 +219,7 @@ fn encrypted_terminal_evidence_manifest(
         can_reset_to_clear: true,
     });
     HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
         source_commit_identity: HlsManifestCommitIdentity::new(1),
@@ -251,6 +253,7 @@ mod playlist;
 mod policy;
 mod publication;
 mod recovery;
+mod retention;
 mod revisions;
 mod streaming;
 mod transport;

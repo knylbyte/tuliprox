@@ -88,6 +88,7 @@ pub(super) fn terminal_pending_commit_manifest(
     duration_ms: u64,
 ) -> HlsLeaseManifestSnapshot {
     HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
         source_commit_identity: HlsManifestCommitIdentity::new(1),
@@ -157,6 +158,7 @@ pub(super) async fn install_terminal_pending_ready_base(
             origin_byte_range: None,
             map_ref: None,
             encryption: None,
+            occurrence_identity: None,
             retained_resource_identity: None,
             origin_fetch_ref: None,
             status: SegmentCacheStatus::Ready {
@@ -386,6 +388,7 @@ pub(super) async fn assert_post_refresh_registration_failure_leaves_no_unowned_l
                     origin_byte_range: None,
                     map_ref: None,
                     encryption: None,
+                    occurrence_identity: None,
                     retained_resource_identity: None,
                     origin_fetch_ref: None,
                     status: SegmentCacheStatus::Ready { content_length: 1, ready_at_ms: fixture.now_ms },

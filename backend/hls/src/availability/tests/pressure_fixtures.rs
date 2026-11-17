@@ -2,6 +2,7 @@ use super::*;
 
 pub(super) fn pressure_manifest(target_duration_ms: u64) -> HlsLeaseManifestSnapshot {
     HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
         source_commit_identity: HlsManifestCommitIdentity::new(1),

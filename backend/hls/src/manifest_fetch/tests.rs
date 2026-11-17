@@ -52,10 +52,12 @@ use tuliprox_core::{
     model::{AppConfig, Config, HlsManifestRecoveryBurstConfig, MediaToolCapabilities, SourcesConfig},
     utils::content_coding::{ContentCoding, ContentCodingError},
 };
-use tuliprox_parser::hls::origin_manifest::OriginManifestParseOutcome;
+use tuliprox_parser::hls::origin_manifest::{parse_origin_media_manifest, OriginManifestParseOutcome};
 use url::Url;
 
 const TEST_MANIFEST: &[u8] = b"#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nsegment.ts\n";
+
+mod cohorts;
 
 #[test]
 fn hls_recovery_timing_deadline_never_abandons_started_full_burst_but_blocks_late_follow_ups() {
@@ -86,7 +88,11 @@ fn encrypted_normal_candidate_is_not_critical_emergency_handoff_evidence() {
     let encrypted =
         "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n#EXTINF:4,\nsegment.ts\n";
     let HlsManifestCandidateFingerprint { has_switch_segment, emergency_evidence: evidence, .. } =
-        build_manifest_timeline_fingerprint(encrypted, "http://origin.example/live/index.m3u8");
+        build_manifest_timeline_fingerprint(
+            &crate::HlsSessionKey::new(1, "12345"),
+            encrypted,
+            "http://origin.example/live/index.m3u8",
+        );
 
     assert!(has_switch_segment);
     assert_eq!(evidence.live_handoff, HlsEmergencyLiveHandoffCompatibility::Incompatible);
@@ -107,7 +113,11 @@ fn candidate_fingerprint_carries_only_positive_normal_rolling_target_duration() 
         (format!("{manifest}#EXT-X-PLAYLIST-TYPE:UNKNOWN\n"), None),
         (manifest.replace("#EXTINF:0.640,", "#EXT-X-GAP\n#EXTINF:0.640,"), None),
     ] {
-        let fingerprint = build_manifest_timeline_fingerprint(&body, "https://origin.example/live/index.m3u8");
+        let fingerprint = build_manifest_timeline_fingerprint(
+            &crate::HlsSessionKey::new(1, "12345"),
+            &body,
+            "https://origin.example/live/index.m3u8",
+        );
         assert_eq!(fingerprint.target_duration_secs, expected, "{body}");
     }
 }
@@ -134,9 +144,17 @@ fn timeline_fingerprint_preserves_queries_and_ignores_only_origin_host() {
         .replace("#EXT-X-TARGETDURATION:4", "#EXT-X-TARGETDURATION:9");
 
     let HlsManifestCandidateFingerprint { timeline: fingerprint_a, has_switch_segment: has_media_a, .. } =
-        build_manifest_timeline_fingerprint(manifest_a, "https://origin-a.example/live/index.m3u8");
+        build_manifest_timeline_fingerprint(
+            &crate::HlsSessionKey::new(1, "12345"),
+            manifest_a,
+            "https://origin-a.example/live/index.m3u8",
+        );
     let HlsManifestCandidateFingerprint { timeline: fingerprint_b, has_switch_segment: has_media_b, .. } =
-        build_manifest_timeline_fingerprint(&manifest_b, "https://origin-b.example/live/index.m3u8");
+        build_manifest_timeline_fingerprint(
+            &crate::HlsSessionKey::new(1, "12345"),
+            &manifest_b,
+            "https://origin-b.example/live/index.m3u8",
+        );
 
     assert!(has_media_a);
     assert!(has_media_b);
@@ -144,7 +162,12 @@ fn timeline_fingerprint_preserves_queries_and_ignores_only_origin_host() {
     let same_query = manifest_b.replace("secret-b", "secret-a");
     assert_eq!(
         fingerprint_a,
-        build_manifest_timeline_fingerprint(&same_query, "https://origin-b.example/live/index.m3u8").timeline
+        build_manifest_timeline_fingerprint(
+            &crate::HlsSessionKey::new(1, "12345"),
+            &same_query,
+            "https://origin-b.example/live/index.m3u8"
+        )
+        .timeline
     );
     assert_eq!(fingerprint_a.segment_count, 2);
     assert_eq!(fingerprint_a.first_program_date_time_ms, Some(1_784_196_000_000));
@@ -174,12 +197,32 @@ fn different_hex_parents_have_different_semantic_conflict_fingerprints() {
     };
 
     assert_ne!(
-        deterministic_conflict_fingerprint(&parsed_a, body_a, "https://origin-a.example/live/index.m3u8"),
-        deterministic_conflict_fingerprint(&parsed_b, &body_b, "https://origin-b.example/live/index.m3u8")
+        deterministic_conflict_fingerprint(
+            &crate::HlsSessionKey::new(1, "12345"),
+            &parsed_a,
+            body_a,
+            "https://origin-a.example/live/index.m3u8"
+        ),
+        deterministic_conflict_fingerprint(
+            &crate::HlsSessionKey::new(1, "12345"),
+            &parsed_b,
+            &body_b,
+            "https://origin-b.example/live/index.m3u8"
+        )
     );
     assert_ne!(
-        build_manifest_timeline_fingerprint(body_a, "https://origin-a.example/live/index.m3u8").timeline,
-        build_manifest_timeline_fingerprint(&body_b, "https://origin-b.example/live/index.m3u8").timeline,
+        build_manifest_timeline_fingerprint(
+            &crate::HlsSessionKey::new(1, "12345"),
+            body_a,
+            "https://origin-a.example/live/index.m3u8"
+        )
+        .timeline,
+        build_manifest_timeline_fingerprint(
+            &crate::HlsSessionKey::new(1, "12345"),
+            &body_b,
+            "https://origin-b.example/live/index.m3u8"
+        )
+        .timeline,
         "ordinary origin-acceptance fingerprint remains exact-path based"
     );
 }
@@ -197,18 +240,43 @@ fn different_stream_namespace_is_not_the_same_conflict() {
     };
 
     assert_ne!(
-        deterministic_conflict_fingerprint(&parse(body_a), body_a, "https://origin.example/live/index.m3u8",),
-        deterministic_conflict_fingerprint(&parse(&body_b), &body_b, "https://origin.example/live/index.m3u8",)
+        deterministic_conflict_fingerprint(
+            &crate::HlsSessionKey::new(1, "12345"),
+            &parse(body_a),
+            body_a,
+            "https://origin.example/live/index.m3u8",
+        ),
+        deterministic_conflict_fingerprint(
+            &crate::HlsSessionKey::new(1, "12345"),
+            &parse(&body_b),
+            &body_b,
+            "https://origin.example/live/index.m3u8",
+        )
     );
 }
 
 #[test]
 fn resource_timeline_evidence_rejects_replay_after_new_even_with_forward_sequence() {
-    let published = HlsMediaResourceIdentity::from_url("https://old.example/live/484.ts", None);
+    let published = build_manifest_timeline_fingerprint(
+        &HlsSessionKey::new(1, "12345"),
+        "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:490\n#EXTINF:4,\n484.ts\n",
+        "https://old.example/live/index.m3u8",
+    )
+    .timeline
+    .segment_samples[0]
+        .occurrence_identity
+        .unwrap();
     let replay_only = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:490\n#EXTINF:4,\n484.ts\n";
     let prefix_then_new = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:490\n#EXTINF:4,\n484.ts\n#EXTINF:4,\n490.ts\n";
     let new_then_replay = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:490\n#EXTINF:4,\n490.ts\n#EXTINF:4,\n484.ts\n";
-    let fingerprint = |body| build_manifest_timeline_fingerprint(body, "https://new.example/live/index.m3u8").timeline;
+    let fingerprint = |body| {
+        build_manifest_timeline_fingerprint(
+            &crate::HlsSessionKey::new(1, "12345"),
+            body,
+            "https://new.example/live/index.m3u8",
+        )
+        .timeline
+    };
 
     assert_eq!(
         candidate_resource_timeline_evidence(&fingerprint(replay_only), &[published]),
@@ -274,7 +342,8 @@ fn deterministic_conflict_rejects_matching_log_token_with_different_full_semanti
         resource_key: different_key,
         decision: HlsResourceReplayDecision::RejectContradictoryOrder,
     };
-    assert!(deterministic_timeline_conflict_from_rejection(&fetched, &reason).is_none());
+    assert!(deterministic_timeline_conflict_from_rejection(&crate::HlsSessionKey::new(1, "12345"), &fetched, &reason)
+        .is_none());
 }
 
 #[test]
@@ -286,14 +355,27 @@ fn timeline_fingerprint_distinguishes_technical_state_and_keeps_compatible_aes_m
     let mapped = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:1\n\
         #EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:4,\n1.m4s\n";
 
-    let HlsManifestCandidateFingerprint { timeline: clear, .. } =
-        build_manifest_timeline_fingerprint(clear_ts, "https://origin.example/live/index.m3u8");
-    let HlsManifestCandidateFingerprint { timeline: discontinuous, .. } =
-        build_manifest_timeline_fingerprint(discontinuous_ts, "https://origin.example/live/index.m3u8");
+    let HlsManifestCandidateFingerprint { timeline: clear, .. } = build_manifest_timeline_fingerprint(
+        &crate::HlsSessionKey::new(1, "12345"),
+        clear_ts,
+        "https://origin.example/live/index.m3u8",
+    );
+    let HlsManifestCandidateFingerprint { timeline: discontinuous, .. } = build_manifest_timeline_fingerprint(
+        &crate::HlsSessionKey::new(1, "12345"),
+        discontinuous_ts,
+        "https://origin.example/live/index.m3u8",
+    );
     let HlsManifestCandidateFingerprint { timeline: encrypted, has_switch_segment: encrypted_has_media, .. } =
-        build_manifest_timeline_fingerprint(encrypted_ts, "https://origin.example/live/index.m3u8");
-    let HlsManifestCandidateFingerprint { timeline: mapped, .. } =
-        build_manifest_timeline_fingerprint(mapped, "https://origin.example/live/index.m3u8");
+        build_manifest_timeline_fingerprint(
+            &crate::HlsSessionKey::new(1, "12345"),
+            encrypted_ts,
+            "https://origin.example/live/index.m3u8",
+        );
+    let HlsManifestCandidateFingerprint { timeline: mapped, .. } = build_manifest_timeline_fingerprint(
+        &crate::HlsSessionKey::new(1, "12345"),
+        mapped,
+        "https://origin.example/live/index.m3u8",
+    );
 
     assert_ne!(clear.discontinuity_pattern_hash, discontinuous.discontinuity_pattern_hash);
     assert_ne!(clear.map_and_encryption_hash, encrypted.map_and_encryption_hash);
@@ -441,6 +523,7 @@ fn test_app_config() -> Arc<AppConfig> {
 
 fn live_test_fetch_context(entry_url: &str, headers: HeaderMap) -> HlsOriginManifestFetchContext {
     HlsOriginManifestFetchContext {
+        retained_poll_origin: None,
         origin_account_snapshot: None,
         attempt: None,
         app_config: test_app_config(),
@@ -981,4 +1064,157 @@ async fn live_single_variant_master_resolves_relative_variant_against_redirected
     assert_eq!(fetched.body.as_bytes(), TEST_MANIFEST);
     assert_eq!(fetched.final_manifest_url, format!("{}/cdn/live/child.m3u8?token=abc", master.base_url));
     assert_eq!(fetched.resolved_request_url, entry_url);
+}
+
+#[test]
+fn occurrence_decision_matrix_agrees_across_timeline_fingerprint_and_renderer() {
+    let key = HlsSessionKey::new(1, "12345");
+    let baseline = "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:100\n#EXTINF:4,\na.ts\n#EXTINF:4,\nb.ts\n#EXTINF:4,\nc.ts\n";
+    let parse = |body: &str, url: &str| match parse_origin_media_manifest(body, url) {
+        OriginManifestParseOutcome::Normal(manifest) => manifest,
+        OriginManifestParseOutcome::TransientPassthrough { reason } => panic!("{reason:?}"),
+    };
+    for (first, reference, range, conflicts) in [
+        (101, "b.ts", "", false),
+        (103, "a.ts", "", false),
+        (101, "a.ts", "", true),
+        (101, "b.ts?changed=1", "", true),
+        (101, "b.ts", "#EXT-X-BYTERANGE:100@0\n", true),
+    ] {
+        let mut state = HlsSession::new(key.clone(), b"secret", 0);
+        state.apply_origin_manifest(&parse(baseline, "https://a.example/live/index.m3u8")).unwrap();
+        for entry in state.segments.values_mut() {
+            entry.status = crate::SegmentCacheStatus::Ready { content_length: 1, ready_at_ms: 1 };
+        }
+        state.render_and_store_manifest(1).unwrap();
+        let published = state
+            .published_resource_history
+            .recent_entries(usize::MAX)
+            .map(|(identity, _)| identity)
+            .collect::<Vec<_>>();
+        let body = format!("#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:{first}\n{range}#EXTINF:4,\n{reference}\n#EXT-X-DISCONTINUITY\n#EXTINF:4,\nc.ts\n#EXTINF:4,\nd.ts\n");
+        let fingerprint =
+            build_manifest_timeline_fingerprint(&key, &body, "http://b.example:8080/live/index.m3u8").timeline;
+        let decision = candidate_resource_timeline_evidence(&fingerprint, &published);
+        assert_eq!(
+            decision,
+            if conflicts {
+                HlsResourceTimelineEvidence::ContradictoryOrder
+            } else {
+                HlsResourceTimelineEvidence::Eligible
+            }
+        );
+        let candidate = parse(&body, "http://b.example:8080/live/index.m3u8");
+        let before = (
+            state.segments.clone(),
+            state.published_resource_history.clone(),
+            state.last_rendered_manifest.clone(),
+            state.next_media_start_ms,
+        );
+        let result =
+            state.apply_origin_manifest_for_host(&candidate, crate::timeline::effective_origin_host_id("b.example"));
+        if conflicts {
+            assert!(matches!(result, Err(TimelineMapError::OriginSequenceResourceConflict { .. })));
+            assert_eq!(
+                (
+                    state.segments.clone(),
+                    state.published_resource_history.clone(),
+                    state.last_rendered_manifest.clone(),
+                    state.next_media_start_ms
+                ),
+                before
+            );
+            // Even a direct attempt to publish the conflicting binding at its old slot is rejected.
+            state.segments.get_mut(&1).unwrap().occurrence_identity =
+                fingerprint.segment_samples[0].occurrence_identity;
+            let render = crate::renderer::HlsManifestRenderer::render(&state, 2).unwrap();
+            assert!(matches!(
+                state.store_rendered_manifest(render),
+                crate::renderer::RenderedManifestStoreOutcome::Rejected(
+                    crate::renderer::RenderedManifestStoreRejectReason::DuplicateMediaResource { .. }
+                )
+            ));
+            assert_eq!(state.published_resource_history, before.1);
+            assert_eq!(state.last_rendered_manifest, before.2);
+        } else {
+            result.unwrap();
+            for entry in state.segments.values_mut() {
+                entry.status = crate::SegmentCacheStatus::Ready { content_length: 1, ready_at_ms: 2 };
+            }
+            state.render_and_store_manifest(2).unwrap();
+        }
+        let same = build_manifest_timeline_fingerprint(&key, &body, "https://mirror.example/live/index.m3u8").timeline;
+        assert_eq!(fingerprint.normalized_resource_pattern_hash, same.normalized_resource_pattern_hash);
+        let other = build_manifest_timeline_fingerprint(
+            &HlsSessionKey::new(2, "12345"),
+            &body,
+            "https://a.example/live/index.m3u8",
+        )
+        .timeline;
+        assert_ne!(fingerprint.normalized_resource_pattern_hash, other.normalized_resource_pattern_hash);
+    }
+}
+
+#[test]
+fn occurrence_conflict_after_fingerprint_sample_limit_is_still_checked() {
+    let key = HlsSessionKey::new(1, "12345");
+    let mut body = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:100\n".to_string();
+    for index in 0..70 {
+        use std::fmt::Write as _;
+        writeln!(body, "#EXTINF:4,\n{index}.ts").unwrap();
+    }
+    let OriginManifestParseOutcome::Normal(manifest) =
+        parse_origin_media_manifest(&body, "https://a.example/live/index.m3u8")
+    else {
+        panic!("normal manifest");
+    };
+    let scope = crate::resource_identity::HlsMediaPlaylistScope::from_session(&key).unwrap();
+    let identities = manifest
+        .segments
+        .iter()
+        .map(|segment| crate::resource_identity::HlsSegmentOccurrenceIdentity::from_parsed(scope, segment))
+        .collect::<Vec<_>>();
+    let changed = body.replace("69.ts", "changed.ts");
+    let OriginManifestParseOutcome::Normal(candidate) =
+        parse_origin_media_manifest(&changed, "https://b.example/live/index.m3u8")
+    else {
+        panic!("normal manifest");
+    };
+    assert_eq!(
+        super::episode::occurrence_timeline_evidence(
+            candidate
+                .segments
+                .iter()
+                .map(|segment| crate::resource_identity::HlsSegmentOccurrenceIdentity::from_parsed(scope, segment)),
+            &identities
+        ),
+        HlsResourceTimelineEvidence::ContradictoryOrder
+    );
+    let fingerprint = build_manifest_timeline_fingerprint(&key, &changed, "https://b.example/live/index.m3u8").timeline;
+    assert_eq!(fingerprint.segment_samples.len(), crate::manifest_acceptance::HLS_MANIFEST_FINGERPRINT_SEGMENT_LIMIT);
+}
+
+#[test]
+fn committed_occurrence_evidence_includes_unpublished_retained_overlap() {
+    let body = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:100\n#EXTINF:4,\na.ts\n#EXTINF:4,\nb.ts\n#EXTINF:4,\nc.ts\n";
+    let OriginManifestParseOutcome::Normal(parsed) = parse_origin_media_manifest(body, "https://a.example/index.m3u8")
+    else {
+        panic!("normal manifest");
+    };
+    let mut state = HlsSession::new(HlsSessionKey::new(1, "12345"), b"secret", 0);
+    state.apply_origin_manifest(&parsed).unwrap();
+    let tail = state.segments[&2].occurrence_identity.unwrap();
+    state.published_resource_history.record(tail, 2);
+    let evidence = super::episode::HlsCommittedResourceEvidence::capture(&state);
+    assert_eq!(evidence.known_entries.len(), 3);
+    let fingerprint = build_manifest_timeline_fingerprint(&state.key, body, "https://b.example/index.m3u8").timeline;
+    assert_eq!(
+        candidate_resource_timeline_evidence(&fingerprint, &evidence.known_identities),
+        HlsResourceTimelineEvidence::ReplayOnly
+    );
+    assert_eq!(state.published_resource_history.len(), 1, "retained evidence does not fabricate publication");
+    state.segments.remove(&2);
+    let collected = super::episode::HlsCommittedResourceEvidence::capture(&state);
+    assert_eq!(collected.known_entries.len(), 3);
+    assert!(collected.known_entries.contains(&(tail, 2)), "published occurrence survives timeline GC");
 }

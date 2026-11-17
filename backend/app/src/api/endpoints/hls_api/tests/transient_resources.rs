@@ -21,6 +21,8 @@ use http_body_util::BodyExt;
 use shared::model::HlsStripMode;
 use std::{sync::Arc, time::Duration};
 
+mod occurrence;
+
 #[tokio::test]
 async fn scheduled_owner_does_not_return_transient_503() {
     let fixture = CanonicalOwnerHandoffFixture::new(&["scheduled-lease"]).await;

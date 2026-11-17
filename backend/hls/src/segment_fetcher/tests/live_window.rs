@@ -127,44 +127,40 @@ async fn rebase_overlap_renders_after_the_next_segment_without_weakening_window_
         state.render_and_store_manifest(10).expect("baseline is published");
         let previous = state.last_rendered_manifest.clone();
         let host = crate::timeline::effective_origin_host_id("127.0.0.1");
-        // An explicit epoch handoff must still trim historical overlap.
+        let retained = [2_u64, 3].map(|seq| state.startup.as_ref().unwrap().revisions[&seq].revision().id());
         state.mark_pending_origin_epoch_handoff_discontinuity(0);
         state.apply_origin_rebase_manifest(&manifest(&server.base_url, 182_139, &[7; 4]), host, false).unwrap();
-        assert_eq!(state.live_origin_sequences(), &[4, 5]);
-        prepare_selected(&mut state, &[4, 5], mode, true);
-        for seq in [4, 5] {
-            state.segments.get_mut(&seq).unwrap().status =
-                SegmentCacheStatus::Ready { content_length: 1, ready_at_ms: 20 };
-        }
-        let too_short = state.plan_live_window(HlsLiveWindowView::Entry).unwrap();
-        assert_eq!(too_short.visible, [4, 5]);
+        assert_eq!(state.live_origin_sequences(), &[2, 3, 4, 5]);
+        assert_eq!([2_u64, 3].map(|seq| state.startup.as_ref().unwrap().revisions[&seq].revision().id()), retained);
+        let waiting = state.plan_live_window(HlsLiveWindowView::Entry).unwrap();
+        assert_eq!(waiting.visible, [2, 3, 4]);
         assert!(
             matches!(
-                HlsManifestRenderer::render_live_window(&state, &too_short, 20),
+                HlsManifestRenderer::render_live_window(&state, &waiting, 20),
                 Err(crate::renderer::RenderError::NoRenderableWindow)
             ),
-            "{mode:?}: two cached segments do not weaken the regular minimum"
+            "{mode:?}: retained overlap still requires the third selected segment"
         );
         assert_eq!(state.last_rendered_manifest, previous);
-
-        state
-            .apply_origin_manifest(&manifest(&server.base_url, 182_140, &[7; 4]))
-            .expect("the next sliding origin window keeps its current overlap");
+        prepare_selected(&mut state, &[4], mode, true);
+        state.segments.get_mut(&4).unwrap().status = SegmentCacheStatus::Ready { content_length: 1, ready_at_ms: 20 };
+        let first = HlsManifestRenderer::render_live_window(&state, &waiting, 20).unwrap();
+        assert_eq!(first.segment_proxy_seqs, [2, 3, 4]);
+        assert_eq!(state.store_rendered_manifest(first), crate::RenderedManifestStoreOutcome::Stored);
+        state.apply_origin_manifest(&manifest(&server.base_url, 182_140, &[7; 4])).unwrap();
         let ready = state.plan_live_window(HlsLiveWindowView::Entry).unwrap();
-        assert_eq!(ready.visible, [4, 5, 6]);
+        assert_eq!(ready.visible, [3, 4, 5]);
         assert!(
             matches!(
                 HlsManifestRenderer::render_live_window(&state, &ready, 30),
                 Err(crate::renderer::RenderError::NoRenderableWindow)
             ),
-            "{mode:?}: the third segment must still become publishable"
+            "{mode:?}: the next selected segment must still become publishable"
         );
-
-        prepare_selected(&mut state, &[6], mode, true);
-        state.segments.get_mut(&6).unwrap().status = SegmentCacheStatus::Ready { content_length: 1, ready_at_ms: 40 };
-        let rendered = HlsManifestRenderer::render_live_window(&state, &ready, 40).expect("current media is ready");
-        assert_eq!(rendered.segment_proxy_seqs, [4, 5, 6]);
-        assert_eq!(rendered.first_proxy_seq, 4);
+        prepare_selected(&mut state, &[5], mode, true);
+        state.segments.get_mut(&5).unwrap().status = SegmentCacheStatus::Ready { content_length: 1, ready_at_ms: 40 };
+        let rendered = HlsManifestRenderer::render_live_window(&state, &ready, 40).unwrap();
+        assert_eq!(rendered.segment_proxy_seqs, [3, 4, 5]);
         assert_eq!(state.store_rendered_manifest(rendered), crate::RenderedManifestStoreOutcome::Stored);
         assert_eq!(state.proxy_next_seq, Some(7));
     }
@@ -458,6 +454,9 @@ async fn live_window_active_successors_are_required_with_zero_reserve_and_demand
                 crate::live_window::HlsLiveWindowDemand {
                     issued_at_ms: 0,
                     view: HlsLiveWindowView::Active { first_published: 2 },
+                    retention_recorded: false,
+                    retention_normal: false,
+                    retention_resources: crate::HlsPublishedTransientResourceIds::default(),
                     published: vec![2, 3, 4],
                 },
             );

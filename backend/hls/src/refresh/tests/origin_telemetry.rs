@@ -24,6 +24,7 @@ fn telemetry_context(
         window_secs: 300,
     });
     let context = HlsOriginManifestFetchContext {
+        retained_poll_origin: None,
         origin_account_snapshot: None,
         attempt: None,
         app_config: test_app_config(),

@@ -123,6 +123,7 @@ where
     if !trigger.starts_episode() {
         return Err(OriginManifestFetchError::RetryExhausted);
     }
+    let _activity = context.attempt.as_ref().map(|attempt| attempt.enter_recovery());
     let attempts = context.retry_policy.attempt_count();
     let mut last_error = OriginManifestFetchError::RetryExhausted;
     let (resume, mut expected_generation) = {
@@ -369,7 +370,7 @@ where
         completed_candidates,
         last_fetch_error,
         mut last_reject_reason,
-    } = fetch_manifest_recovery_burst_candidates(context, &plan, burst_plan).await;
+    } = fetch_manifest_recovery_burst_candidates(context, &plan, burst_plan, episode_generation).await;
     let last_fetch_error = match last_fetch_error {
         Some(error) if crate::refresh::failure::manifest_hard_fetch_error(&error) => {
             return HlsManifestRecoveryAttemptError::Fetch(error);
@@ -626,19 +627,19 @@ async fn evaluate_manifest_recovery_burst(
     let candidate_evaluations = fetched_candidates
         .iter()
         .map(|candidate| {
-            let observation = manifest_candidate_observation(
-                candidate,
-                burst_plan,
-                resource_evidence.anchor.as_ref(),
-                &resource_evidence.published_identities,
-            );
+            let observation = manifest_candidate_observation(candidate, burst_plan, &resource_evidence);
             let deterministic_conflict = deterministic_timeline_conflict_for_candidate(candidate, &resource_evidence);
             (observation, deterministic_conflict)
         })
         .collect::<Vec<_>>();
     let observations = candidate_evaluations.iter().map(|(observation, _)| observation.clone()).collect::<Vec<_>>();
-    let minimum_target_duration = qualification_duration_preference(context, &observations, episode_generation).await;
-    if plan.current_burst_is_full_plan {
+    let idle_plan = idle_reentry_plan(context, fetched_candidates).await;
+    let minimum_target_duration = if idle_plan.is_some() {
+        None
+    } else {
+        qualification_duration_preference(context, &observations, episode_generation).await
+    };
+    if idle_plan.is_none() && plan.current_burst_is_full_plan {
         record_manifest_acceptance_landscape(context, episode_generation, manifest_acceptance_landscape(&observations))
             .await;
         if let Some(conflict) = deterministic_conflict_proven_by_full_burst(
@@ -656,16 +657,19 @@ async fn evaluate_manifest_recovery_burst(
         // An old response must not let the next attempt join a successor episode.
         return HlsManifestRecoveryBurstEvaluationOutcome::Superseded;
     };
-    let mut acceptance_plan = evaluate_manifest_acceptance(HlsManifestAcceptanceInput {
-        preferred_min_target_duration_secs: minimum_target_duration,
-        excluded_candidates: &[],
-        full_burst_completed: episode.full_burst_completed,
-        current_burst_is_full_plan: plan.current_burst_is_full_plan,
-        trigger: episode.trigger,
-        previous_alternative: episode.held_alternative.as_ref(),
-        observations: &observations,
+    let mut acceptance_plan = idle_plan.unwrap_or_else(|| {
+        evaluate_manifest_acceptance(HlsManifestAcceptanceInput {
+            preferred_min_target_duration_secs: minimum_target_duration,
+            excluded_candidates: &[],
+            full_burst_completed: episode.full_burst_completed,
+            current_burst_is_full_plan: plan.current_burst_is_full_plan,
+            trigger: episode.trigger,
+            previous_alternative: episode.held_alternative.as_ref(),
+            observations: &observations,
+        })
     });
-    let reduced_landscape_changed = !plan.current_burst_is_full_plan
+    let reduced_landscape_changed = idle_plan.is_none()
+        && !plan.current_burst_is_full_plan
         && episode
             .observed_landscape
             .as_ref()
@@ -720,6 +724,28 @@ async fn evaluate_manifest_recovery_burst(
         held_alternative,
         next_retry_at_ms,
     }))
+}
+
+async fn idle_reentry_plan(
+    context: &HlsOriginManifestFetchContext,
+    candidates: &[HlsManifestRecoveryCandidate],
+) -> Option<HlsManifestCommitPlan> {
+    if !context.attempt.as_ref().is_some_and(|attempt| attempt.idle_reentry()) {
+        return None;
+    }
+    let session = context.session.read().await;
+    let now_ms = context.observation_time_ms();
+    candidates
+        .iter()
+        .filter_map(|candidate| {
+            crate::refresh::continuity::idle_recovery_candidate(&session, &candidate.fetched, now_ms)
+                .map(|known| (!known, candidate.candidate_index))
+        })
+        .min()
+        .map(|(_, candidate_index)| HlsManifestCommitPlan::Commit {
+            candidate_index,
+            kind: HlsManifestCommitKind::Pinned,
+        })
 }
 
 fn followup_can_verify_without_landscape(
@@ -952,7 +978,9 @@ async fn fetch_manifest_recovery_burst_candidates(
     context: &HlsOriginManifestFetchContext,
     plan: &HlsManifestRecoveryAttemptPlan<'_>,
     burst_plan: HlsManifestRecoveryBurstPlan,
+    episode_generation: Option<HlsManifestAcceptanceGeneration>,
 ) -> HlsManifestRecoveryBurstCollection {
+    let origin_epoch = context.session.read().await.origin_epoch;
     let mut tasks = JoinSet::new();
     let candidates = burst_plan.total_candidates();
     for candidate_index in 0..candidates {
@@ -996,6 +1024,7 @@ async fn fetch_manifest_recovery_burst_candidates(
         };
         match result {
             Ok(fetched) => {
+                observe_recovery_response(context, &fetched, origin_epoch, episode_generation).await;
                 match score_manifest_recovery_candidate_with_logging(
                     context,
                     candidate_index,
@@ -1035,6 +1064,25 @@ async fn fetch_manifest_recovery_burst_candidates(
         completed_candidates,
         last_fetch_error,
         last_reject_reason,
+    }
+}
+
+async fn observe_recovery_response(
+    context: &HlsOriginManifestFetchContext,
+    fetched: &FetchedOriginManifest,
+    origin_epoch: u64,
+    episode_generation: Option<HlsManifestAcceptanceGeneration>,
+) {
+    let mut session = context.session.write().await;
+    if episode_generation.is_some_and(|generation| manifest_acceptance_generation_is_current(&session, generation))
+        && context.origin_account_snapshot.as_ref().is_none_or(|snapshot| snapshot.matches_session_identity(&session))
+    {
+        crate::refresh::continuity::observe_recovery_anchor(
+            &mut session,
+            fetched,
+            origin_epoch,
+            context.observation_time_ms(),
+        );
     }
 }
 

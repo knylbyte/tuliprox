@@ -286,6 +286,7 @@ async fn cancelling_one_waiter_preserves_the_shared_start_for_another_client() {
     reason = "Keep the failure/status matrix and same-lease/fresh-master checks together."
 )]
 async fn exhausted_segment_admission_finishes_immediately_with_typed_cvr_or_status_and_no_repoll_retry() {
+    super::origin_restart::trace_fixture();
     use std::sync::atomic::{AtomicUsize, Ordering};
     for (video, asset, status) in [
         (false, false, StatusCode::BAD_GATEWAY),

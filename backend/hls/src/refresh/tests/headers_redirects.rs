@@ -81,6 +81,7 @@ async fn refresh_stores_headers_after_hls_origin_policy() {
         refresh_identity: None,
         acceptance_directive: HlsManifestAcceptanceDirective::none(),
         access_lease_id: None,
+        retained_poll_origin: None,
         now_ms: 100,
         origin_io: None,
         post_refresh_runtime: None,
@@ -219,6 +220,7 @@ async fn shared_initial_manifest_automatic_cross_origin_redirect_keeps_identity_
     headers.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer origin-secret"));
     headers.insert(header::COOKIE, HeaderValue::from_static("sid=origin-secret"));
     let context = HlsOriginManifestFetchContext {
+        retained_poll_origin: None,
         origin_account_snapshot: None,
         attempt: None,
         app_config: test_app_config(),
@@ -281,6 +283,7 @@ async fn shared_initial_manifest_budget_covers_status_decoder_redirect_and_succe
     let origin_entry =
         LiveHlsOriginEntry::parse(&format!("{}/live/user/pass/12345.m3u8", server.base_url)).expect("entry url");
     let context = HlsOriginManifestFetchContext {
+        retained_poll_origin: None,
         origin_account_snapshot: None,
         attempt: None,
         app_config: test_app_config(),

@@ -470,7 +470,10 @@ async fn assert_ten_short_refresh_cycles(counts: [usize; 10]) {
         previous_last = snapshot.last_proxy_seq;
         assert_eq!(snapshot.playlist_duration_ms, u64::try_from(media_uri_count(&body)).unwrap() * 2_500);
     }
-    assert_eq!(fixture.origin.manifest_request_count(), 13);
+    // Each advancing window here drops the latest known cache occurrence. It therefore
+    // runs the existing configured recovery burst rather than silently jumping forward.
+    let candidates = HlsManifestRecoveryBurstLevel::Friendly.plan().total_candidates();
+    assert_eq!(fixture.origin.manifest_request_count(), (1 + counts.len()) * (1 + candidates));
     assert_short_media(&fixture, &initial).await;
     let invalid = uri.replace("short-reloads", "missing-lease");
     assert_ne!(get_response(Arc::clone(&fixture.app_state), &invalid, None).await.status(), StatusCode::OK);
@@ -530,7 +533,8 @@ async fn assert_short_resource_publications() {
         response_body(response).await;
     }
     let mut bodies = vec![initial];
-    fixture.head.store(102, Ordering::SeqCst);
+    // Keep occurrence 101 as the normal continuity anchor while publishing the next slot.
+    fixture.head.store(101, Ordering::SeqCst);
     session.write().await.origin_refresh.next_fetch_allowed_at_ms = 0;
     let uri = format!("/hls/shared/live/{}/short-resources/manifest.m3u8", fixture.proxy_session_id.0);
     for _ in 0..100 {

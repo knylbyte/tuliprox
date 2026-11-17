@@ -78,6 +78,7 @@ async fn hls_manifest_terminal_preflight_distinguishes_bootstrap_refresh_and_inv
     );
 
     lease.last_manifest_snapshot = Some(HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
         source_commit_identity: HlsManifestCommitIdentity::new(1_500),
@@ -165,6 +166,7 @@ async fn hls_manifest_terminal_preflight_keeps_capacity_recovery_out_of_sync_ter
     );
     lease.state = HlsAccessLeaseState::Activated;
     lease.last_manifest_snapshot = Some(HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
         source_commit_identity: HlsManifestCommitIdentity::new(1),

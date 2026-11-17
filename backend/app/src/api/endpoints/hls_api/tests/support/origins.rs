@@ -46,17 +46,26 @@ pub(in crate::api::endpoints::hls_api::tests) async fn spawn_test_segment_origin
 pub(in crate::api::endpoints::hls_api::tests) struct TestBinaryOriginResponse {
     pub(in crate::api::endpoints::hls_api::tests) status: StatusCode,
     pub(in crate::api::endpoints::hls_api::tests) location: Option<String>,
+    pub(in crate::api::endpoints::hls_api::tests) content_range: Option<String>,
     pub(in crate::api::endpoints::hls_api::tests) body: Arc<[u8]>,
     pub(in crate::api::endpoints::hls_api::tests) gate: Option<tokio::sync::watch::Receiver<bool>>,
+    pub(in crate::api::endpoints::hls_api::tests) body_gates: Vec<(usize, tokio::sync::watch::Receiver<bool>)>,
 }
 
 impl TestBinaryOriginResponse {
     pub(in crate::api::endpoints::hls_api::tests) fn new(status: StatusCode, body: Arc<[u8]>) -> Self {
-        Self { status, location: None, body, gate: None }
+        Self { status, location: None, content_range: None, body, gate: None, body_gates: Vec::new() }
     }
 
     pub(in crate::api::endpoints::hls_api::tests) fn redirect(location: String) -> Self {
-        Self { status: StatusCode::FOUND, location: Some(location), body: Arc::from(&b""[..]), gate: None }
+        Self {
+            status: StatusCode::FOUND,
+            location: Some(location),
+            content_range: None,
+            body: Arc::from(&b""[..]),
+            gate: None,
+            body_gates: Vec::new(),
+        }
     }
 }
 
@@ -65,6 +74,14 @@ pub(in crate::api::endpoints::hls_api::tests) type TestBinaryOriginHandler =
 
 pub(in crate::api::endpoints::hls_api::tests) async fn spawn_test_binary_origin(
     handler: TestBinaryOriginHandler,
+) -> TestSegmentOrigin {
+    spawn_test_binary_origin_with_request(Arc::new(move |path, _| handler(path))).await
+}
+
+type TestBinaryOriginRequestHandler = Arc<dyn Fn(&str, &str) -> TestBinaryOriginResponse + Send + Sync>;
+
+pub(in crate::api::endpoints::hls_api::tests) async fn spawn_test_binary_origin_with_request(
+    handler: TestBinaryOriginRequestHandler,
 ) -> TestSegmentOrigin {
     let key_requests = Arc::new(AtomicUsize::new(0));
     let manifest_requests = Arc::new(AtomicUsize::new(0));
@@ -96,7 +113,8 @@ pub(in crate::api::endpoints::hls_api::tests) async fn spawn_test_binary_origin(
                 } else if path_has_extension(path, "ts") {
                     segment_requests.fetch_add(1, Ordering::SeqCst);
                 }
-                let TestBinaryOriginResponse { status, location, body, gate } = handler(path);
+                let TestBinaryOriginResponse { status, location, content_range, body, gate, body_gates } =
+                    handler(path, &request);
                 if let Some(mut gate) = gate {
                     while !*gate.borrow_and_update() {
                         if gate.changed().await.is_err() {
@@ -106,13 +124,27 @@ pub(in crate::api::endpoints::hls_api::tests) async fn spawn_test_binary_origin(
                 }
                 let reason = status.canonical_reason().unwrap_or("Status");
                 let location_header = location.map_or_else(String::new, |location| format!("Location: {location}\r\n"));
+                let range_header =
+                    content_range.map_or_else(String::new, |range| format!("Content-Range: {range}\r\n"));
                 let response = format!(
-                    "HTTP/1.1 {} {reason}\r\n{location_header}Content-Length: {}\r\nConnection: close\r\n\r\n",
+                    "HTTP/1.1 {} {reason}\r\n{location_header}{range_header}Content-Length: {}\r\nConnection: close\r\n\r\n",
                     status.as_u16(),
                     body.len()
                 );
                 let _ = socket.write_all(response.as_bytes()).await;
-                let _ = socket.write_all(&body).await;
+                let mut offset = 0;
+                for (end, mut gate) in body_gates {
+                    if socket.write_all(&body[offset..end]).await.is_err() {
+                        return;
+                    }
+                    offset = end;
+                    while !*gate.borrow_and_update() {
+                        if gate.changed().await.is_err() {
+                            return;
+                        }
+                    }
+                }
+                let _ = socket.write_all(&body[offset..]).await;
             });
         }
     });

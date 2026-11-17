@@ -9,6 +9,246 @@ use crate::{
 };
 use std::sync::Arc;
 
+mod recovery_publication;
+
+mod recovery_entry_continuation {
+    use super::super::access_lease;
+    use crate::{
+        lease::{
+            HlsLeaseManifestPublicationGuard, HlsLeaseManifestPublicationOutcome as Outcome,
+            HlsLeaseManifestPublicationRejectReason as Reject,
+        },
+        live_window::HlsLiveWindowView,
+        manifest_snapshot::{
+            derive_hls_lease_manifest_snapshot, derive_hls_recovery_entry_snapshot, HlsLeaseManifestSnapshotInput,
+        },
+        HlsAccessLeaseId, HlsAccessLeaseState, HlsLeaseManifestSnapshot, HlsManifestRenderer, HlsProxyManager,
+        HlsSession, HlsSessionKey, ProxySessionId, SegmentCacheStatus, SegmentRevisionKind, SegmentRevisionState,
+    };
+    use shared::model::{HlsCacheConfigDto, HlsStartupMode};
+    use std::sync::Arc;
+    use tuliprox_core::model::HlsCacheConfig;
+    use tuliprox_parser::hls::origin_manifest::{parse_origin_media_manifest, OriginManifestParseOutcome};
+
+    const NOW: u64 = 2_000;
+    const MEDIA: &[u8] = b"fixture media";
+
+    struct Publication {
+        _cache: tempfile::TempDir,
+        manager: HlsProxyManager,
+        lease: HlsAccessLeaseId,
+        proxy: ProxySessionId,
+        previous: HlsLeaseManifestSnapshot,
+        candidate: HlsLeaseManifestSnapshot,
+        older_origin: HlsLeaseManifestSnapshot,
+    }
+
+    fn render_candidate(state: &HlsSession) -> HlsLeaseManifestSnapshot {
+        let plan = state.plan_live_window(HlsLiveWindowView::Active { first_published: 3 }).unwrap();
+        let rendered = HlsManifestRenderer::render_live_window(state, &plan, NOW).unwrap();
+        derive_hls_lease_manifest_snapshot(
+            &HlsLeaseManifestSnapshotInput::FastStartWindow {
+                session: state,
+                plan: &plan,
+                rendered: &rendered,
+                materialized_body: &rendered.body,
+            },
+            NOW,
+        )
+        .unwrap()
+        .unwrap()
+    }
+
+    fn store_session_window(state: &mut HlsSession) {
+        let plan = state.plan_live_window(HlsLiveWindowView::Active { first_published: 2 }).unwrap();
+        let source = HlsManifestRenderer::render_live_window(state, &plan, NOW).unwrap();
+        assert!(matches!(state.store_rendered_manifest(source), crate::RenderedManifestStoreOutcome::Stored));
+    }
+
+    fn fallback_snapshot(state: &HlsSession, manager: &HlsProxyManager) -> HlsLeaseManifestSnapshot {
+        let (rendered, plan) = HlsManifestRenderer::render_recovery_entry_window(state, &manager.strip(), NOW).unwrap();
+        derive_hls_recovery_entry_snapshot(state, plan.as_ref(), &rendered, &rendered.body, 0, NOW).unwrap().unwrap()
+    }
+
+    impl Publication {
+        async fn new() -> Self {
+            let cache = tempfile::tempdir().unwrap();
+            let mut config = HlsCacheConfigDto {
+                cache_path: Some(cache.path().to_string_lossy().into_owned()),
+                ..Default::default()
+            };
+            config.startup.mode = HlsStartupMode::FirstReady;
+            config.strip.value = 2;
+            let manager = HlsProxyManager::with_hls_cache_config(&HlsCacheConfig::from(&config));
+            manager.freeze_clock_for_test(NOW);
+            let session =
+                manager.get_or_create_session(HlsSessionKey::new(1, "recovery-follow-up"), b"fixture", NOW).await;
+            let lease = HlsAccessLeaseId("viewer-b".into());
+            let (proxy, fallback, candidate, older_origin) = {
+                let mut state = session.write().await;
+                let proxy = state.proxy_session_id.clone();
+                let body = "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:102\n#EXTINF:4,\n2.ts\n#EXTINF:4,\n3.ts\n#EXTINF:4,\n4.ts\n#EXTINF:4,\n5.ts\n#EXTINF:4,\n6.ts\n#EXTINF:4,\n7.ts\n";
+                let OriginManifestParseOutcome::Normal(manifest) =
+                    parse_origin_media_manifest(body, "http://origin.example/index.m3u8")
+                else {
+                    panic!("fixture manifest")
+                };
+                state.proxy_next_seq = Some(2);
+                state.apply_origin_manifest(&manifest).unwrap();
+                state.record_origin_manifest_commit();
+                state.record_live_window_origin_commit(NOW);
+                for seq in 2..=7 {
+                    let revision = state
+                        .startup
+                        .as_ref()
+                        .unwrap()
+                        .store
+                        .create(proxy.clone(), seq, SegmentRevisionKind::Raw)
+                        .unwrap();
+                    let metadata =
+                        manager.segment_cache().write_bytes_and_commit(&revision.revision().key, MEDIA).await.unwrap();
+                    let size = metadata.size;
+                    revision.revision().bind_origin(&state);
+                    assert!(revision.revision().complete(metadata));
+                    state.startup.as_mut().unwrap().revisions.insert(seq, revision);
+                    state.segments.get_mut(&seq).unwrap().status =
+                        SegmentCacheStatus::Ready { content_length: size, ready_at_ms: NOW };
+                }
+                let older_origin = render_candidate(&state);
+                store_session_window(&mut state);
+                state.apply_origin_manifest(&manifest).unwrap();
+                state.record_origin_manifest_commit();
+                state.record_live_window_origin_commit(NOW);
+                // A later origin commit can exist before the session renders it.
+                // Recovery provenance must still come from the committed render.
+                let previous_render = fallback_snapshot(&state, &manager);
+                assert_eq!(previous_render.cached_source.as_ref().unwrap().origin_commits, 1);
+                store_session_window(&mut state);
+                let candidate = render_candidate(&state);
+                let fallback = fallback_snapshot(&state, &manager);
+                assert_eq!(fallback.cached_source.as_ref().unwrap().origin_commits, 2);
+                (proxy, fallback, candidate, older_origin)
+            };
+            {
+                let mut leases = manager.access_leases().write().await;
+                let mut active = access_lease(&lease.0, &proxy);
+                active.state = HlsAccessLeaseState::Activated;
+                active.active_until_ms = Some(NOW + 30_000);
+                leases.prepare_access_lease(active);
+                let guard = leases.prepare_manifest_publication(&lease, &proxy, NOW).unwrap();
+                assert!(leases.commit_manifest_publication(&lease, &proxy, guard, fallback, NOW).is_committed());
+            }
+            let previous = manager
+                .access_lease_response_snapshot(&lease, &proxy, NOW)
+                .await
+                .unwrap()
+                .last_manifest_snapshot
+                .unwrap();
+            assert_eq!(previous.visible_proxy_seqs().collect::<Vec<_>>(), [3, 4, 5]);
+            assert_eq!(candidate.visible_proxy_seqs().collect::<Vec<_>>(), [3, 4, 5, 6, 7]);
+            assert!(previous.source_commit_identity > candidate.source_commit_identity);
+            Self { _cache: cache, manager, lease, proxy, previous, candidate, older_origin }
+        }
+
+        async fn guard(&self) -> HlsLeaseManifestPublicationGuard {
+            self.manager.prepare_access_lease_manifest_publication(&self.lease, &self.proxy, NOW).await.unwrap()
+        }
+
+        async fn snapshot(&self) -> HlsLeaseManifestSnapshot {
+            self.manager
+                .access_lease_response_snapshot(&self.lease, &self.proxy, NOW)
+                .await
+                .unwrap()
+                .last_manifest_snapshot
+                .unwrap()
+        }
+
+        async fn commit(&self, guard: HlsLeaseManifestPublicationGuard, snapshot: HlsLeaseManifestSnapshot) -> Outcome {
+            self.manager.commit_access_lease_manifest_publication(&self.lease, &self.proxy, guard, snapshot, NOW).await
+        }
+
+        async fn assert_rejected(&self, label: &str, snapshot: HlsLeaseManifestSnapshot, reason: Reject) {
+            let outcome = self.commit(self.guard().await, snapshot).await;
+            assert_eq!(outcome, Outcome::Rejected(reason), "{label}");
+            assert_eq!(self.snapshot().await, self.previous, "{label}");
+            let leases = self.manager.access_leases().read().await;
+            let previous = self.previous.startup_revisions.as_ref().unwrap();
+            for (seq, revision) in &previous.revisions {
+                assert_eq!(leases.published_segment_revision(&self.lease, *seq).as_ref(), Some(revision), "{label}");
+            }
+            assert!(leases.published_segment_revision(&self.lease, 6).is_none(), "{label}");
+            eprintln!(
+                "continuation_rejection case={label} outcome={outcome:?} snapshot_generation={}",
+                self.previous.snapshot_generation
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn manifest_publication_rejects_regressive_sources_and_window_bounds() {
+        let publication = Publication::new().await;
+        publication.assert_rejected("older_origin", publication.older_origin.clone(), Reject::SourceRegressive).await;
+        let mut head = publication.candidate.clone();
+        head.first_proxy_seq = 2;
+        publication.assert_rejected("regressive_head", head, Reject::SourceRegressive).await;
+        let mut tail = publication.candidate.clone();
+        tail.last_proxy_seq = 4;
+        publication.assert_rejected("regressive_tail", tail, Reject::SourceRegressive).await;
+    }
+
+    #[tokio::test]
+    async fn manifest_publication_rejects_changed_bindings_gaps_and_missing_files() {
+        let publication = Publication::new().await;
+        let mut uri = publication.candidate.clone();
+        Arc::make_mut(&mut uri.visible_segments)[0].uri = "changed.ts".into();
+        publication.assert_rejected("changed_uri", uri, Reject::RevisionConflict).await;
+        let mut revision = publication.candidate.clone();
+        let revisions = &mut Arc::make_mut(revision.startup_revisions.as_mut().unwrap()).revisions;
+        revisions.insert(3, revisions[&4].clone());
+        publication.assert_rejected("changed_revision", revision, Reject::RevisionConflict).await;
+        let mut discontinuity = publication.candidate.clone();
+        discontinuity.discontinuity_sequence += 1;
+        publication.assert_rejected("changed_discontinuity", discontinuity, Reject::RevisionConflict).await;
+        let mut gap = publication.candidate.clone();
+        let mut segments = gap.visible_segments.to_vec();
+        segments.remove(3);
+        gap.visible_segments = segments.into();
+        let source = Arc::make_mut(gap.cached_source.as_mut().unwrap());
+        let mut bindings = source.bindings.to_vec();
+        bindings.remove(3);
+        source.bindings = bindings.into_boxed_slice();
+        publication.assert_rejected("gap_at_6", gap, Reject::RevisionConflict).await;
+        let new_segment = &publication.candidate.startup_revisions.as_ref().unwrap().revisions[&6];
+        let SegmentRevisionState::Complete(metadata) = new_segment.revision().state() else {
+            panic!("new segment must be indexed as complete");
+        };
+        std::fs::remove_file(metadata.path).unwrap();
+        publication.assert_rejected("missing_file_at_6", publication.candidate.clone(), Reject::RevisionConflict).await;
+    }
+
+    #[tokio::test]
+    async fn manifest_publication_fences_delayed_candidate_to_its_fallback_snapshot() {
+        let publication = Publication::new().await;
+        let delayed_guard = publication.guard().await;
+        let delayed_candidate = publication.candidate.clone();
+        assert_eq!(
+            publication.commit(publication.guard().await, publication.candidate.clone()).await,
+            Outcome::Committed { snapshot_generation: publication.previous.snapshot_generation + 1 },
+        );
+        let winner = publication.snapshot().await;
+        assert_eq!(winner.visible_proxy_seqs().collect::<Vec<_>>(), [3, 4, 5, 6, 7]);
+        assert!(!winner.is_recovery_entry());
+        let outcome = publication.commit(delayed_guard, delayed_candidate).await;
+        assert_eq!(outcome, Outcome::Rejected(Reject::SnapshotChanged));
+        assert_eq!(publication.snapshot().await, winner);
+        let leases = publication.manager.access_leases().read().await;
+        for (seq, revision) in &winner.startup_revisions.as_ref().unwrap().revisions {
+            assert_eq!(leases.published_segment_revision(&publication.lease, *seq).as_ref(), Some(revision));
+        }
+        eprintln!("continuation_race winner_generation={} delayed_outcome={outcome:?}", winner.snapshot_generation);
+    }
+}
+
 #[test]
 fn key_readiness_evidence_is_valid_at_expiry_and_stale_one_millisecond_later() {
     assert!(hls_key_readiness_evidence_is_current(Some(50_000), 50_000));

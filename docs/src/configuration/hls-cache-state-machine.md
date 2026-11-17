@@ -216,12 +216,21 @@ The manifest commit policy tracks multiple signals:
 
 | Signal | Purpose |
 | :--- | :--- |
-| Media sequence and visible segment range | Host- and origin-epoch-local progress evidence; equal sequence numbers on different effective hosts do not prove continuity or content identity. |
-| Effective origin host and origin epoch | Requires explicit cross-host acceptance and starts a new origin epoch with a discontinuity when the handoff cannot preserve continuity. |
+| Logical source, origin MSN, and resource binding | Compare the full resolved segment path, exact query, and effective HLS range. The final manifest URL supplies the resolution base for media, MAP, and KEY. |
+| Effective origin host and origin epoch | A validated anchor confirms the actual delivery hostname or IP for this session and epoch. The proof expires at validation time plus twice the playlist duration. An epoch change clears the proofs. |
 | Target duration and segment durations | Drives refresh timing, lease active windows, and startup behavior. |
 | Lease-specific READY reserve and playback cursor | Determines when recovery pressure exists, whether startup admission remains safe, and when one lease reaches terminal cutover. |
 | Recovery ETA and transition margin | Starts recovery early enough to execute the configured acceptance plan and prevents waiting beyond usable media reserve. |
 | Failure counters | Drive bounded retry/backoff, circuit-breaking, diagnostics, and explicitly bounded acceptance evidence only. A counter never terminalizes a lease. |
+
+The [segment identity and reload contract](./shared-hls-runtime-flow.md#segment-identity-and-ordinary-reloads) uses the
+highest held origin occurrence in the active namespace as its cache anchor, even if that entry is `Discovered`.
+Ordinary reloads keep the anchor and overlapping bindings across manifest redirects and append consecutive MSNs.
+Recovery compares the same resource bindings and may confirm a changed concrete binding only by comparing complete real media SHA-256 digests and passing
+its existing dependency, account and generation checks. A verified reset can begin a new namespace. An explicitly
+observed zero window from a confirmed host and a fresh window at idle re-entry can also open a new epoch under the
+[Origin rollover and idle re-entry rules](./shared-hls-runtime-flow.md#observed-origin-rollover-and-idle-re-entry).
+The first new segment receives a discontinuity and the next proxy sequence. Published URLs keep their original bytes.
 
 ### Origin progress and availability phases
 
@@ -244,8 +253,7 @@ distance. It is not a failure, host-switch, or terminal threshold.
 A successful commit renders a visible manifest window and queues prefetch work up to `max_segments_prefetch`, subject to
 per-session and global fetch limits.
 
-Manifest recovery burst is configured by `hls_cache.manifest_recovery_burst.level`. Keep it `off` unless logs show that
-manifest recovery needs additional pressure.
+`hls_cache.manifest_recovery_burst.level` defaults to `balanced`, with four slots and one candidate per slot.
 
 ## Segment, MAP, and transient resource delivery
 
@@ -275,6 +283,8 @@ similarly to segments.
 
 Transient resources are exposed through `/r/<resource_file>` URLs. They are request-controlled and access-lease protected.
 They are used when the origin manifest contains resources that should not be modeled as normal cached timeline objects.
+Overlapping occurrences keep their original route and cache revision. Repeated origin URIs at different positions or
+ranges remain separate resources.
 
 ## Cleanup rules
 
@@ -297,7 +307,15 @@ Cleanup must wait for:
 - ready object readers;
 - fetching objects;
 - active transient resource readers;
-- temporary files that still need cleanup.
+- temporary files that still need cleanup;
+- published cached media and their retained bindings;
+- active terminal protections.
+
+For cacheable media, the removal time plus its duration and the longest delivered playlist containing it define the
+minimum [publication retention](./shared-hls-runtime-flow.md#retention-of-published-media). This is a common eviction
+check for duration and capacity reclamation. The FIFO head remains in place while protected. At capacity the existing
+admission path defers new work rather than increasing budgets. Non-cacheable direct responses do not gain local
+storage or a retention guarantee.
 
 Changing the configured HLS cache path clears HLS runtime state because existing sessions and cache object handles point at
 the old location.
@@ -324,18 +342,14 @@ the old location.
 
 | Area | Main implementation files |
 | :--- | :--- |
-| Public routes, access checks, and request orchestration | `backend/app/src/api/endpoints/hls_api.rs` |
-| Immutable terminal manifest/segment responses | `backend/app/src/api/endpoints/hls_terminal_response.rs` |
-| Access lease model and store | `backend/app/src/api/model/hls_cache/lease.rs` |
-| Shared session model | `backend/app/src/api/model/hls_cache/session.rs` |
-| Session manager, lifecycle, runtime config | `backend/app/src/api/model/hls_cache/manager.rs` |
-| Session identity | `backend/app/src/api/model/hls_cache/ids.rs` |
-| Origin account binding/protection | `backend/app/src/api/model/hls_cache/origin.rs` |
-| Manifest refresh and render | `backend/app/src/api/model/hls_cache/refresh.rs`, `renderer.rs`, `timeline.rs` |
-| Critical lease selection and handoff evidence policy | `backend/app/src/api/model/hls_cache/critical_handoff.rs` |
-| Prepared terminal bundles and terminal CAS/retry | `prepared_terminal_bundle.rs`, `terminal_commit.rs` |
-| Read-only MPEG-TS compatibility inspection | `ts_inspector.rs` |
-| Segment and MAP fetching | `segment_fetcher.rs`, `map_fetcher.rs` |
-| Transient resource handling | `transient.rs` |
-| Cache and cleanup | `cache.rs`, `gc.rs` |
+| Public routes, access checks, and request orchestration | `backend/app/src/api/endpoints/hls_api/mod.rs`, `backend/app/src/api/endpoints/hls_api/` |
+| Terminal manifest/segment responses | `backend/app/src/api/endpoints/hls_terminal_response.rs`, `backend/hls/src/terminal_tail.rs` |
+| Access leases, shared session and manager | `backend/hls/src/lease.rs`, `backend/hls/src/session.rs`, `backend/hls/src/manager.rs`, `backend/hls/src/ids.rs` |
+| Origin account binding/protection | `backend/hls/src/origin.rs`, `backend/hls/src/origin_account_runtime.rs` |
+| Manifest parsing and segment identity | `backend/parser/src/hls/origin_manifest.rs`, `backend/hls/src/resource_identity.rs`, `backend/hls/src/timeline.rs` |
+| Ordinary acceptance, recovery and rendering | `backend/hls/src/refresh/continuity.rs`, `backend/hls/src/refresh/origin_probe.rs`, `backend/hls/src/manifest_acceptance.rs`, `backend/hls/src/renderer.rs` |
+| Critical lease selection, prepared terminal bundles and commit | `backend/hls/src/critical_handoff.rs`, `backend/hls/src/prepared_terminal_bundle.rs`, `backend/hls/src/terminal_commit.rs` |
+| Segment and MAP fetching | `backend/hls/src/segment_fetcher.rs`, `backend/hls/src/map_fetcher.rs` |
+| Transient rewrite, resource state and fetch | `backend/hls/src/transient_manifest.rs`, `backend/hls/src/transient.rs`, `backend/hls/src/transient_fetcher.rs` |
+| Publication retention, cache and cleanup | `backend/hls/src/publication_retention.rs`, `backend/hls/src/cache.rs`, `backend/hls/src/gc.rs` |
 | Config DTO and validation | `shared/src/model/config/reverse_proxy.rs`, `shared/src/model/config/target.rs` |

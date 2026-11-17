@@ -41,6 +41,9 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
 use tuliprox_hls::api::MAX_HLS_MANIFEST_BYTES;
 
+mod cold_start;
+mod cold_start_order;
+
 #[test]
 fn canonical_manifest_joins_authoritative_owner_and_fails_closed_without_one() {
     assert_eq!(
@@ -608,7 +611,7 @@ async fn hls_cache_canonical_prepare_service_unavailable_sets_retry_after() {
 }
 
 pub(in crate::api::endpoints::hls_api::tests) struct SharedRequestFlowFixture {
-    pub(in crate::api::endpoints::hls_api::tests) _origin: TestSegmentOrigin,
+    pub(in crate::api::endpoints::hls_api::tests) origin: TestSegmentOrigin,
     pub(in crate::api::endpoints::hls_api::tests) app_state: Arc<AppState>,
     pub(in crate::api::endpoints::hls_api::tests) input: ConfigInput,
     pub(in crate::api::endpoints::hls_api::tests) target: ConfigTarget,
@@ -622,13 +625,19 @@ pub(in crate::api::endpoints::hls_api::tests) async fn shared_request_flow_fixtu
             #EXT-X-MEDIA-SEQUENCE:123\n#EXTINF:4.0,\n000123.ts\n#EXTINF:4.0,\n000124.ts\n\
             #EXTINF:4.0,\n000125.ts\n#EXTINF:4.0,\n000126.ts\n#EXTINF:4.0,\n000127.ts\n\
             #EXTINF:4.0,\n000128.ts\n";
-    let origin = spawn_test_segment_origin(MANIFEST).await;
+    shared_request_flow_fixture_with_origin(spawn_test_segment_origin(MANIFEST).await, 1).await
+}
+
+async fn shared_request_flow_fixture_with_origin(
+    origin: TestSegmentOrigin,
+    max_connections: u16,
+) -> SharedRequestFlowFixture {
     let input = ConfigInput {
         id: 1,
         name: Arc::from("request-flow-input"),
         input_type: InputType::M3u,
         url: origin.base_url.clone(),
-        max_connections: 1,
+        max_connections,
         enabled: true,
         ..ConfigInput::default()
     };
@@ -645,7 +654,7 @@ pub(in crate::api::endpoints::hls_api::tests) async fn shared_request_flow_fixtu
     user.username = "hls-user".to_string();
     user.password = "hls-pass".to_string();
     let entry_path = super::super::build_virtual_hls_entry_path(&target, &input, &user, 12345);
-    SharedRequestFlowFixture { _origin: origin, app_state, input, target, user, origin_manifest_url, entry_path }
+    SharedRequestFlowFixture { origin, app_state, input, target, user, origin_manifest_url, entry_path }
 }
 
 pub(in crate::api::endpoints::hls_api::tests) async fn shared_request_flow_entry(

@@ -849,7 +849,7 @@ async fn first_short_manifest_503_can_retry_before_terminal_commit() {
     let hits = Arc::new(AtomicUsize::new(0));
     let handler_hits = Arc::clone(&hits);
     let router = axum::Router::new().route(
-        "/index.m3u8",
+        "/live/index.m3u8",
         axum::routing::get(move || {
             let handler_hits = Arc::clone(&handler_hits);
             async move {
@@ -871,7 +871,7 @@ async fn first_short_manifest_503_can_retry_before_terminal_commit() {
     });
     let mut request = post_refresh_owner_request(&fixture);
     request.origin_entry =
-        crate::manifest_fetch::LiveHlsOriginEntry::parse(&format!("http://{address}/index.m3u8")).unwrap();
+        crate::manifest_fetch::LiveHlsOriginEntry::parse(&format!("http://{address}/live/index.m3u8")).unwrap();
     request.retry_policy.delays_ms = [0, 100, 100, 100, 100];
     let _ = crate::refresh::trigger_origin_refresh_sync(request).await;
     server.abort();

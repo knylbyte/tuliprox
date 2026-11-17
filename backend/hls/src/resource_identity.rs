@@ -1,13 +1,13 @@
 use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
-use tuliprox_parser::hls::origin_manifest::ParsedByteRange;
+use tuliprox_parser::hls::origin_manifest::{ParsedByteRange, ParsedOriginSegment};
 use url::Url;
 
 const RESOURCE_IDENTITY_DOMAIN: &[u8] = b"tuliprox/hls/media-resource/v1\0";
 const QUERY_IDENTITY_DOMAIN: &[u8] = b"tuliprox/hls/media-resource-query/v1\0";
 const MAX_PUBLISHED_RESOURCE_HISTORY: usize = 1_024;
 
-/// Complete serialized path/range and query, scoped by the caller's stream and host.
+/// Complete serialized path/range and query. This identifies a resource binding, not a segment occurrence.
 /// Hashes keep credentials out of diagnostics without normalizing URL components.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct HlsMediaResourceIdentity {
@@ -17,6 +17,99 @@ pub struct HlsMediaResourceIdentity {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
 pub struct HlsMediaResourceSemanticKey([u8; 32]);
+
+/// Logical namespace of the selected stream in one input and archive context.
+/// Manifest redirects can change the resolution base without changing this namespace.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct HlsMediaPlaylistScope([u8; 32]);
+
+impl HlsMediaPlaylistScope {
+    pub fn from_session(key: &crate::HlsSessionKey) -> Option<Self> {
+        if key.stream_ref.is_empty() {
+            return None;
+        }
+        let mut hasher = Sha256::new();
+        hasher.update(b"tuliprox/hls/media-playlist-scope/v1\0");
+        hasher.update(key.input_id.to_be_bytes());
+        hasher.update((key.stream_ref.len() as u64).to_be_bytes());
+        hasher.update(key.stream_ref.as_bytes());
+        hasher.update([u8::from(key.archive_reference.is_some())]);
+        if let Some(reference) = key.archive_reference {
+            hasher.update(reference.to_be_bytes());
+        }
+        hasher.update([u8::from(key.archive_identity.is_some())]);
+        if let Some(identity) = &key.archive_identity {
+            hasher.update((identity.len() as u64).to_be_bytes());
+            hasher.update(identity.as_bytes());
+        }
+        Some(Self(hasher.finalize().into()))
+    }
+}
+
+/// Immutable playlist evidence. Transport hosts, HTTP headers and account/work generations are excluded.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct HlsSegmentOccurrenceIdentity {
+    scope: HlsMediaPlaylistScope,
+    origin_msn: u64,
+    resource: HlsMediaResourceIdentity,
+}
+
+/// A concrete, content-qualified alternative for one immutable cached occurrence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct HlsVerifiedOccurrenceBinding {
+    pub(crate) proxy_seq: u64,
+    pub(crate) original: HlsSegmentOccurrenceIdentity,
+    pub(crate) candidate: HlsSegmentOccurrenceIdentity,
+}
+
+impl HlsVerifiedOccurrenceBinding {
+    pub(crate) fn matches(
+        self,
+        proxy_seq: u64,
+        original: HlsSegmentOccurrenceIdentity,
+        candidate: HlsSegmentOccurrenceIdentity,
+    ) -> bool {
+        self.proxy_seq == proxy_seq && self.original == original && self.candidate == candidate
+    }
+}
+
+impl HlsSegmentOccurrenceIdentity {
+    pub(crate) const fn origin_msn(self) -> u64 { self.origin_msn }
+
+    pub(crate) const fn playlist_scope(self) -> HlsMediaPlaylistScope { self.scope }
+
+    pub(crate) const fn resource(self) -> HlsMediaResourceIdentity { self.resource }
+
+    pub(crate) fn same_scope(self, other: Self) -> bool { self.scope == other.scope }
+
+    pub fn same_position(self, other: Self) -> bool { self.same_scope(other) && self.origin_msn == other.origin_msn }
+
+    pub fn semantic_key(self) -> HlsMediaResourceSemanticKey {
+        let mut hasher = Sha256::new();
+        hasher.update(b"tuliprox/hls/segment-occurrence/v1\0");
+        hasher.update(self.scope.0);
+        hasher.update(self.origin_msn.to_be_bytes());
+        hasher.update(self.resource.semantic_key().bytes());
+        HlsMediaResourceSemanticKey(hasher.finalize().into())
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test(marker: u8) -> Self {
+        Self {
+            scope: HlsMediaPlaylistScope([0; 32]),
+            origin_msn: u64::from(marker),
+            resource: HlsMediaResourceIdentity::for_test(marker),
+        }
+    }
+
+    pub fn from_parsed(scope: HlsMediaPlaylistScope, segment: &ParsedOriginSegment) -> Self {
+        Self {
+            scope,
+            origin_msn: segment.origin_seq,
+            resource: HlsMediaResourceIdentity::from_url(&segment.resource_uri, segment.origin_byte_range),
+        }
+    }
+}
 
 impl HlsMediaResourceIdentity {
     pub fn from_url(url: &str, byte_range: Option<ParsedByteRange>) -> Self {
@@ -70,16 +163,16 @@ impl HlsMediaResourceSemanticKey {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct PublishedResource {
-    identity: HlsMediaResourceIdentity,
+    identity: HlsSegmentOccurrenceIdentity,
     proxy_seq: u64,
 }
 
-/// Bounded history of media resources that were actually exposed by this HLS session.
+/// Bounded history of segment occurrences actually exposed by this HLS session.
 ///
 /// It deliberately outlives individual `SegmentEntry` values so cache/timeline GC cannot
 /// make previously published origin media look new again. Dropping the session drops the
 /// history and its stream-local namespace.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct HlsPublishedResourceHistory {
     resources: VecDeque<PublishedResource>,
     generation: u64,
@@ -93,26 +186,41 @@ impl HlsPublishedResourceHistory {
 
     pub(crate) const fn restart_proxy_floor(&self) -> u64 { self.restart_proxy_floor }
 
-    /// Only a content-qualified restart may open a new occurrence namespace.
+    /// Start a new occurrence namespace after an accepted origin restart.
     /// Historical entries remain retained for old leases and diagnostics.
-    pub(crate) fn begin_verified_restart(&mut self, next_proxy_seq: u64) { self.restart_proxy_floor = next_proxy_seq; }
+    pub(crate) fn begin_restart(&mut self, next_proxy_seq: u64) { self.restart_proxy_floor = next_proxy_seq; }
 
-    pub fn proxy_seq_for(&self, identity: HlsMediaResourceIdentity) -> Option<u64> {
+    pub(crate) fn entries_across_epochs(&self) -> impl Iterator<Item = (HlsSegmentOccurrenceIdentity, u64)> + '_ {
+        self.resources.iter().map(|published| (published.identity, published.proxy_seq))
+    }
+
+    pub fn binding_for(&self, identity: HlsSegmentOccurrenceIdentity) -> Option<(HlsSegmentOccurrenceIdentity, u64)> {
         self.resources
             .iter()
             .rev()
-            .find(|published| published.proxy_seq >= self.restart_proxy_floor && published.identity.matches(identity))
+            .find(|published| {
+                published.proxy_seq >= self.restart_proxy_floor && published.identity.same_position(identity)
+            })
+            .map(|published| (published.identity, published.proxy_seq))
+    }
+
+    pub fn proxy_seq_for(&self, identity: HlsSegmentOccurrenceIdentity) -> Option<u64> {
+        self.resources
+            .iter()
+            .rev()
+            .find(|published| published.proxy_seq >= self.restart_proxy_floor && published.identity == identity)
             .map(|published| published.proxy_seq)
     }
 
-    pub fn record(&mut self, identity: HlsMediaResourceIdentity, proxy_seq: u64) {
+    pub fn record(&mut self, identity: HlsSegmentOccurrenceIdentity, proxy_seq: u64) {
         if proxy_seq < self.restart_proxy_floor {
             return;
         }
-        if let Some(published) =
-            self.resources.iter_mut().rev().find(|published| {
-                published.proxy_seq >= self.restart_proxy_floor && published.identity.matches(identity)
-            })
+        if let Some(published) = self
+            .resources
+            .iter_mut()
+            .rev()
+            .find(|published| published.proxy_seq >= self.restart_proxy_floor && published.identity == identity)
         {
             published.proxy_seq = proxy_seq;
             return;
@@ -124,7 +232,7 @@ impl HlsPublishedResourceHistory {
         self.generation = self.generation.saturating_add(1);
     }
 
-    pub fn recent_entries(&self, limit: usize) -> impl Iterator<Item = (HlsMediaResourceIdentity, u64)> + '_ {
+    pub fn recent_entries(&self, limit: usize) -> impl Iterator<Item = (HlsSegmentOccurrenceIdentity, u64)> + '_ {
         self.resources
             .iter()
             .rev()
@@ -276,24 +384,39 @@ mod tests {
         let mut history = HlsPublishedResourceHistory::default();
         for sequence in 0..=MAX_PUBLISHED_RESOURCE_HISTORY {
             history.record(
-                HlsMediaResourceIdentity::from_url(&format!("https://origin.example/live/{sequence}.ts"), None),
+                occurrence(
+                    &format!("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:{sequence}\n#EXTINF:4,\n{sequence}.ts\n"),
+                    "https://origin.example/live/index.m3u8",
+                    &crate::HlsSessionKey::new(1, "history"),
+                ),
                 u64::try_from(sequence).unwrap_or(u64::MAX),
             );
         }
         assert_eq!(history.len(), MAX_PUBLISHED_RESOURCE_HISTORY);
         assert_eq!(history.generation(), 1_025);
         assert_eq!(
-            history.proxy_seq_for(HlsMediaResourceIdentity::from_url("https://other.example/live/1024.ts", None,)),
+            history.proxy_seq_for(occurrence(
+                "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:1024\n#EXTINF:4,\n1024.ts\n",
+                "https://other.example/live/index.m3u8",
+                &crate::HlsSessionKey::new(1, "history")
+            )),
             Some(1_024)
         );
-        history.record(HlsMediaResourceIdentity::from_url("https://other.example/live/1024.ts", None), 1_024);
+        history.record(
+            occurrence(
+                "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:1024\n#EXTINF:4,\n1024.ts\n",
+                "https://other.example/live/index.m3u8",
+                &crate::HlsSessionKey::new(1, "history"),
+            ),
+            1_024,
+        );
         assert_eq!(history.generation(), 1_025, "re-recording an identity must not advance evidence");
     }
 
     #[test]
     fn published_history_updates_the_same_newest_match_that_lookup_returns() {
-        let oldest = HlsMediaResourceIdentity::for_test(1);
-        let newest = HlsMediaResourceIdentity::for_test(2);
+        let oldest = super::HlsSegmentOccurrenceIdentity::for_test(1);
+        let newest = super::HlsSegmentOccurrenceIdentity::for_test(2);
         let next = newest;
         let mut history = HlsPublishedResourceHistory {
             resources: std::collections::VecDeque::from([
@@ -310,5 +433,110 @@ mod tests {
         assert_eq!(history.resources.front().map(|resource| resource.proxy_seq), Some(10));
         assert_eq!(history.resources.back().map(|resource| resource.proxy_seq), Some(30));
         assert_eq!(history.generation(), 2);
+    }
+    fn occurrence(body: &str, base: &str, key: &crate::HlsSessionKey) -> super::HlsSegmentOccurrenceIdentity {
+        let tuliprox_parser::hls::origin_manifest::OriginManifestParseOutcome::Normal(manifest) =
+            tuliprox_parser::hls::origin_manifest::parse_origin_media_manifest(body, base)
+        else {
+            panic!("normal manifest");
+        };
+        super::HlsSegmentOccurrenceIdentity::from_parsed(
+            super::HlsMediaPlaylistScope::from_session(key).expect("known playlist"),
+            manifest.segments.last().unwrap(),
+        )
+    }
+
+    #[test]
+    fn occurrence_identity_equates_uri_spellings_and_transport_hosts() {
+        let key = crate::HlsSessionKey::new(7, "stream-one");
+        let expected = occurrence(
+            "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:101\n#EXTINF:4,\nseg101.ts?token=x\n",
+            "https://manifest-a.example/live/index.m3u8",
+            &key,
+        );
+        for base in [
+            "https://manifest-a.example/live/index.m3u8",
+            "http://manifest-b.example:8080/live/rotation.m3u8?delivery=2",
+        ] {
+            for reference in [
+                "seg101.ts?token=x",
+                "./seg101.ts?token=x",
+                "/live/seg101.ts?token=x",
+                "//segment-b.example:9000/live/seg101.ts?token=x",
+                "https://cdn-a.example/live/seg101.ts?token=x",
+                "http://cdn-b.example:8081/live/seg101.ts?token=x",
+            ] {
+                let body = format!("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:101\n#EXTINF:4,\n{reference}\n");
+                assert_eq!(expected, occurrence(&body, base, &key), "reference={reference}, base={base}");
+            }
+        }
+    }
+
+    #[test]
+    fn occurrence_identity_separates_msn_and_logical_sources() {
+        let base = "https://origin.example/live/index.m3u8";
+        let body = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:101\n#EXTINF:4,\n/common.ts\n";
+        let key = crate::HlsSessionKey::new(7, "stream-one");
+        let expected = occurrence(body, base, &key);
+        for other in [
+            crate::HlsSessionKey::new(8, "stream-one"),
+            crate::HlsSessionKey::new(7, "stream-two"),
+            key.clone().with_archive_reference(1),
+            key.clone().with_archive_reference(1).with_archive_identity("other"),
+        ] {
+            assert_ne!(expected, occurrence(body, base, &other));
+        }
+        assert_ne!(expected, occurrence(&body.replace("101", "102"), base, &key));
+        assert!(super::HlsMediaPlaylistScope::from_session(&crate::HlsSessionKey::new(7, "")).is_none());
+    }
+
+    #[test]
+    fn manifest_address_changes_only_matter_when_the_resolved_media_changes() {
+        let base = "https://origin.example/live/index.m3u8?delivery=1";
+        let key = crate::HlsSessionKey::new(7, "stream");
+        let body = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:101\n#EXTINF:4,\n/live/media.ts?binding=1\n";
+        let original = occurrence(body, base, &key);
+        assert_eq!(original, occurrence(body, "https://origin.example/other/reload.m3u8?delivery=1", &key));
+        assert_eq!(original, occurrence(body, "https://origin.example/live/index.m3u8?delivery=2", &key));
+
+        let relative = body.replace("/live/media.ts", "media.ts");
+        assert_eq!(original, occurrence(&relative, base, &key));
+        assert_ne!(original, occurrence(&relative, "https://origin.example/other/index.m3u8?delivery=1", &key));
+    }
+
+    #[test]
+    fn occurrence_identity_detects_each_path_query_and_hls_range_change() {
+        let base = "https://origin.example/live/index.m3u8";
+        let key = crate::HlsSessionKey::new(7, "stream");
+        let variants = [
+            ("/live/seg.ts", ""),
+            ("/other/seg.ts", ""),
+            ("/live/seg.ts?", ""),
+            ("/live/seg.ts?token=alt", ""),
+            ("/live/seg.ts?token=neu", ""),
+            ("/live/seg.ts?a=1&b=2", ""),
+            ("/live/seg.ts?b=2&a=1", ""),
+            ("/live/seg.ts", "#EXT-X-BYTERANGE:500@0\n"),
+            ("/live/seg.ts", "#EXT-X-BYTERANGE:500@500\n"),
+            ("/live/seg.ts", "#EXT-X-BYTERANGE:501@0\n"),
+        ];
+        let identities: Vec<_> = variants
+            .iter()
+            .map(|(uri, range)| {
+                occurrence(
+                    &format!("#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-MEDIA-SEQUENCE:101\n{range}#EXTINF:4,\n{uri}\n"),
+                    base,
+                    &key,
+                )
+            })
+            .collect();
+        for (index, identity) in identities.iter().enumerate() {
+            for (other_index, other) in identities.iter().enumerate() {
+                assert_eq!(identity == other, index == other_index, "variants {index}, {other_index}");
+            }
+        }
+        let explicit = occurrence("#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-MEDIA-SEQUENCE:101\n#EXT-X-BYTERANGE:500@500\n#EXTINF:4,\n/live/seg.ts\n", base, &key);
+        let implicit = occurrence("#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-MEDIA-SEQUENCE:100\n#EXT-X-BYTERANGE:500@0\n#EXTINF:4,\n/live/seg.ts\n#EXT-X-BYTERANGE:500\n#EXTINF:4,\n/live/seg.ts\n", base, &key);
+        assert_eq!(explicit, implicit);
     }
 }

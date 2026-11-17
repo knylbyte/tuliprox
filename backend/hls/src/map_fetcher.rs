@@ -231,12 +231,18 @@ impl HlsMapWorkerPool {
         let (generation_valid, evidence_changed_for) = {
             let mut session = context.session.write().await;
             session.active_map_fetches = session.active_map_fetches.saturating_sub(1);
+            let current_entry = session.maps.get(&snapshot.proxy_map_id).filter(|entry| {
+                entry.cache_key == snapshot.cache_key && matches!(entry.status, MapCacheStatus::Fetching { .. })
+            });
             let generation_valid = session.activity.origin_work_generation == snapshot.origin_work_generation
                 && result.as_ref().map_or(true, |commit| commit.generation_valid)
-                && session.maps.get(&snapshot.proxy_map_id).is_some_and(|entry| {
-                    entry.cache_key == snapshot.cache_key && matches!(entry.status, MapCacheStatus::Fetching { .. })
-                });
-            if generation_valid && result.is_err() {
+                && current_entry.is_some();
+            let failed_current_target = generation_valid
+                && result.is_err()
+                && current_entry
+                    .and_then(|entry| entry.origin_fetch_ref.as_ref())
+                    .is_some_and(|fetch_ref| fetch_ref.resolved_origin_url == snapshot.fetch_ref.resolved_origin_url);
+            if failed_current_target {
                 if let Err(error) = &result {
                     session.record_start_provider_failure(error);
                     // A MAP has no failure threshold: a retryable failure never becomes permanent,
@@ -263,6 +269,8 @@ impl HlsMapWorkerPool {
                             }
                             session.advance_media_readiness_generation();
                         }
+                        // A refresh can replace the transport while this fetch is in flight.
+                        Err(_) if !failed_current_target => entry.status = MapCacheStatus::Discovered,
                         Err(err) => {
                             if err.retryable_failure() {
                                 entry.status = MapCacheStatus::FailedRetryable {
@@ -296,6 +304,7 @@ impl HlsMapWorkerPool {
                         );
                     }
                 }
+                session.confirm_recovery_entry_progress(&context.segment_cache, finished_at_ms);
             }
             (generation_valid, generation_valid.then(|| session.proxy_session_id.clone()))
         };

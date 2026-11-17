@@ -46,9 +46,11 @@ pub struct ProtectedSet {
 
 impl ProtectedSet {
     #[cfg(test)]
-    pub fn from_session(session: &HlsSession) -> Self { Self::from_session_for_capacity(session, None) }
+    pub fn from_session(session: &HlsSession) -> Self {
+        Self::from_session_for_capacity(session, None, tuliprox_core::utils::current_time_millis())
+    }
 
-    pub(super) fn from_session_for_capacity(session: &HlsSession, release_through: Option<u64>) -> Self {
+    pub(super) fn from_session_for_capacity(session: &HlsSession, release_through: Option<u64>, now_ms: u64) -> Self {
         let mut protected = Self::default();
 
         if let Some(rendered) = &session.last_rendered_manifest {
@@ -80,6 +82,7 @@ impl ProtectedSet {
 
         for (proxy_seq, entry) in &session.segments {
             if entry.access.active_readers() > 0
+                || entry.access.retention.protects(now_ms)
                 || matches!(entry.status, SegmentCacheStatus::Fetching { .. })
                 || (entry.origin_fetch_ref.is_some()
                     && (matches!(entry.status, SegmentCacheStatus::Queued { .. })
@@ -107,7 +110,13 @@ impl ProtectedSet {
             }
         }
         for entry in session.transient.object_cache.values() {
-            if entry.access.active_readers() > 0 {
+            if entry.access.active_readers() > 0
+                || session
+                    .transient
+                    .resources
+                    .get(entry.key.transient_resource_id())
+                    .is_some_and(|resource| resource.access.retention.protects(now_ms))
+            {
                 protected.transient_object_ids.insert(entry.key.transient_resource_id().clone());
             }
         }
@@ -123,7 +132,23 @@ pub(super) fn protected_set_for_cache_reclamation(
     excluded_path: Option<&std::path::Path>,
     release_through: Option<u64>,
 ) -> ProtectedSet {
-    let mut protected = ProtectedSet::from_session_for_capacity(session, release_through);
+    protected_set_for_cache_reclamation_at(
+        session,
+        cache,
+        excluded_path,
+        release_through,
+        tuliprox_core::utils::current_time_millis(),
+    )
+}
+
+pub(super) fn protected_set_for_cache_reclamation_at(
+    session: &HlsSession,
+    cache: &HlsSegmentCache,
+    excluded_path: Option<&std::path::Path>,
+    release_through: Option<u64>,
+    now_ms: u64,
+) -> ProtectedSet {
+    let mut protected = ProtectedSet::from_session_for_capacity(session, release_through, now_ms);
     for (proxy_seq, segment) in &session.segments {
         let path = cache.object_path(&segment.cache_key);
         if cache.has_active_mutation(&path) || excluded_path == Some(path.as_path()) {

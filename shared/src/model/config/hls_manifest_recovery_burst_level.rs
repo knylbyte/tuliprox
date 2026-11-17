@@ -1,10 +1,10 @@
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum HlsManifestRecoveryBurstLevel {
-    #[default]
     Off,
     Friendly,
     Cautious,
+    #[default]
     Balanced,
     Intense,
     Aggressive,

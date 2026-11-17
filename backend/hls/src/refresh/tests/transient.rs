@@ -141,7 +141,7 @@ fn duplicate_media_units_are_rejected_locally_before_transient_commit() {
     assert!(matches!(
         result,
         Err(HlsManifestCommitError::LocalRepresentationLimit(violation))
-            if violation.kind == crate::manifest_limits::HlsManifestLimitKind::LeaseSnapshotSegments
+            if violation.kind == crate::manifest_limits::HlsManifestLimitKind::TransientResources
     ));
     assert!(session.transient.last_manifest_body.is_none());
     let signal = classify_manifest_fetch_failure(&OriginManifestFetchError::LocalRepresentationLimit(
@@ -435,4 +435,117 @@ fn fast_start_transient_transition_is_allowed_only_before_publication() {
             }
         }
     }
+}
+
+#[tokio::test]
+async fn transient_occurrence_conflict_enters_bounded_recovery_without_republishing_the_msn() {
+    for ttl_ms in [0, 300_000] {
+        let original = "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:10\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"key.bin\"\n#EXTINF:4,\nsegment.ts?token=old\n";
+        let changed = original.replace("token=old", "token=new");
+        let response_body = changed.clone();
+        let origin = super::spawn_test_origin(Arc::new(move |_| (200, Vec::new(), response_body.clone()))).await;
+        let session = test_session();
+        let mut request = test_origin_refresh_request(Arc::clone(&session));
+        request.transient_resource_ttl_ms = ttl_ms;
+        let now = tuliprox_core::utils::current_time_millis();
+        request.now_ms = now;
+        let url = format!("{}/live/index.m3u8", origin.base_url);
+        request.origin_entry = super::LiveHlsOriginEntry::parse(&url).unwrap();
+        let mut first = fetched_manifest(original);
+        first.final_manifest_url = url.clone();
+        first.resolved_request_url = url.clone();
+        first.redirect_host = Some("127.0.0.1".into());
+        commit_fetched_manifest(&mut *session.write().await, &first, &request, now).unwrap();
+        let (body, resources, generation) = {
+            let state = session.read().await;
+            (
+                state.transient.last_manifest_body.clone(),
+                state.transient.resources.clone(),
+                state.transient.manifest_generation(),
+            )
+        };
+        let mut changed = first;
+        changed.body = changed.body.replace("token=old", "token=new");
+        let direct = commit_fetched_manifest(&mut *session.write().await, &changed, &request, now + 1);
+        assert!(matches!(
+            direct,
+            Err(HlsManifestCommitError::TimelineRejected {
+                reason: HlsManifestRejectLogReason::SwitchResourceUnavailable
+            })
+        ));
+        let context = manifest_fetch_context(&request, Some(4));
+        let binding = test_manifest_origin_binding(Url::parse(&url).unwrap());
+        let result =
+            super::super::commit_initial_fetched_manifest(&request, &context, changed, Some(binding), false).await;
+        assert!(result.is_err());
+        assert!(
+            !origin.requests.lock().await.is_empty(),
+            "the production recovery path performed HTTP candidate requests"
+        );
+        let state = session.read().await;
+        assert_eq!(state.transient.last_manifest_body, body);
+        assert_eq!(state.transient.resources, resources);
+        assert_eq!(state.transient.manifest_generation(), generation);
+    }
+}
+
+#[tokio::test]
+async fn transient_conflict_recovery_requires_a_committed_active_binding() {
+    let session = test_session();
+    let request = test_origin_refresh_request(Arc::clone(&session));
+    let mut state = session.write().await;
+    let reason = HlsManifestRejectLogReason::SwitchResourceUnavailable;
+    let eligible =
+        |state: &HlsSession| super::super::manifest_recovery_binding_for_continuity_rejection(state, &request, &reason);
+    assert!(eligible(&state).is_none());
+    commit_fetched_manifest(&mut state, &fetched_manifest("#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:10\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"key.bin\"\n#EXTINF:4,\nsegment.ts\n"), &request, request.now_ms).unwrap();
+    assert!(eligible(&state).is_some());
+    for phase in [
+        crate::origin_progress::HlsOriginProgressPhase::Terminal,
+        crate::origin_progress::HlsOriginProgressPhase::TerminalPartial,
+    ] {
+        state.origin_control.progress_phase = phase;
+        assert!(eligible(&state).is_none());
+    }
+    state.origin_control.progress_phase = crate::origin_progress::HlsOriginProgressPhase::Fresh;
+    state.mark_for_gc_removal();
+    assert!(eligible(&state).is_none());
+    state.clear_gc_removal_mark();
+    assert!(eligible(&state).is_some());
+    state.origin_control.manifest_origin_binding = None;
+    assert!(eligible(&state).is_none());
+}
+
+#[test]
+fn event_append_materializes_ranges_and_accepts_the_last_maximum_msn_without_wrapping() {
+    let mut session = HlsSession::new(HlsSessionKey::new(1, "event-boundary"), b"secret", 0);
+    let request = test_origin_refresh_request(test_session());
+    let prefix = format!("#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-TARGETDURATION:4\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-MEDIA-SEQUENCE:{}\n#EXT-X-BYTERANGE:5@0\n#EXTINF:4,\nshared.ts\n", u64::MAX - 1);
+    let first = fetched_manifest(&prefix);
+    commit_fetched_manifest(&mut session, &first, &request, 100).unwrap();
+    let next_body = format!("{prefix}#EXT-X-BYTERANGE:5\n#EXTINF:4,\nshared.ts\n");
+    assert!(session
+        .transient
+        .rolling_event_append_context(&next_body, &first.final_manifest_url, &request.reverse_proxy_rewrite_secret)
+        .is_some());
+    commit_fetched_manifest(&mut session, &fetched_manifest(&next_body), &request, 101).unwrap();
+    let published = session.transient.last_manifest_body.clone().unwrap();
+    assert!(published.contains("#EXT-X-BYTERANGE:5@5\n"));
+    let source = published.replace("#EXT-X-PLAYLIST-TYPE:EVENT\n", "");
+    let tuliprox_parser::hls::origin_manifest::OriginManifestParseOutcome::Normal(parsed) =
+        tuliprox_parser::hls::origin_manifest::parse_origin_media_manifest(&source, &first.final_manifest_url)
+    else {
+        panic!(
+            "the published ranges must remain resolvable: {:?}",
+            tuliprox_parser::hls::origin_manifest::parse_origin_media_manifest(&source, &first.final_manifest_url)
+        );
+    };
+    assert_eq!(parsed.segments[1].origin_seq, u64::MAX);
+    assert_eq!(parsed.segments[1].origin_byte_range.unwrap().offset, 5);
+    let overflow = format!("{next_body}#EXTINF:4,\nwrapped.ts\n");
+    assert!(commit_fetched_manifest(&mut session, &fetched_manifest(&overflow), &request, 102).is_err());
+    assert_eq!(session.transient.last_manifest_body.as_ref(), Some(&published));
+    commit_fetched_manifest(&mut session, &fetched_manifest(&format!("{next_body}#EXT-X-ENDLIST\n")), &request, 103)
+        .unwrap();
+    assert!(session.transient.last_manifest_finalized());
 }

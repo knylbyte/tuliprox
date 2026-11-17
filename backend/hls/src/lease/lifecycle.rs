@@ -158,6 +158,7 @@ impl HlsAccessLeaseStore {
         requirement: crate::HlsManifestCommitRequirement,
         current: Option<std::sync::Arc<crate::manifest_fetch::HlsManifestAttemptContext>>,
         revalidation_generation: Option<u64>,
+        entry_407_recovery: bool,
         now_ms: u64,
     ) -> std::sync::Arc<crate::manifest_fetch::HlsManifestAttemptContext> {
         let lease = lease_id.and_then(|id| self.by_lease_id.get_mut(id));
@@ -167,6 +168,12 @@ impl HlsAccessLeaseStore {
                 && lease.playback_mode == HlsLeasePlaybackMode::Live
                 && lease.last_manifest_snapshot.is_some()
         });
+        let retry_entry_407_for_active_playback = active_live
+            && entry_407_recovery
+            && requirement
+                == crate::HlsManifestCommitRequirement::FreshCommitRequired {
+                    reason: crate::HlsFreshManifestRequiredReason::PreviousHardManifestFailure,
+                };
         if let Some(attempt) = lease
             .as_ref()
             .filter(|_| !active_live)
@@ -178,18 +185,22 @@ impl HlsAccessLeaseStore {
         let attempt = current
             .filter(|attempt| {
                 !attempt.is_closed()
+                    && attempt.retry_entry_407_for_active_playback == retry_entry_407_for_active_playback
                     && (requirement == crate::HlsManifestCommitRequirement::CommittedManifestAllowed
                         || attempt.requirement != crate::HlsManifestCommitRequirement::CommittedManifestAllowed)
-                    && (attempt.requirement != crate::HlsManifestCommitRequirement::CommittedManifestAllowed
-                        || attempt.active_live_playback == active_live)
+                    && (attempt.active_live_playback == active_live
+                        || (!entry_407_recovery
+                            && attempt.requirement != crate::HlsManifestCommitRequirement::CommittedManifestAllowed))
                     && attempt.revalidation_generation == revalidation_generation
             })
             .unwrap_or_else(|| {
-                std::sync::Arc::new(crate::manifest_fetch::HlsManifestAttemptContext::new(
+                let mut attempt = crate::manifest_fetch::HlsManifestAttemptContext::new(
                     requirement,
                     active_live,
                     revalidation_generation,
-                ))
+                );
+                attempt.retry_entry_407_for_active_playback = retry_entry_407_for_active_playback;
+                std::sync::Arc::new(attempt)
             });
         if let Some(lease) = lease.filter(|_| !active_live) {
             lease.manifest_start_attempt = Some(std::sync::Arc::clone(&attempt));
@@ -417,10 +428,42 @@ impl HlsAccessLeaseStore {
         proxy_session_id: &ProxySessionId,
         now_ms: u64,
     ) -> Option<&HlsAccessLease> {
-        self.by_lease_id.get(lease_id).filter(|lease| {
+        self.current_response_lease(lease_id, proxy_session_id, now_ms)
+            .filter(|lease| lease_state_allows_use(lease.state) && lease.playback_mode == HlsLeasePlaybackMode::Live)
+    }
+
+    pub(crate) fn current_response_lease(
+        &self,
+        lease_id: &HlsAccessLeaseId,
+        proxy_session_id: &ProxySessionId,
+        now_ms: u64,
+    ) -> Option<&HlsAccessLease> {
+        self.by_lease_id
+            .get(lease_id)
+            .filter(|lease| lease.proxy_session_id == *proxy_session_id && lease.validity_due_at_ms() > now_ms)
+    }
+
+    pub(crate) fn is_idle_origin_reentry(
+        &self,
+        lease_id: &HlsAccessLeaseId,
+        session: &crate::HlsSession,
+        now_ms: u64,
+    ) -> bool {
+        session.idle_for_origin_reentry(now_ms)
+            && !session.live_entry_revalidation.required
+            && crate::refresh::continuity::HlsCacheOriginAnchor::capture(session).is_some()
+            && self
+                .live_playback_lease(lease_id, &session.proxy_session_id, now_ms)
+                .is_some_and(|lease| lease.last_manifest_snapshot.is_none())
+    }
+
+    /// Reads current active live-lease status under the lease-store lock.
+    pub fn has_active_live_lease(&self, proxy_session_id: &ProxySessionId, now_ms: u64) -> bool {
+        self.by_lease_id.values().any(|lease| {
             lease.proxy_session_id == *proxy_session_id
-                && lease_state_allows_use(lease.state)
+                && lease.state == HlsAccessLeaseState::Activated
                 && lease.validity_due_at_ms() > now_ms
+                && lease.active_until_ms.is_some_and(|until| until > now_ms)
                 && lease.playback_mode == HlsLeasePlaybackMode::Live
         })
     }
@@ -895,9 +938,15 @@ impl HlsAccessLeaseStore {
         if self.refresh_access_lease_validities_for_session(proxy_session_id, now_ms).is_err() {
             return false;
         }
-        self.by_lease_id
-            .values()
-            .any(|lease| lease.proxy_session_id == *proxy_session_id && lease.permits_origin_work(now_ms))
+        self.has_current_origin_work_lease(proxy_session_id, now_ms)
+    }
+
+    pub(crate) fn has_current_origin_work_lease(&self, proxy_session_id: &ProxySessionId, now_ms: u64) -> bool {
+        self.by_lease_id.values().any(|lease| {
+            lease.proxy_session_id == *proxy_session_id
+                && lease.validity_due_at_ms() > now_ms
+                && lease.permits_origin_work(now_ms)
+        })
     }
 
     pub fn session_snapshot(

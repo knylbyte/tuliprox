@@ -41,8 +41,12 @@ fn replace_with_finalized_manifest(
 }
 
 fn rewritten_finalized_manifest(segment_count: usize, identity: &str) -> TransientRewriteResult {
+    rewritten_finalized_manifest_at(segment_count, identity, 1)
+}
+
+fn rewritten_finalized_manifest_at(segment_count: usize, identity: &str, msn: usize) -> TransientRewriteResult {
     let mut body =
-        String::from("#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-MEDIA-SEQUENCE:1\n");
+        format!("#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-MEDIA-SEQUENCE:{msn}\n");
     for index in 0..segment_count {
         writeln!(body, "#EXTINF:6,\n{identity}-{index}.ts").expect("synthetic manifest renders");
     }
@@ -58,6 +62,7 @@ fn rewritten_finalized_manifest(segment_count: usize, identity: &str) -> Transie
 }
 
 mod http;
+mod occurrence;
 mod playlist;
 mod policy;
 mod publication;

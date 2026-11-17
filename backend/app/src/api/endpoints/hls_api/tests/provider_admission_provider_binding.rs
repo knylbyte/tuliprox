@@ -412,6 +412,7 @@ async fn hls_ready_cache_hit_does_not_require_origin_reacquire_when_binding_is_d
                 origin_byte_range: None,
                 map_ref: None,
                 encryption: None,
+                occurrence_identity: None,
                 retained_resource_identity: None,
                 origin_fetch_ref: Some(OriginSegmentFetchRef {
                     resolved_origin_url: "http://origin.example.com/123.ts".to_string(),

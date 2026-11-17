@@ -123,6 +123,7 @@ pub(in crate::refresh::tests) fn test_deterministic_timeline_conflict() -> HlsDe
          #EXTINF:4,\n490.ts\n#EXTINF:4,\n480.ts\n#EXTINF:4,\n491.ts\n",
     );
     deterministic_timeline_conflict_from_rejection(
+        &crate::HlsSessionKey::new(1, "12345"),
         &fetched,
         &HlsManifestRejectLogReason::PublishedResourceReplay {
             previous_proxy_tail: Some(2),
@@ -175,6 +176,7 @@ pub(in crate::refresh::tests) async fn refresh_session_with_origin_body(body: &'
         refresh_identity: None,
         acceptance_directive: HlsManifestAcceptanceDirective::none(),
         access_lease_id: None,
+        retained_poll_origin: None,
         disabled_headers: None,
         now_ms: 100,
         origin_io: None,
@@ -382,6 +384,7 @@ pub(in crate::refresh::tests) fn test_origin_refresh_request(session: Arc<RwLock
         refresh_identity: None,
         acceptance_directive: HlsManifestAcceptanceDirective::none(),
         access_lease_id: None,
+        retained_poll_origin: None,
         disabled_headers: None,
         now_ms: 100,
         origin_io: None,
@@ -404,6 +407,7 @@ pub(in crate::refresh::tests) fn bind_refresh_request_to_app_state(
 
 pub(in crate::refresh::tests) fn post_refresh_live_manifest_snapshot() -> HlsLeaseManifestSnapshot {
     HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
         source_commit_identity: HlsManifestCommitIdentity::new(1),
@@ -707,16 +711,16 @@ pub(in crate::refresh::tests) async fn spawn_critical_emergency_origin_with_cont
     }
 }
 
-pub(in crate::refresh::tests) fn switch_manifest_body(include_map: bool) -> String {
+pub(in crate::refresh::tests) fn switch_manifest_body(first_msn: u64, include_map: bool) -> String {
     let map = if include_map { "#EXT-X-MAP:URI=\"init.mp4\"\n" } else { "" };
     format!(
-        "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:500\n#EXT-X-TARGETDURATION:4\n{map}#EXTINF:4.0,\nfirst.ts\n#EXTINF:4.0,\nsecond.ts\n"
+        "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:{first_msn}\n#EXT-X-TARGETDURATION:4\n{map}#EXTINF:4.0,\nfirst.ts\n#EXTINF:4.0,\nsecond.ts\n"
     )
 }
 
 pub(in crate::refresh::tests) fn switch_fetched_manifest(base_url: &str, include_map: bool) -> FetchedOriginManifest {
     FetchedOriginManifest {
-        body: switch_manifest_body(include_map),
+        body: switch_manifest_body(502, include_map),
         final_manifest_url: format!("{base_url}/live/final/index.m3u8"),
         resolved_request_url: format!("{base_url}/live/user/pass/12345.m3u8"),
         redirect_host: None,
@@ -820,6 +824,7 @@ pub(in crate::refresh::tests) async fn install_published_recovery_binding(
                     origin_byte_range: None,
                     map_ref: None,
                     encryption: None,
+                    occurrence_identity: None,
                     retained_resource_identity: None,
                     origin_fetch_ref: None,
                     status: SegmentCacheStatus::Ready { content_length: 1, ready_at_ms: 1 },
@@ -895,6 +900,7 @@ pub(in crate::refresh::tests) async fn commit_ready_baseline_snapshot(
     let playlist_duration_ms =
         visible_segments.iter().fold(0_u64, |duration_ms, segment| duration_ms.saturating_add(segment.duration_ms));
     HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
         source_commit_identity: HlsManifestCommitIdentity::new(now_ms),
@@ -1034,6 +1040,20 @@ pub(in crate::refresh::tests) async fn mark_full_burst_ready_for_switch_staging_
         )
     };
     let mut session = session.write().await;
+    let identity = select_completed_burst_candidate(&mut session, fetched, now_ms);
+    let mut binding_probe = session.origin_control.acceptance_episode.as_ref().unwrap().clone();
+    assert_eq!(
+        binding_probe.bind_selected_candidate(binding_probe.generation, identity, candidate_workload),
+        super::super::super::manifest_acceptance::HlsRecoveryWorkloadBindingUpdate::Applied,
+        "switch-staging fixture must admit the selected candidate before network staging"
+    );
+}
+
+pub(in crate::refresh::tests) fn select_completed_burst_candidate(
+    session: &mut HlsSession,
+    fetched: &FetchedOriginManifest,
+    now_ms: u64,
+) -> crate::manifest_acceptance::HlsManifestRecoveryCandidateIdentity {
     let burst_plan = HlsManifestRecoveryBurstLevel::Friendly.plan();
     session.origin_control.begin_acceptance_episode(
         now_ms,
@@ -1054,12 +1074,7 @@ pub(in crate::refresh::tests) async fn mark_full_burst_ready_for_switch_staging_
         episode.select_candidate(episode.generation, identity),
         super::super::super::manifest_acceptance::HlsRecoveryWorkloadBindingUpdate::Applied
     );
-    let mut binding_probe = episode.clone();
-    assert_eq!(
-        binding_probe.bind_selected_candidate(episode.generation, identity, candidate_workload),
-        super::super::super::manifest_acceptance::HlsRecoveryWorkloadBindingUpdate::Applied,
-        "switch-staging fixture must admit the selected candidate before network staging"
-    );
+    identity
 }
 
 pub(in crate::refresh::tests) async fn assert_incompatible_switch_is_rejected_before_timeline_commit(

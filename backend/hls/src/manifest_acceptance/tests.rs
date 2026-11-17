@@ -30,6 +30,7 @@ fn segment(marker: u8, pdt_ms: Option<i64>) -> HlsManifestSegmentFingerprint {
         discontinuity_before: false,
         program_date_time_ms: pdt_ms,
         normalized_resource_identity: Some(HlsMediaResourceIdentity::for_test(marker)),
+        occurrence_identity: None,
     }
 }
 

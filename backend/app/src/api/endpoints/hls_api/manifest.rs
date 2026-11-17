@@ -15,7 +15,10 @@ mod access;
 mod admission;
 mod cached;
 #[cfg(test)]
-pub(super) use cached::{HlsManifestPublicationBarrier, HlsManifestPublicationStage, HLS_MANIFEST_PUBLICATION_BARRIER};
+pub(super) use cached::{
+    observe_retained_origin_prepare_lock, retained_origin_allocated_checkpoint, HlsManifestPublicationBarrier,
+    HlsManifestPublicationStage, HLS_ENTRY_WARNINGS, HLS_MANIFEST_PUBLICATION_BARRIER,
+};
 mod canonical_owner;
 #[cfg(test)]
 pub(super) use canonical_owner::{await_hls_terminal_or_refresh, current_hls_refresh_lease};
@@ -47,10 +50,10 @@ pub(super) use canonical_owner::{
     hls_availability_reevaluation_registration_failure_response, hls_canonical_manifest_path,
     hls_canonical_owner_failed, hls_canonical_owner_lease_deadline_ms, hls_canonical_owner_registration,
     hls_canonical_owner_request_deadline_ms, hls_canonical_retry_after_response, hls_canonical_status_response,
-    hls_direct_refresh_follow_up, join_hls_canonical_manifest_owner, trigger_hls_canonical_manifest_refresh,
-    HlsCanonicalOwnerEvaluation, HlsCanonicalOwnerFailureReason, HlsCanonicalOwnerHandoffContext,
-    HlsCanonicalOwnerPending, HlsCanonicalOwnerRegistration, HlsCanonicalOwnerRegistrationFailure,
-    HlsCanonicalOwnerRegistrationKind, HlsCanonicalOwnerResolution, HlsManifestRefreshOrdering,
+    join_hls_canonical_manifest_owner, trigger_hls_canonical_manifest_refresh, HlsCanonicalOwnerEvaluation,
+    HlsCanonicalOwnerFailureReason, HlsCanonicalOwnerHandoffContext, HlsCanonicalOwnerPending,
+    HlsCanonicalOwnerRegistration, HlsCanonicalOwnerRegistrationFailure, HlsCanonicalOwnerRegistrationKind,
+    HlsCanonicalOwnerResolution, HlsManifestRefreshOrdering,
 };
 pub(in crate::api) use provisioning::hls_panel_provisioning_poll_manifest_response;
 #[allow(unused_imports, reason = "Retains the existing module interface in production and test builds.")]

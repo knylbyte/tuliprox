@@ -13,6 +13,9 @@ use tuliprox_parser::hls::{
 };
 use url::Url;
 
+pub(crate) mod occurrence;
+use occurrence::TransientOccurrenceCursor;
+
 pub(super) const MIN_HLS_INITIAL_VISIBLE_SEGMENTS: usize = 3;
 const MAX_ACTIVE_TRANSIENT_KEY_FORMATS: usize = 8;
 
@@ -73,6 +76,11 @@ pub struct TransientRewriteResult {
 pub struct TransientRewriteCheckpoint {
     encryption_state: TransientEncryptionState,
     origin_account_generation: u64,
+    occurrence: TransientOccurrenceCursor,
+}
+
+impl TransientRewriteCheckpoint {
+    pub(crate) const fn has_valid_occurrences(&self) -> bool { !self.occurrence.invalid }
 }
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
@@ -176,6 +184,7 @@ fn rewrite_transient_fragment(
     let mut rewritten_body = String::with_capacity(body.len());
     let mut resources = HashMap::<TransientResourceId, TransientResourceRef>::new();
     let mut processed_line_count = 0_usize;
+    let mut pending_range_line = None;
 
     {
         let mut rewrite_context = TransientResourceRewriteContext {
@@ -186,6 +195,7 @@ fn rewrite_transient_fragment(
             ttl_ms,
             resources: &mut resources,
             origin_account_generation: checkpoint.origin_account_generation,
+            occurrence: &mut checkpoint.occurrence,
         };
         for part in body.split_inclusive('\n') {
             processed_line_count = processed_line_count.saturating_add(1);
@@ -194,6 +204,17 @@ fn rewrite_transient_fragment(
                 checkpoint.encryption_state.apply_key_tag(line);
             }
             let rewritten_line = rewrite_context.rewrite_line(line, checkpoint.encryption_state.encrypted_media());
+            let trimmed = line.trim();
+            if trimmed.starts_with("#EXT-X-BYTERANGE:") {
+                pending_range_line = Some(rewritten_body.len()..rewritten_body.len() + rewritten_line.len());
+            } else if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                if let Some(span) = pending_range_line.take() {
+                    if let Some(range) = rewrite_context.occurrence.segment_range() {
+                        rewritten_body
+                            .replace_range(span, &format!("#EXT-X-BYTERANGE:{}@{}", range.length, range.offset));
+                    }
+                }
+            }
             rewritten_body.push_str(&rewritten_line);
             rewritten_body.push_str(line_ending);
         }
@@ -349,16 +370,21 @@ struct TransientResourceRewriteContext<'a> {
     ttl_ms: u64,
     resources: &'a mut HashMap<TransientResourceId, TransientResourceRef>,
     origin_account_generation: u64,
+    occurrence: &'a mut TransientOccurrenceCursor,
 }
 
 impl TransientResourceRewriteContext<'_> {
     fn rewrite_line(&mut self, line: &str, encrypted_media: bool) -> String {
         let trimmed = line.trim();
+        self.occurrence.observe_line(trimmed);
         if trimmed.is_empty() {
             return line.to_string();
         }
 
         if trimmed.starts_with("#EXT-X-KEY:") {
+            if matches!(parse_transient_key_transition(trimmed), TransientKeyTransition::DisableIdentity) {
+                self.occurrence.disable_identity_key();
+            }
             return self.rewrite_uri_attribute(line, false, TransientResourceKind::Key);
         }
         if trimmed.starts_with("#EXT-X-MAP:") {
@@ -376,7 +402,7 @@ impl TransientResourceRewriteContext<'_> {
             return line.to_string();
         }
 
-        self.rewrite_resource_uri(trimmed, encrypted_media, TransientResourceKind::Segment).0
+        self.rewrite_resource_uri(trimmed, trimmed, encrypted_media, TransientResourceKind::Segment).0
     }
 
     fn rewrite_uri_attribute(&mut self, line: &str, encrypted_media: bool, kind: TransientResourceKind) -> String {
@@ -384,13 +410,20 @@ impl TransientResourceRewriteContext<'_> {
             return line.to_string();
         };
         let uri = &caps[1];
-        let (proxy_uri, _) = self.rewrite_resource_uri(uri, encrypted_media, kind);
-        CONSTANTS.re_hls_uri.replace(line, format!(r#"URI="{proxy_uri}""#)).to_string()
+        let (proxy_uri, _) = self.rewrite_resource_uri(uri, line.trim(), encrypted_media, kind);
+        let rewritten = CONSTANTS.re_hls_uri.replace(line, format!(r#"URI="{proxy_uri}""#)).to_string();
+        if line.trim().starts_with("#EXT-X-PART:") {
+            if let Some(range) = self.occurrence.current_part_range() {
+                return materialize_part_byte_range(rewritten, range);
+            }
+        }
+        rewritten
     }
 
     fn rewrite_resource_uri(
         &mut self,
         uri: &str,
+        line: &str,
         encrypted_media: bool,
         kind: TransientResourceKind,
     ) -> (String, TransientResourceId) {
@@ -406,6 +439,11 @@ impl TransientResourceRewriteContext<'_> {
             Some(extension.clone()),
         );
         resource.scope_to_origin_account(self.origin_account_generation, self.reverse_proxy_rewrite_secret);
+        if let Some(binding) =
+            self.occurrence.binding(self.final_manifest_url, uri, line, kind, self.origin_account_generation)
+        {
+            resource.bind_occurrence(binding, self.reverse_proxy_rewrite_secret);
+        }
         resource.encrypted_media = encrypted_media;
         let resource_id = resource.id.clone();
         self.resources
@@ -500,6 +538,36 @@ fn split_line_ending(part: &str) -> (&str, &str) {
     } else {
         (part, "")
     }
+}
+
+fn materialize_part_byte_range(
+    mut line: String,
+    range: tuliprox_parser::hls::origin_manifest::ParsedByteRange,
+) -> String {
+    let Some((tag, _)) = line.split_once(':') else {
+        return line;
+    };
+    let first_attribute = tag.len() + 1;
+    let mut start = first_attribute;
+    let mut quoted = false;
+    let mut replacement = None;
+    for (index, character) in
+        line.char_indices().skip_while(|(index, _)| *index < first_attribute).chain(std::iter::once((line.len(), ',')))
+    {
+        if character == '"' {
+            quoted = !quoted;
+        } else if character == ',' && !quoted {
+            if line[start..index].split_once('=').is_some_and(|(name, _)| name.trim() == "BYTERANGE") {
+                replacement = Some(start..index);
+                break;
+            }
+            start = index + 1;
+        }
+    }
+    if let Some(span) = replacement {
+        line.replace_range(span, &format!("BYTERANGE=\"{}@{}\"", range.length, range.offset));
+    }
+    line
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -764,7 +832,7 @@ mod tests {
         apply_transient_discontinuity_sequence, materialize_transient_provisioning_handoff_view,
         transient_discontinuity_sequence, TransientManifestRewriter, TransientRewriteOptions,
     };
-    use crate::{transient::build_transient_resource_id, ProxySessionId, TransientResourceKind};
+    use crate::{ProxySessionId, TransientResourceKind};
     use shared::model::HlsStripMode;
     use tuliprox_core::model::StripConfig;
     use tuliprox_parser::hls::origin_manifest::{parse_manifest_semantics, HlsManifestWindowPolicy};
@@ -936,13 +1004,14 @@ mod tests {
     }
 
     #[test]
-    fn same_origin_uri_uses_same_transient_resource_id() {
+    fn reused_origin_uri_has_distinct_media_occurrences() {
         let result = rewrite("#EXTM3U\n#EXTINF:4.0,\nseg.ts\n#EXTINF:4.0,\n./seg.ts\n");
-        let expected = build_transient_resource_id("http://origin.example.com/live/final/seg.ts", b"secret");
-
-        assert_eq!(result.resources.len(), 1);
-        assert_eq!(result.resources[0].id, expected);
-        assert_eq!(result.body.matches(&expected.0).count(), 2);
+        assert_eq!(result.resources.len(), 2);
+        assert_ne!(result.resources[0].id, result.resources[1].id);
+        assert_eq!(result.resources[0].resolved_origin_uri, result.resources[1].resolved_origin_uri);
+        for resource in &result.resources {
+            assert_eq!(result.body.matches(&resource.id.0).count(), 1);
+        }
     }
 
     #[test]
@@ -960,7 +1029,6 @@ mod tests {
         let key_uri = "https://cdn-final.example.net/redirected/live/keys/key.bin";
         let map_uri = "https://cdn-final.example.net/redirected/live/init/init.mp4";
         let segment_uri = "https://cdn-final.example.net/redirected/live/media/seg001.ts";
-        let expected_segment_id = build_transient_resource_id(segment_uri, b"secret");
 
         assert_eq!(result.resources.len(), 3);
         assert!(result.resources.iter().any(|resource| {
@@ -975,12 +1043,11 @@ mod tests {
             .find(|resource| resource.kind == TransientResourceKind::Segment)
             .expect("segment resource");
         assert_eq!(segment.resolved_origin_uri, segment_uri);
-        assert_eq!(segment.id, expected_segment_id);
-        assert!(result.body.contains(&format!("/r/{}.ts", expected_segment_id.0)));
+        assert!(result.body.contains(&format!("/r/{}.ts", segment.id.0)));
     }
 
     #[test]
-    fn same_relative_resource_on_different_final_hosts_uses_distinct_transient_ids() {
+    fn same_relative_occurrence_on_different_final_hosts_keeps_its_transient_id() {
         let first = TransientManifestRewriter::rewrite(
             "#EXTM3U\n#EXTINF:4.0,\nseg.ts\n",
             "https://cdn-a.example.net/live/index.m3u8",
@@ -1003,7 +1070,7 @@ mod tests {
 
         assert_eq!(first_resource.resolved_origin_uri, "https://cdn-a.example.net/live/seg.ts");
         assert_eq!(second_resource.resolved_origin_uri, "https://cdn-b.example.net/live/seg.ts");
-        assert_ne!(first_resource.id, second_resource.id);
+        assert_eq!(first_resource.id, second_resource.id);
     }
 
     #[test]

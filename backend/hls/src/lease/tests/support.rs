@@ -31,6 +31,7 @@ pub(in crate::lease::tests) const fn timing(active_window_ms: u64, valid_window_
 
 pub(in crate::lease::tests) fn manifest_snapshot(source_rendered_at_ms: u64) -> HlsLeaseManifestSnapshot {
     HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
         source_commit_identity: HlsManifestCommitIdentity::new(source_rendered_at_ms),

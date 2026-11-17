@@ -187,6 +187,43 @@ impl ManagedProviderHandle {
     #[inline]
     pub fn disarm(&mut self) -> Option<ProviderHandle> { self.handle.take() }
 
+    /// Associates a checked, previously unowned probe allocation with a playback
+    /// while keeping the exact provider slot held across the transition.
+    pub fn bind_playback_lease(&mut self, lease: PlaybackLeaseRef<'_>) -> Option<ProviderBindingTag> {
+        let handle = self.handle.as_mut()?;
+        let provider_name = handle.allocation.get_provider_name()?;
+        let manager = &self.manager;
+        let _transition = manager.lock_capacity_transition();
+        if manager.is_shutting_down.load(Ordering::Acquire) {
+            return None;
+        }
+        let can_bind = manager.read_connections().single.get(&handle.allocation_id).is_some_and(|connection| {
+            connection.session_owner.is_none()
+                && connection.lifecycle == ConnectionLifecycle::Active
+                && !connection.has_body_owner
+                && !connection.cancel_token.is_cancelled()
+        });
+        if !can_bind {
+            return None;
+        }
+
+        let tag = manager.begin_playback_lease(&provider_name, lease);
+        let owner: Arc<str> = Arc::from(lease.provider_owner());
+        let mut connections = manager.write_connections();
+        let connection = connections
+            .single
+            .get_mut(&handle.allocation_id)
+            .expect("probe allocation remains present under the capacity transition lock");
+        connection.session_owner = Some(Arc::clone(&owner));
+        connection.request_owner =
+            Some(if owner.as_ref() == lease.owner { Arc::clone(&owner) } else { Arc::from(lease.owner) });
+        connection.playback_request_id = Some(lease.request_id);
+        ActiveProviderManager::index_owner(&mut connections, handle.allocation_id, Some(&owner));
+        handle.playback_request_id = Some(lease.request_id);
+        handle.binding_tag = Some(tag);
+        Some(tag)
+    }
+
     pub fn mark_opening(&self) {
         if let Some(handle) = self.handle.as_ref() {
             self.manager.mark_opening(handle.allocation_id);
@@ -526,27 +563,7 @@ impl ActiveProviderManager {
         // connection and lease locks are never nested. The lease starts unconfirmed;
         // it only reserves capacity against other playbacks once real media activity
         // confirms it, which is what keeps abandoned manifest starts from blocking.
-        let binding_tag = if let Some(lease) = lease {
-            let mut leases = self.write_leases();
-            Self::prune_expired_leases(&mut leases);
-            let id = leases.begin_owner(lease.provider_owner(), &provider_name, lease.kind, lease.request_id);
-            if lease.owner != lease.provider_owner() {
-                leases.attach_request_token(id, lease.request_id, lease.owner);
-            }
-            let generation = leases.lease(id).map_or(1, |lease| lease.binding_generation);
-            debug_if_enabled!(
-                "Playback lease began: provider={} owner={} kind={} request_id={} lease_id={} generation={} state=starting",
-                sanitize_sensitive_info(&provider_name),
-                sanitize_sensitive_info(lease.provider_owner()),
-                lease.kind,
-                lease.request_id,
-                id,
-                generation
-            );
-            Some(ProviderBindingTag::new(id, generation))
-        } else {
-            None
-        };
+        let binding_tag = lease.map(|lease| self.begin_playback_lease(&provider_name, lease));
 
         let session_owner_arc = session_owner.map(Arc::from);
         let mut connections = self.write_connections();
@@ -611,6 +628,27 @@ impl ActiveProviderManager {
         handle.playback_request_id = lease.map(|lease| lease.request_id);
         handle.binding_tag = binding_tag;
         handle
+    }
+
+    fn begin_playback_lease(&self, provider_name: &Arc<str>, lease: PlaybackLeaseRef<'_>) -> ProviderBindingTag {
+        let mut leases = self.write_leases();
+        Self::prune_expired_leases(&mut leases);
+        let owner = lease.provider_owner();
+        let id = leases.begin_owner(owner, provider_name, lease.kind, lease.request_id);
+        if lease.owner != owner {
+            leases.attach_request_token(id, lease.request_id, lease.owner);
+        }
+        let generation = leases.lease(id).map_or(1, |lease| lease.binding_generation);
+        debug_if_enabled!(
+            "Playback lease began: provider={} owner={} kind={} request_id={} lease_id={} generation={} state=starting",
+            sanitize_sensitive_info(provider_name),
+            sanitize_sensitive_info(owner),
+            lease.kind,
+            lease.request_id,
+            id,
+            generation
+        );
+        ProviderBindingTag::new(id, generation)
     }
 
     pub(super) fn try_acquire_allocation_after_freed(

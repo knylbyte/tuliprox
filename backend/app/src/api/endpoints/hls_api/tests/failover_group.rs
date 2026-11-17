@@ -1350,6 +1350,7 @@ impl OriginFaults {
             start,
             manifest_status: Arc::clone(&self.manifest_status),
             segment_status: Arc::clone(&self.segment_status),
+            manifest_release: None,
         }
     }
 
@@ -1440,6 +1441,240 @@ async fn assert_switched_to_korath(
 }
 
 #[tokio::test]
+async fn disabled_failover_second_entry_keeps_the_active_members_media_and_admission() {
+    let faults = OriginFaults::default();
+    let env = GroupPlaybackEnv::builder(&["solis", "korath"])
+        .hls_cache()
+        .with_failover(FailoverGroupRuntimeConfig { enabled: false, ..Default::default() })
+        .origin_mode("solis", faults.mode(100))
+        .origin_mode("korath", FakeOriginMode::HlsAdvancingFrom(5000))
+        .build()
+        .await;
+    let (variant, _, manifests) = play_healthy_rounds(&env).await;
+    let old_uri = first_segment_url(manifests.last().expect("live playlist"));
+    let old_media = axum::body::to_bytes(env.get(&old_uri).await.into_body(), 1024 * 1024).await.expect("old media");
+    let group_key = HlsSessionKey::for_group(env.target.id, env.group_vid);
+    let manager = &env.app_state.hls.proxy;
+    let session = manager.sessions().get_by_key(&group_key).await.expect("group session");
+    let previous = session.read().await.origin_source.clone();
+    faults.fail_manifests(503);
+    session.write().await.origin_refresh.consecutive_failures = 1;
+
+    let response = env.get_hls_manifest_from(env.group_vid, 12346).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let second = body_text(response).await;
+    let second_variant = first_segment_url(&second);
+    assert_eq!(proxy_session_id_from_master(&second), session.read().await.proxy_session_id.0);
+    assert_ne!(variant, second_variant);
+    let lease_id = tuliprox_hls::api::HlsAccessLeaseId(
+        second_variant.split('/').rev().nth(1).expect("lease in variant URL").to_string(),
+    );
+    let proxy_id = session.read().await.proxy_session_id.clone();
+    let lease =
+        manager.access_lease_response_snapshot(&lease_id, &proxy_id, manager.now_ms()).await.expect("new entry lease");
+    assert_eq!((lease.input_id, &lease.stream_ref), (previous.input_id, &previous.stream_ref));
+    assert_eq!(session.read().await.origin_source, previous);
+    assert_eq!(env.origin_hits("korath"), 0, "an active A lease makes a B probe unnecessary");
+    let response = env.get(&old_uri).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let media = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.expect("retained media");
+    assert_eq!(media, old_media);
+}
+
+#[tokio::test]
+async fn disabled_failover_preserves_pending_or_idle_lease_across_member_switch() {
+    use tuliprox_core::model::{PlaybackKind, PlaybackRequestOutcome};
+    use tuliprox_hls::api::{
+        build_hls_origin_session_owner, HlsAccessLeaseId, HlsAccessLeaseState, HlsAccessLeaseTiming,
+        HlsOriginAccountBinding, HlsOriginSource, HlsOriginSourceKind,
+    };
+    use tuliprox_session::{ManagedProviderHandle, PlaybackLeaseRef};
+
+    for (idle, activation_race, failed_probe) in
+        [(false, false, false), (true, false, false), (false, true, false), (false, false, true)]
+    {
+        let reject_candidate = activation_race || failed_probe;
+        let (release, held) = tokio::sync::watch::channel(false);
+        let other_faults = OriginFaults::default();
+        let mut other = other_faults.mode(5000);
+        if let FakeOriginMode::HlsAdvancingWithFault { manifest_release, .. } = &mut other {
+            *manifest_release = Some((if reject_candidate { 0 } else { 2 }, held));
+        }
+        let faults = OriginFaults::default();
+        let env = GroupPlaybackEnv::builder(&["solis", "korath"])
+            .hls_cache()
+            .with_failover(FailoverGroupRuntimeConfig { enabled: false, ..Default::default() })
+            .origin_mode("solis", faults.mode(100))
+            .origin_mode("korath", other)
+            .build()
+            .await;
+        let master = env.get_hls_manifest_text(env.group_vid).await;
+        let group_key = HlsSessionKey::for_group(env.target.id, env.group_vid);
+        let lease_id = HlsAccessLeaseId(
+            first_segment_url(&master).split('/').rev().nth(1).expect("lease in variant URL").to_string(),
+        );
+        let manager = &env.app_state.hls.proxy;
+        let now_ms = manager.now_ms();
+        let input = env.app_state.app_config.get_input_by_name(&Arc::from("solis")).expect("input A");
+        let member = env.group_record.members.iter().find(|member| member.input_name == input.name).expect("member A");
+        let (session, _) = manager
+            .get_or_create_session_with_source_and_outcome(
+                group_key.clone(),
+                HlsOriginSource::new(
+                    input.id,
+                    Arc::clone(&input.name),
+                    member.input_stream_id.as_ref(),
+                    HlsOriginSourceKind::XtreamLive,
+                ),
+                &env.app_state.get_encrypt_secret(),
+                now_ms,
+            )
+            .await;
+        let proxy_id = session.read().await.proxy_session_id.clone();
+        let providers = &env.app_state.active_provider;
+        let owner = build_hls_origin_session_owner(&proxy_id);
+        let addr: SocketAddr = "127.0.0.1:12345".parse().expect("address");
+        let lease_ref = PlaybackLeaseRef::new(&owner, PlaybackKind::LiveHls);
+        let handle = providers
+            .try_acquire_exact_connection_with_lease_for_session(
+                &input.name,
+                &addr,
+                0,
+                ConnectionKind::Normal,
+                Some(lease_ref),
+            )
+            .expect("bound A allocation");
+        let tag = handle.binding_tag.expect("A provider binding tag");
+        let handle = ManagedProviderHandle::new(Arc::clone(providers), handle);
+        providers.refresh_identified_provider_reservation(&input.name, &owner, PlaybackKind::LiveHls, 60);
+        assert_eq!(providers.confirm_identified_playback_activity(&owner, lease_ref.request_id), Some(tag.lease_id));
+        drop(handle);
+        providers.finish_identified_playback_request(&owner, lease_ref.request_id, PlaybackRequestOutcome::Completed);
+        let a_work = providers
+            .reserve_hls_origin_work(&owner, &input.name, tag, tokio::time::Instant::now() + Duration::from_secs(30))
+            .expect("A retains an origin work right");
+        let mut binding = HlsOriginAccountBinding::rebound(
+            Arc::clone(&input.name),
+            Arc::clone(&input.name),
+            owner.clone(),
+            1,
+            now_ms,
+        );
+        binding.provider_binding_tag = Some(tag);
+        session.write().await.origin_account_binding = Some(binding);
+        if idle {
+            assert!(manager
+                .activate_access_lease(
+                    &lease_id,
+                    &proxy_id,
+                    now_ms,
+                    HlsAccessLeaseTiming { active_window_ms: 0, valid_window_ms: 60_000 },
+                )
+                .await
+                .is_activated());
+            manager.access_leases().write().await.session_snapshot(&proxy_id, now_ms);
+        }
+        let before = manager.access_lease_response_snapshot(&lease_id, &proxy_id, now_ms).await.expect("initial lease");
+        assert_eq!(before.state, if idle { HlsAccessLeaseState::Idle } else { HlsAccessLeaseState::Pending });
+        let incarnation = manager.sessions().session_incarnation(&session);
+        let work_generation = session.read().await.activity.origin_work_generation;
+        faults.fail_manifests(503);
+        if reject_candidate {
+            let source = session.read().await.origin_source.clone();
+            let assert_a_preserved = || async {
+                assert_eq!(providers.provider_affinity_for_owner(&owner).as_ref(), Some(&input.name));
+                assert_eq!(providers.binding_tag_for_owner(&owner), Some(tag), "A retains its lease ID and generation");
+                let usage = providers.provider_lease_usage(&input.name);
+                assert_eq!(usage.idle, 1, "A retains its idle capacity reservation");
+                assert_eq!(usage.total(), 1);
+                assert_eq!(lease_total(&env, "korath"), 0, "the probe only holds a physical B allocation");
+                assert!(a_work.is_current(), "A retains its existing origin work right");
+                let state = session.read().await;
+                let binding = state.origin_account_binding.as_ref().expect("A stays bound");
+                assert_eq!(binding.account_name, input.name);
+                assert_eq!(binding.session_owner, owner);
+                assert_eq!(binding.generation, 1);
+                assert_eq!(binding.provider_binding_tag, Some(tag));
+                assert!(binding.is_active());
+                assert_eq!(state.origin_source, source);
+                assert_eq!(state.activity.origin_work_generation, work_generation);
+            };
+            assert_a_preserved().await;
+            let fingerprint = Fingerprint::new("race".into(), addr.ip().to_string(), addr);
+            super::super::origin_account_runtime::request_hls_group_entry_member_handoff(
+                &env.app_state,
+                &session,
+                &source,
+                &member.url,
+                &fingerprint,
+            )
+            .await;
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while env.origin_hits("korath") == 0 {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("B's selection is awaiting an origin response");
+            assert_a_preserved().await;
+            assert_eq!(providers.get_provider_connections_count(), 1, "the B probe holds a slot");
+            if activation_race {
+                assert!(manager
+                    .activate_access_lease(
+                        &lease_id,
+                        &proxy_id,
+                        manager.now_ms(),
+                        HlsAccessLeaseTiming { active_window_ms: 60_000, valid_window_ms: 60_000 },
+                    )
+                    .await
+                    .is_activated());
+            }
+            if failed_probe {
+                other_faults.fail_manifests(503);
+            }
+            release.send(true).expect("release B probe");
+            let runtime = session.read().await.origin_account_runtime.clone().expect("origin runtime");
+            wait_for_member_handoff_idle(&runtime).await;
+            assert_a_preserved().await;
+            assert_eq!(providers.get_provider_connections_count(), 0, "the discarded B allocation is released");
+            continue;
+        }
+        let response = env.get_hls_manifest_from(env.group_vid, 12346).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while session.read().await.origin_source.input_name.as_ref() != "korath" {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("B binding is published while its follow-up manifest is held");
+        let after = manager
+            .access_lease_response_snapshot(&lease_id, &proxy_id, manager.now_ms())
+            .await
+            .expect("original lease");
+        assert_eq!(after.state, before.state);
+        assert_eq!(after.issued_at_ms, before.issued_at_ms);
+        assert_eq!(after.active_until_ms, before.active_until_ms);
+        assert_eq!(after.pending_deadline, before.pending_deadline);
+        assert_eq!(after.valid_until_ms, before.valid_until_ms);
+        assert_eq!(after.playback_cursor, before.playback_cursor);
+        assert_eq!(after.last_manifest_snapshot, before.last_manifest_snapshot);
+        {
+            let state = session.read().await;
+            let binding = state.origin_account_binding.as_ref().expect("B account binding");
+            assert_eq!(binding.account_name.as_ref(), "korath");
+            assert_eq!(binding.provider_binding_tag, providers.binding_tag_for_owner(&owner));
+            assert_ne!(binding.provider_binding_tag, Some(tag));
+            assert_eq!(lease_total(&env, "solis"), 0);
+            assert!(!a_work.is_current());
+        }
+        release.send(true).expect("release B's post-handoff manifest");
+        assert_eq!(manager.sessions().session_incarnation(&session), incarnation);
+        assert!(session.read().await.activity.origin_work_generation > work_generation);
+    }
+}
+
+#[tokio::test]
 async fn failing_manifests_switch_the_running_session_to_the_next_member() {
     let faults = OriginFaults::default();
     let env = GroupPlaybackEnv::builder(&["solis", "korath"])
@@ -1459,6 +1694,7 @@ async fn failing_manifests_switch_the_running_session_to_the_next_member() {
 
 #[tokio::test]
 async fn failing_segments_switch_the_running_session_to_the_next_member() {
+    super::origin_restart::trace_fixture();
     let faults = OriginFaults::default();
     let env = GroupPlaybackEnv::builder(&["solis", "korath"])
         .hls_cache()

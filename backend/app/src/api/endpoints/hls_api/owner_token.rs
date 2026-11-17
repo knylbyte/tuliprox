@@ -132,19 +132,7 @@ pub(in crate::api) async fn wrap_media_playlist(wrap: HlsMediaPlaylistWrap<'_>, 
     );
     let variant_uri = build_hls_resource_uri(base_url, user, target_id, input.id, virtual_id, &token);
 
-    let database_bitrate_bps = match stream_ref {
-        Some(stream_ref) if HlsMasterBandwidth::new(known_bitrate_bps).is_unknown() => {
-            match load_input_live_bitrate_bps(&app_state.app_config, input, stream_ref).await {
-                Ok(bitrate_bps) => bitrate_bps,
-                Err(err) => {
-                    warn!("HLS entry live bitrate lookup failed; using fallback: input_id={} error={err}", input.id);
-                    None
-                }
-            }
-        }
-        _ => None,
-    };
-    let selection = HlsMasterBandwidthSelection::resolve(known_bitrate_bps, database_bitrate_bps);
+    let selection = resolve_hls_master_bandwidth(&app_state.app_config, input, stream_ref, known_bitrate_bps).await;
     HlsSingleVariantMasterPlaylist::new(selection.bandwidth(), variant_uri).render()
 }
 

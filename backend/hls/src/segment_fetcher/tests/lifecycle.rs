@@ -83,7 +83,7 @@ async fn terminal_segment_commit_releases_its_reservation_but_preserves_protecte
                 &mut state,
                 &snapshot,
                 &policy,
-                Err(HlsOriginResourceFetchError::RetryableStatus(axum::http::StatusCode::SERVICE_UNAVAILABLE)),
+                Err(HlsOriginResourceFetchError::RetryableStatus(axum::http::StatusCode::SERVICE_UNAVAILABLE).into()),
                 20,
             )
         };

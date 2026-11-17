@@ -238,7 +238,10 @@ Use these debug messages to distinguish the causes:
 
 Both periodic GC and targeted admission release obsolete references and retire unpinned revisions. A protected FIFO
 head still stops segment eviction. An inactive `CapacityDeferred` head can be retired once its origin binding and
-all protections are gone. Open readers and retained lease publications keep their revision bytes pinned.
+all protections are gone. Open readers and retained lease publications keep their revision bytes pinned. Removing a
+cacheable segment from a delivered playlist starts its [publication retention](./shared-hls-runtime-flow.md#retention-of-published-media);
+reducing `cache_duration` cannot shorten that minimum. The existing capacity error can be expected when the budget
+contains only protected objects.
 
 A capacity waiter resumes when reservation, accounting, or playback protection changes, then checks the complete
 peak of a fresh attempt before downloading again. Releasing too little capacity does not start another origin fetch.
@@ -248,6 +251,17 @@ repeated requests and ranges, even when the mutable normal cache object is repla
 The in-memory `revision_disk_bytes` gauge is updated by successful file mutations and inventory reconciliation.
 Revision deletion counters distinguish attempts, successes, failures, and bytes actually reclaimed. Inspect sustained
 I/O failures or retained readers before changing limits. Do not copy credential-bearing origin URLs into diagnostics.
+
+## Symptom: playback does not follow a changed origin window
+
+Check the logical source, the MSN overlap, and each resolved media path, query, and byte range. Redirects can change
+the manifest host, path, or query while keeping the same segment routes and READY bytes. If a relative segment, MAP,
+or KEY reference resolves to a different resource under the new base URL, compare that resource's binding.
+`origin-cache-anchor-missing` means the new window lost the current anchor. `origin-sequence-resource-conflict`
+means a known position has a different segment binding. Recovery requires a complete media digest and valid dependencies
+to qualify such a binding. For a zero-window rollover, check the proof for the actual manifest delivery hostname or
+IP in the current origin epoch. A successful anchor check renews that proof even when the redirect path rotates.
+See [controlled recovery and reset](./shared-hls-runtime-flow.md#controlled-recovery-and-reset).
 
 ## Symptom: cache path permission errors
 

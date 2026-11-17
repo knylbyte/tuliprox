@@ -50,10 +50,6 @@ use tuliprox_core::model::PlaybackKind;
 const HLS_AVAILABILITY_STATE_ACCESS_ATTEMPTS: usize = 3;
 const HLS_AVAILABILITY_REEVALUATION_MAX_ATTEMPTS: u8 = 64;
 const HLS_AVAILABILITY_REEVALUATION_DEADLINE_MS: u64 = 2_000;
-/// Maximum duration to defer a post-refresh terminal commit while a member handoff is pending.
-/// A member handoff is itself bounded by the failover budget; this cap only guarantees that
-/// the terminal commit happens even if a handoff hangs.
-pub(crate) const HLS_MEMBER_HANDOFF_TERMINAL_DEFER_MAX_MS: u64 = 15_000;
 const HLS_AVAILABILITY_REEVALUATION_MAX_BACKOFF_MS: u64 = 50;
 const HLS_TERMINAL_PENDING_RETRY_AFTER_MS: u64 = 50;
 const HLS_TERMINAL_ASSET_REVALIDATION_ATTEMPTS: usize = 2;
@@ -177,10 +173,21 @@ pub async fn hls_startup_admission_allows_snapshot(
     snapshot: &HlsLeaseManifestSnapshot,
     now_ms: u64,
 ) -> bool {
-    let (ready_timeline, origin_state, observed_latency, target_duration_ms) = {
-        let session = session.read().await;
+    ctx.hls_proxy
+        .startup_admission_for_snapshot(&*session.read().await, snapshot, now_ms, false)
+        .is_some_and(|admission| admission.decision == HlsStartupAdmissionDecision::Admit)
+}
+
+impl HlsProxyManager {
+    pub fn startup_admission_for_snapshot(
+        &self,
+        session: &crate::HlsSession,
+        snapshot: &HlsLeaseManifestSnapshot,
+        now_ms: u64,
+        recovery_entry: bool,
+    ) -> Option<crate::media_reserve::HlsStartupAdmissionSnapshot> {
         if session.live_entry_revalidation.required {
-            return false;
+            return None;
         }
         // A transient archive has no READY timeline. Rejecting its new manifest
         // forever after a media failure prevents the client from requesting the
@@ -188,7 +195,7 @@ pub async fn hls_startup_admission_allows_snapshot(
         // the current origin commit, strictly newer than the last media failure.
         // This does not clear degradation/failure evidence or claim media success;
         // ordinary resource authorization, retry budgets and deadlines still apply.
-        if session.origin_playback_kind() == PlaybackKind::Catchup
+        let fresh_transient_archive = session.origin_playback_kind() == PlaybackKind::Catchup
             && snapshot.delivery_mode == HlsManifestDeliveryMode::TransientPassthrough
             && !snapshot.visible_segments.is_empty()
             && session.origin_control.path_condition == HlsOriginPathCondition::SegmentReadinessFailure
@@ -196,13 +203,9 @@ pub async fn hls_startup_admission_allows_snapshot(
             && session
                 .segment_failure_tracker
                 .last_failure_at_ms
-                .is_some_and(|failed_at| snapshot.source_commit_identity.rendered_at_ms() > failed_at)
-        {
-            return true;
-        }
+                .is_some_and(|failed_at| snapshot.source_commit_identity.rendered_at_ms() > failed_at);
         // A failed object outside a recovered entry window does not invalidate
-        // that lease's fully downloaded replacement. Other origin failures keep
-        // their normal admission and reserve checks.
+        // that lease's fully downloaded replacement.
         let recovered_entry = session.origin_control.path_condition
             == crate::origin_progress::HlsOriginPathCondition::SegmentReadinessFailure
             && snapshot
@@ -211,39 +214,36 @@ pub async fn hls_startup_admission_allows_snapshot(
                 .and_then(|publication| publication.window_plan.as_ref())
                 .is_some_and(|window| {
                     window.plan.is_startup_recovery()
-                        && window.plan.is_current(&session)
-                        && window.plan.is_ready(&session)
+                        && window.plan.is_current(session)
+                        && window.plan.is_ready(session)
                 });
-        let degraded = session.origin_control.path_condition.is_degraded() && !recovered_entry;
-        (
-            session.ready_timeline_snapshot(snapshot.first_proxy_seq, now_ms),
-            if degraded { HlsStartupAdmissionOriginState::Degraded } else { HlsStartupAdmissionOriginState::Healthy },
-            session.origin_control.recovery_samples.latency_snapshot(),
-            session
-                .origin_control
-                .target_duration_snapshot_ms
-                .or_else(|| session.target_duration.map(|seconds| u64::from(seconds).saturating_mul(1_000)))
-                .unwrap_or(snapshot.target_duration_ms),
-        )
-    };
-    let workload = HlsRecoveryWorkloadEnvelope::acceptance_policy().ceiling();
-    let pressure_policy = hls_recovery_pressure_policy(
-        &ctx.hls_proxy,
-        ctx.hls_proxy.origin_manifest_timeout_ms(),
-        session.read().await.target_duration,
-    );
-    let admission = evaluate_startup_admission(HlsStartupAdmissionInput {
-        manifest: snapshot,
-        ready_timeline: &ready_timeline,
-        origin_state,
-        recovery_trigger_budget: recovery_trigger_budget(
-            pressure_policy,
-            target_duration_ms,
-            workload,
-            observed_latency,
-        ),
-    });
-    matches!(admission.decision, HlsStartupAdmissionDecision::Admit)
+        let degraded = recovery_entry
+            || (session.origin_control.path_condition.is_degraded() && !recovered_entry && !fresh_transient_archive);
+        let ready_timeline = session.ready_timeline_snapshot(snapshot.first_proxy_seq, now_ms);
+        let target_duration_ms = session
+            .origin_control
+            .target_duration_snapshot_ms
+            .or_else(|| session.target_duration.map(|seconds| u64::from(seconds).saturating_mul(1_000)))
+            .unwrap_or(snapshot.target_duration_ms);
+        let workload = HlsRecoveryWorkloadEnvelope::acceptance_policy().ceiling();
+        let pressure_policy =
+            hls_recovery_pressure_policy(self, self.origin_manifest_timeout_ms(), session.target_duration);
+        Some(evaluate_startup_admission(HlsStartupAdmissionInput {
+            manifest: snapshot,
+            ready_timeline: &ready_timeline,
+            origin_state: if degraded {
+                HlsStartupAdmissionOriginState::Degraded
+            } else {
+                HlsStartupAdmissionOriginState::Healthy
+            },
+            recovery_trigger_budget: recovery_trigger_budget(
+                pressure_policy,
+                target_duration_ms,
+                workload,
+                session.origin_control.recovery_samples.latency_snapshot(),
+            ),
+        }))
+    }
 }
 
 async fn retry_availability_state_access<T, Access, AccessFuture>(

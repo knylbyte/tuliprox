@@ -38,9 +38,8 @@ use super::{
     },
     reevaluation::{
         availability_refresh_trigger_decision, continues_member_handoff, evaluate_post_refresh_terminal_attempt,
-        register_hls_availability_reevaluation_with_mode, run_hls_availability_reevaluation_attempt,
-        HlsAvailabilityAttemptSchedule, HlsAvailabilityCycleDecision, HlsAvailabilityReevaluationCycle,
-        HlsAvailabilityRefreshTriggerDecision, HlsTerminalReevaluationDecision,
+        register_hls_availability_reevaluation_with_mode, HlsAvailabilityAttemptSchedule,
+        HlsAvailabilityReevaluationCycle, HlsAvailabilityRefreshTriggerDecision, HlsTerminalReevaluationDecision,
     },
     terminal_cutover::HlsTerminalCommitContext,
     terminal_pending_owner::{

@@ -63,6 +63,7 @@ mod acceptance;
 mod account_handoff;
 mod archive_master;
 mod content_anchor;
+mod continuity;
 mod critical_handoff;
 mod headers_redirects;
 mod member_handoff;
@@ -115,6 +116,7 @@ async fn retryable_manifest_failure_keeps_optimistic_admission_degraded_until_me
     use std::sync::Arc;
     let session = test_session();
     let context = HlsOriginManifestFetchContext {
+        retained_poll_origin: None,
         origin_account_snapshot: None,
         attempt: None,
         app_config: test_app_config(),

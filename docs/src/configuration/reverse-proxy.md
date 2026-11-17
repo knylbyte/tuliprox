@@ -315,9 +315,11 @@ reverse_proxy:
     max_concurrent_segment_fetches_per_session: 2
     max_concurrent_segment_fetches_global: 64
     origin_manifest_timeout_ms: 3000
-    min_origin_target_duration_secs: 0
+    min_origin_target_duration_secs: 4
     origin_segment_timeout_ms: auto
     session_idle_timeout: 300
+    manifest_recovery_burst:
+      level: "balanced"
     segment_repair:
       max_level: "off"
       apply_to_first_segments: 1

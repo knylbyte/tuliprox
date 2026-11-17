@@ -36,6 +36,7 @@ pub(super) fn post_refresh_owner_request(fixture: &PostRefreshTerminalFixture) -
         refresh_identity: None,
         acceptance_directive: HlsManifestAcceptanceDirective::none(),
         access_lease_id: None,
+        retained_poll_origin: None,
         now_ms: fixture.now_ms,
         origin_io: None,
         post_refresh_runtime: Some(super::super::super::refresh::HlsPostRefreshRuntime {

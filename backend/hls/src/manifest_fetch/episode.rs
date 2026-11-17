@@ -21,14 +21,13 @@ use crate::{
         HlsCommittedContentAnchorEvidence, HlsCrossHostAcceptanceEvidence, HlsEmergencyLiveHandoffCompatibility,
         HlsHostLocalSequenceRelation, HlsManifestAcceptanceExhaustionReason, HlsManifestAcceptanceGeneration,
         HlsManifestAcceptanceLandscape, HlsManifestAcceptanceState, HlsManifestAcceptanceTrigger,
-        HlsManifestCandidateObservation, HlsManifestTimelineFingerprint, HlsResourceTimelineEvidence,
-        HlsSwitchSegmentReadiness,
+        HlsManifestCandidateObservation, HlsResourceTimelineEvidence, HlsSwitchSegmentReadiness,
     },
     recovery_timing::{
         HlsAcceptanceEpisodeTiming, HlsAcceptanceEpisodeTimingInput, HlsAcceptanceEpisodeTimingSeed,
         HlsRecoveryWorkloadEnvelope, HlsTerminalMediaPreparationState, HlsTransitionMarginMs,
     },
-    resource_identity::HlsMediaResourceIdentity,
+    resource_identity::{HlsMediaResourceIdentity, HlsSegmentOccurrenceIdentity, HlsVerifiedOccurrenceBinding},
 };
 use log::debug;
 use shared::model::HlsManifestRecoveryBurstPlan;
@@ -47,6 +46,12 @@ pub(super) async fn begin_manifest_acceptance_episode(
     burst_plan: HlsManifestRecoveryBurstPlan,
     expected_generation: Option<HlsManifestAcceptanceGeneration>,
 ) -> Option<HlsManifestAcceptanceGeneration> {
+    let runtime = context.availability_runtime.as_ref().and_then(crate::hls_ctx::WeakHlsCtx::upgrade);
+    let mut leases = if let Some(runtime) = runtime.as_ref().filter(|_| plan.attempt_index == 0) {
+        Some(runtime.hls_proxy.access_leases().write().await)
+    } else {
+        None
+    };
     let mut session = context.session.write().await;
     // Keep ownership validation atomic with the following episode/qualification changes.
     if expected_generation.is_some_and(|generation| !manifest_acceptance_generation_is_current(&session, generation)) {
@@ -84,6 +89,9 @@ pub(super) async fn begin_manifest_acceptance_episode(
     }
     let started_at_ms = current_time_millis();
     let timing = acceptance_episode_timing(context, &session, started_at_ms, burst_plan);
+    if let (Some(runtime), Some(leases)) = (&runtime, &mut leases) {
+        session.capture_recovery_entry_leases(leases, runtime.hls_proxy.segment_cache(), runtime.hls_proxy.now_ms());
+    }
     let generation = session.origin_control.begin_acceptance_episode(started_at_ms, burst_plan, plan.trigger, &timing);
     session.origin_control.qualification =
         crate::short_manifest::HlsOriginQualification::Checking { basis, generation, target: plan.binding.clone() };
@@ -345,9 +353,9 @@ pub(super) async fn record_manifest_acceptance_exhaustion(
 pub(super) fn manifest_candidate_observation(
     candidate: &HlsManifestRecoveryCandidate,
     burst_plan: HlsManifestRecoveryBurstPlan,
-    committed_anchor: Option<&crate::refresh::origin_probe::HlsOriginContentAnchor>,
-    published_resource_identities: &[HlsMediaResourceIdentity],
+    resources: &HlsCommittedResourceEvidence,
 ) -> HlsManifestCandidateObservation {
+    let session_key = &resources.session_key;
     let host_relation = match candidate.report.quality.host_relation {
         HlsManifestOriginRelation::SameRedirectHost => HlsCandidateHostRelation::PinnedHost,
         HlsManifestOriginRelation::OtherRedirectHost => HlsCandidateHostRelation::OtherHost,
@@ -359,9 +367,17 @@ pub(super) fn manifest_candidate_observation(
         has_switch_segment,
         emergency_evidence,
         target_duration_secs,
-    } = build_manifest_timeline_fingerprint(&candidate.fetched.body, &candidate.fetched.final_manifest_url);
-    let mut resource_timeline_evidence =
-        candidate_resource_timeline_evidence(&timeline_fingerprint, published_resource_identities);
+    } = build_manifest_timeline_fingerprint(
+        session_key,
+        &candidate.fetched.body,
+        &candidate.fetched.final_manifest_url,
+    );
+    let mut resource_timeline_evidence = manifest_occurrence_timeline_evidence(
+        session_key,
+        &candidate.fetched.body,
+        &candidate.fetched.final_manifest_url,
+        resources,
+    );
     if is_same_host_reset_candidate(&candidate.report.quality)
         && matches!(
             resource_timeline_evidence,
@@ -374,7 +390,9 @@ pub(super) fn manifest_candidate_observation(
         // a restart from old media; this is no media-progress evidence itself.
         resource_timeline_evidence = HlsResourceTimelineEvidence::Eligible;
     }
-    let committed_content_anchor = committed_anchor
+    let committed_content_anchor = resources
+        .anchor
+        .as_ref()
         .filter(|anchor| {
             let tuliprox_parser::hls::origin_manifest::OriginManifestParseOutcome::Normal(manifest) =
                 tuliprox_parser::hls::origin_manifest::parse_origin_media_manifest(
@@ -392,7 +410,7 @@ pub(super) fn manifest_candidate_observation(
                     segment.map_ref.is_none()
                         && segment.encryption.is_none()
                         && anchor.identity.same_path_and_range(HlsMediaResourceIdentity::from_url(
-                            &segment.resolved_origin_url,
+                            &segment.resource_uri,
                             segment.origin_byte_range,
                         ))
                 })
@@ -439,9 +457,12 @@ pub(super) fn manifest_candidate_observation(
 }
 
 pub(super) struct HlsCommittedResourceEvidence {
+    pub(super) session_key: crate::HlsSessionKey,
     pub(super) anchor: Option<crate::refresh::origin_probe::HlsOriginContentAnchor>,
-    pub(super) published_identities: Vec<HlsMediaResourceIdentity>,
-    pub(super) published_entries: Vec<(HlsMediaResourceIdentity, u64)>,
+    pub(super) known_identities: Vec<HlsSegmentOccurrenceIdentity>,
+    pub(super) known_entries: Vec<(HlsSegmentOccurrenceIdentity, u64)>,
+    verified_bindings: Vec<HlsVerifiedOccurrenceBinding>,
+    verifiable_identities: Vec<HlsSegmentOccurrenceIdentity>,
     pub(super) previous_proxy_tail: Option<u64>,
     pub(super) origin_progress_generation: u64,
     pub(super) published_resource_history_generation: u64,
@@ -451,29 +472,111 @@ pub(super) struct HlsCommittedResourceEvidence {
 pub(super) async fn committed_resource_evidence(
     context: &HlsOriginManifestFetchContext,
 ) -> HlsCommittedResourceEvidence {
-    let session = context.session.read().await;
-    let anchor = crate::refresh::origin_probe::HlsOriginContentEvidence::latest_ready(&session);
-    let published_entries = session.published_resource_history.recent_entries(usize::MAX).collect::<Vec<_>>();
-    let published_identities = published_entries.iter().map(|(identity, _)| *identity).collect();
-    HlsCommittedResourceEvidence {
-        anchor,
-        published_identities,
-        published_entries,
-        previous_proxy_tail: session.proxy_next_seq.and_then(|next| next.checked_sub(1)),
-        origin_progress_generation: session.origin_control.progress_generation,
-        published_resource_history_generation: session.published_resource_history.generation(),
-        pinned_host_generation: session.origin_epoch,
+    HlsCommittedResourceEvidence::capture(&*context.session.read().await)
+}
+
+impl HlsCommittedResourceEvidence {
+    pub(super) fn capture(session: &crate::HlsSession) -> Self {
+        let anchor = crate::refresh::origin_probe::HlsOriginContentEvidence::latest_ready(session);
+        let floor = session.published_resource_history.restart_proxy_floor();
+        let mut known_entries = session
+            .segments
+            .values()
+            .filter(|entry| entry.proxy_seq >= floor)
+            .filter_map(|entry| entry.occurrence_identity.map(|identity| (identity, entry.proxy_seq)))
+            .collect::<Vec<_>>();
+        for (identity, seq) in session.published_resource_history.recent_entries(usize::MAX) {
+            if !known_entries.iter().any(|(known, _)| known.same_position(identity)) {
+                known_entries.push((identity, seq));
+            }
+        }
+        let known_identities = known_entries.iter().map(|(identity, _)| *identity).collect();
+        let verifiable_identities = session
+            .segments
+            .values()
+            .filter(|entry| {
+                entry.proxy_seq >= floor
+                    && crate::refresh::origin_probe::HlsOriginContentEvidence::has_complete_reference(session, entry)
+            })
+            .filter_map(|entry| entry.occurrence_identity)
+            .collect();
+        Self {
+            session_key: session.playlist_source_key().into_owned(),
+            anchor,
+            known_identities,
+            known_entries,
+            verified_bindings: crate::refresh::origin_probe::HlsOriginContentEvidence::verified_bindings(session),
+            verifiable_identities,
+            previous_proxy_tail: session.proxy_next_seq.and_then(|next| next.checked_sub(1)),
+            origin_progress_generation: session.origin_control.progress_generation,
+            published_resource_history_generation: session.published_resource_history.generation(),
+            pinned_host_generation: session.origin_epoch,
+        }
+    }
+
+    pub(super) fn binding_matches(
+        &self,
+        proxy_seq: u64,
+        original: HlsSegmentOccurrenceIdentity,
+        candidate: HlsSegmentOccurrenceIdentity,
+    ) -> bool {
+        original == candidate
+            || self.verified_bindings.iter().any(|binding| binding.matches(proxy_seq, original, candidate))
+    }
+
+    fn timeline_evidence(
+        &self,
+        identities: impl IntoIterator<Item = HlsSegmentOccurrenceIdentity>,
+    ) -> HlsResourceTimelineEvidence {
+        let mut requires_verification = false;
+        let canonical = identities.into_iter().map(|identity| {
+            let Some(&(original, seq)) = self.known_entries.iter().find(|(known, _)| known.same_position(identity))
+            else {
+                return identity;
+            };
+            if self.binding_matches(seq, original, identity) {
+                return original;
+            }
+            if self.verifiable_identities.contains(&original) {
+                // This only permits the explicit recovery verifier to run. No
+                // equality or continuity is established until its full hash commit.
+                requires_verification = true;
+                return original;
+            }
+            identity
+        });
+        let evidence = occurrence_timeline_evidence(canonical, &self.known_identities);
+        if requires_verification && evidence == HlsResourceTimelineEvidence::ReplayOnly {
+            HlsResourceTimelineEvidence::Eligible
+        } else {
+            evidence
+        }
     }
 }
 
+#[cfg(test)]
 pub(super) fn candidate_resource_timeline_evidence(
-    fingerprint: &HlsManifestTimelineFingerprint,
-    published: &[HlsMediaResourceIdentity],
+    fingerprint: &crate::manifest_acceptance::HlsManifestTimelineFingerprint,
+    published: &[HlsSegmentOccurrenceIdentity],
+) -> HlsResourceTimelineEvidence {
+    occurrence_timeline_evidence(
+        fingerprint.segment_samples.iter().filter_map(|segment| segment.occurrence_identity),
+        published,
+    )
+}
+
+pub(super) fn occurrence_timeline_evidence(
+    identities: impl IntoIterator<Item = HlsSegmentOccurrenceIdentity>,
+    published: &[HlsSegmentOccurrenceIdentity],
 ) -> HlsResourceTimelineEvidence {
     let mut saw_published = false;
     let mut saw_new = false;
-    for identity in fingerprint.segment_samples.iter().filter_map(|segment| segment.normalized_resource_identity) {
-        let was_published = published.iter().any(|existing| existing.matches(identity));
+    for identity in identities {
+        let existing = published.iter().find(|existing| existing.same_position(identity));
+        if existing.is_some_and(|existing| *existing != identity) {
+            return HlsResourceTimelineEvidence::ContradictoryOrder;
+        }
+        let was_published = existing.is_some();
         if was_published && saw_new {
             return HlsResourceTimelineEvidence::ContradictoryOrder;
         }
@@ -484,5 +587,27 @@ pub(super) fn candidate_resource_timeline_evidence(
         HlsResourceTimelineEvidence::ReplayOnly
     } else {
         HlsResourceTimelineEvidence::Eligible
+    }
+}
+
+fn manifest_occurrence_timeline_evidence(
+    session_key: &crate::HlsSessionKey,
+    body: &str,
+    final_manifest_url: &str,
+    resources: &HlsCommittedResourceEvidence,
+) -> HlsResourceTimelineEvidence {
+    match tuliprox_parser::hls::origin_manifest::parse_origin_media_manifest(body, final_manifest_url) {
+        tuliprox_parser::hls::origin_manifest::OriginManifestParseOutcome::Normal(manifest) => {
+            let scope = crate::resource_identity::HlsMediaPlaylistScope::from_session(session_key);
+            resources.timeline_evidence(
+                manifest
+                    .segments
+                    .iter()
+                    .filter_map(|segment| scope.map(|scope| HlsSegmentOccurrenceIdentity::from_parsed(scope, segment))),
+            )
+        }
+        tuliprox_parser::hls::origin_manifest::OriginManifestParseOutcome::TransientPassthrough { .. } => {
+            HlsResourceTimelineEvidence::Eligible
+        }
     }
 }

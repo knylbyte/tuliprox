@@ -30,6 +30,14 @@ pub struct HlsCachedManifestOptions {
     policy: HlsCachedManifestPolicy,
     newer_than_rendered_at_ms: Option<u64>,
     after_origin_manifest_commits: Option<u64>,
+    pub(crate) recovery_entry: Option<HlsRecoveryEntryContext>,
+}
+
+#[derive(Clone, Copy)]
+pub struct HlsRecoveryEntryContext {
+    pub(crate) generation: crate::manifest_acceptance::HlsManifestAcceptanceGeneration,
+    pub(crate) between_attempts: bool,
+    pub(crate) permits_fallback: bool,
 }
 
 impl HlsCachedManifestOptions {
@@ -40,6 +48,7 @@ impl HlsCachedManifestOptions {
             policy: HlsCachedManifestPolicy::CommittedOnly,
             newer_than_rendered_at_ms: None,
             after_origin_manifest_commits: None,
+            recovery_entry: None,
         }
     }
 
@@ -49,6 +58,7 @@ impl HlsCachedManifestOptions {
             policy: HlsCachedManifestPolicy::AllowInitialNoMediaYet,
             newer_than_rendered_at_ms: None,
             after_origin_manifest_commits: None,
+            recovery_entry: None,
         }
     }
 
@@ -66,6 +76,11 @@ impl HlsCachedManifestOptions {
 
     pub const fn requires_newer_manifest(self) -> bool {
         self.newer_than_rendered_at_ms.is_some() || self.after_origin_manifest_commits.is_some()
+    }
+
+    pub const fn with_recovery_entry(mut self, context: Option<HlsRecoveryEntryContext>) -> Self {
+        self.recovery_entry = context;
+        self
     }
 }
 
@@ -164,6 +179,102 @@ pub async fn hls_manifest_commit_requirement(
     now_ms: u64,
 ) -> HlsManifestCommitRequirement {
     let session = session.read().await;
+    manifest_commit_requirement(
+        &session,
+        session_outcome,
+        handoff_previous_rendered_at_ms,
+        new_playback_entry,
+        false,
+        now_ms,
+    )
+}
+
+impl crate::HlsProxyManager {
+    pub async fn manifest_commit_requirement_for_lease(
+        &self,
+        session: &HlsSessionHandle,
+        session_outcome: HlsSessionStoreOutcome,
+        handoff_previous_rendered_at_ms: Option<u64>,
+        new_playback_entry: bool,
+        lease_id: &crate::HlsAccessLeaseId,
+        now_ms: u64,
+    ) -> HlsManifestCommitRequirement {
+        self.manifest_commit_requirement_with_recovery_entry_for_lease(
+            session,
+            session_outcome,
+            handoff_previous_rendered_at_ms,
+            new_playback_entry,
+            lease_id,
+            now_ms,
+        )
+        .await
+        .0
+    }
+
+    pub async fn manifest_commit_requirement_with_recovery_entry_for_lease(
+        &self,
+        session: &HlsSessionHandle,
+        session_outcome: HlsSessionStoreOutcome,
+        handoff_previous_rendered_at_ms: Option<u64>,
+        new_playback_entry: bool,
+        lease_id: &crate::HlsAccessLeaseId,
+        now_ms: u64,
+    ) -> (HlsManifestCommitRequirement, Option<HlsRecoveryEntryContext>) {
+        let leases = if new_playback_entry { Some(self.access_leases().read().await) } else { None };
+        let session = session.read().await;
+        let idle_new_lease =
+            leases.as_ref().is_some_and(|leases| leases.is_idle_origin_reentry(lease_id, &session, now_ms));
+        let requirement = manifest_commit_requirement(
+            &session,
+            session_outcome,
+            handoff_previous_rendered_at_ms,
+            new_playback_entry,
+            idle_new_lease,
+            now_ms,
+        );
+        // A delivery gap can require a fresh origin sample for regular entry.
+        // Recovery entry checks the current session episode and the reserve of the leases captured at its start.
+        let unpublished = leases
+            .as_ref()
+            .and_then(|leases| leases.live_playback_lease(lease_id, &session.proxy_session_id, now_ms))
+            .is_some_and(|lease| session.recovery_entry_boundaries_allow(lease));
+        let recovery_entry = (unpublished
+            && matches!(session_outcome, HlsSessionStoreOutcome::Reused)
+            && handoff_previous_rendered_at_ms.is_none())
+        .then(|| session.recovery_entry_context(now_ms))
+        .flatten()
+        .map(|(generation, between_attempts)| HlsRecoveryEntryContext {
+            generation,
+            between_attempts,
+            permits_fallback: matches!(
+                requirement,
+                HlsManifestCommitRequirement::CommittedManifestAllowed
+                    | HlsManifestCommitRequirement::FreshCommitRequired {
+                        reason: HlsFreshManifestRequiredReason::StaleEntryWindow,
+                    }
+            ),
+        });
+        (requirement, recovery_entry)
+    }
+}
+
+impl HlsSession {
+    pub fn latest_manifest_rendered_at_ms(&self) -> u64 {
+        self.last_rendered_manifest
+            .as_ref()
+            .map_or(0, |rendered| rendered.rendered_at_ms)
+            .max(self.transient.last_manifest_rendered_at_ms.unwrap_or(0))
+    }
+}
+
+pub(crate) fn manifest_commit_requirement(
+    session: &HlsSession,
+    session_outcome: HlsSessionStoreOutcome,
+    handoff_previous_rendered_at_ms: Option<u64>,
+    new_playback_entry: bool,
+    idle_new_lease: bool,
+    now_ms: u64,
+) -> HlsManifestCommitRequirement {
     if new_playback_entry && session.live_entry_revalidation.required {
         return HlsManifestCommitRequirement::FreshCommitRequired {
             reason: HlsFreshManifestRequiredReason::OriginReserveExhausted,
@@ -181,9 +292,14 @@ pub async fn hls_manifest_commit_requirement(
     if let Some(reason) = session.fresh_manifest_commit_required {
         return HlsManifestCommitRequirement::FreshCommitRequired { reason };
     }
-    if let Some(candidate) = hls_committed_manifest_for_request(&session, now_ms) {
+    if idle_new_lease {
+        return HlsManifestCommitRequirement::FreshCommitRequired {
+            reason: HlsFreshManifestRequiredReason::StaleEntryWindow,
+        };
+    }
+    if let Some(candidate) = hls_committed_manifest_for_request(session, now_ms) {
         // A finalized playlist no longer moves, so its window cannot fall behind the origin.
-        if new_playback_entry && !candidate.finalized && !origin_window_is_fresh(&session, now_ms) {
+        if new_playback_entry && !candidate.finalized && !origin_window_is_fresh(session, now_ms) {
             return HlsManifestCommitRequirement::FreshCommitRequired {
                 reason: HlsFreshManifestRequiredReason::StaleEntryWindow,
             };

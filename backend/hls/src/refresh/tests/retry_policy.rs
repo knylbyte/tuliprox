@@ -9,7 +9,7 @@ use super::{
     refresh_session_with_origin_body, request_error_indicates_timeout, request_header_value, spawn_test_origin,
     test_acceptance_episode_timing, test_app_config, test_deterministic_timeline_conflict, test_origin_refresh_request,
     test_recovery_timing_policy, test_segment_repair_manager, test_session, three_segment_manifest_body,
-    trigger_origin_refresh_sync, HlsLeaseCutoverTiming, HlsManifestAcceptanceTrigger,
+    trigger_origin_refresh_sync, HlsLeaseCutoverTiming, HlsManifestAcceptanceTrigger, HlsManifestCommitError,
     HlsManifestCommitProgressEvidence, HlsManifestCommitRequirement, HlsManifestFetchFailureKind,
     HlsManifestFetchFailureSignal, HlsManifestHttpResponseEvidence, HlsManifestProgress,
     HlsManifestRecoveryUnavailableReason, HlsManifestRejectLogReason, HlsManifestSequenceRelation,
@@ -564,48 +564,44 @@ fn hls_cutover_policy_cache_timeline_progress_keeps_recovery_success_bookkeeping
 }
 
 #[test]
-fn refresh_commit_trims_forward_manifest_with_published_stale_resource_prefix() {
+fn refresh_commit_rejects_historical_uri_under_conflicting_msn_atomically() {
     let mut session = HlsSession::new(HlsSessionKey::new(1, "12345"), b"secret", 0);
     let request = test_origin_refresh_request(test_session());
-    let baseline = fetched_manifest(
-        "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:471\n\
-         #EXTINF:4,\n471.ts\n#EXTINF:4,\n472.ts\n#EXTINF:4,\n473.ts\n\
-         #EXTINF:4,\n474.ts\n#EXTINF:4,\n475.ts\n#EXTINF:4,\n476.ts\n",
-    );
-    let replay_then_new = fetched_manifest(
-        "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:476\n\
-         #EXTINF:4,\n474.ts\n#EXTINF:4,\n480.ts\n#EXTINF:4,\n481.ts\n#EXTINF:4,\n482.ts\n",
-    );
-
-    commit_fetched_manifest(&mut session, &baseline, &request, 100).expect("baseline refresh commits");
-    for segment in session.segments.values_mut() {
-        segment.status = SegmentCacheStatus::Ready { content_length: 1, ready_at_ms: 101 };
+    let baseline = fetched_manifest("#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:471\n#EXTINF:4,\n471.ts\n#EXTINF:4,\n472.ts\n#EXTINF:4,\n473.ts\n#EXTINF:4,\n474.ts\n#EXTINF:4,\n475.ts\n#EXTINF:4,\n476.ts\n");
+    commit_fetched_manifest(&mut session, &baseline, &request, 100).unwrap();
+    for entry in session.segments.values_mut() {
+        entry.status = SegmentCacheStatus::Ready { content_length: 1, ready_at_ms: 101 };
     }
-    session.render_and_store_manifest(101).expect("baseline publishes");
-    commit_fetched_manifest(&mut session, &replay_then_new, &request, 200)
-        .expect("stale prefix is safely trimmed by refresh commit");
-
-    assert_eq!(session.proxy_next_seq, Some(9));
-    // No viewer holds the retained head, and the new media does not continue the
-    // published tail, so publication starts at the first genuine new segment.
-    assert_eq!(session.publishable_origin_head_proxy_seq, Some(6));
-    assert!(session.segments.get(&6).expect("first genuine media").discontinuity_before);
-    for proxy_seq in [6_u64, 7, 8] {
-        session.segments.get_mut(&proxy_seq).expect("new segment").status =
-            SegmentCacheStatus::Ready { content_length: 1, ready_at_ms: 201 };
-    }
-    let rendered = session.render_and_store_manifest(201).expect("forward refresh renders without replay");
-    assert_eq!(rendered.first_proxy_seq, 6);
-    assert!(rendered.body.contains("#EXT-X-DISCONTINUITY\n#EXTINF:4.000,"));
-    let identities = rendered
-        .segment_proxy_seqs
-        .iter()
-        .filter_map(|proxy_seq| session.segments.get(proxy_seq)?.media_resource_identity())
-        .collect::<Vec<_>>();
-    assert!(identities
-        .iter()
-        .enumerate()
-        .all(|(index, identity)| { identities[..index].iter().all(|previous| !previous.matches(*identity)) }));
+    session.render_and_store_manifest(101).unwrap();
+    let before = (
+        session.segments.clone(),
+        session.origin_to_proxy.clone(),
+        session.published_resource_history.clone(),
+        session.last_rendered_manifest.clone(),
+        session.next_media_start_ms,
+        session.origin_manifest_commits(),
+    );
+    let candidate = fetched_manifest("#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:476\n#EXTINF:4,\n474.ts\n#EXTINF:4,\n480.ts\n#EXTINF:4,\n481.ts\n#EXTINF:4,\n482.ts\n");
+    assert!(matches!(
+        commit_fetched_manifest(&mut session, &candidate, &request, 200),
+        Err(HlsManifestCommitError::TimelineRejected {
+            reason: HlsManifestRejectLogReason::OriginSequenceResourceConflict {
+                existing_proxy_seq: 5,
+                candidate_origin_seq: 476
+            }
+        })
+    ));
+    assert_eq!(
+        (
+            session.segments.clone(),
+            session.origin_to_proxy.clone(),
+            session.published_resource_history.clone(),
+            session.last_rendered_manifest.clone(),
+            session.next_media_start_ms,
+            session.origin_manifest_commits()
+        ),
+        before
+    );
 }
 
 #[tokio::test]
@@ -617,7 +613,7 @@ async fn background_replay_failure_registers_post_refresh_reevaluation_without_c
         .hls_proxy
         .get_or_create_session_with_outcome(HlsSessionKey::new(1, "post-refresh-conflict"), b"secret", now_ms)
         .await;
-    let conflicting_body = "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:490\n\
+    let conflicting_body = "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:481\n\
          #EXTINF:4,\n490.ts\n#EXTINF:4,\n480.ts\n#EXTINF:4,\n491.ts\n";
     let server = spawn_test_origin(Arc::new(move |_path| (200, Vec::new(), conflicting_body.to_string()))).await;
     let manifest_url = format!("{}/live/user/pass/12345.m3u8", server.base_url);
@@ -766,6 +762,7 @@ async fn concurrent_maybe_trigger_origin_refresh_starts_singleflight_once() {
         refresh_identity: None,
         acceptance_directive: HlsManifestAcceptanceDirective::none(),
         access_lease_id: None,
+        retained_poll_origin: None,
         disabled_headers: None,
         now_ms: 100,
         origin_io: None,
@@ -813,6 +810,7 @@ async fn committed_manifest_refresh_still_obeys_debounce() {
 
 pub(in crate::refresh::tests) fn cutover_live_manifest_snapshot() -> HlsLeaseManifestSnapshot {
     HlsLeaseManifestSnapshot {
+        cached_source: None,
         startup_revisions: None,
         delivery_mode: HlsManifestDeliveryMode::NormalCacheTimeline,
         source_commit_identity: HlsManifestCommitIdentity::new(1_000),
@@ -1118,6 +1116,7 @@ async fn shared_initial_manifest_decoder_failure_retries_until_success() {
     let origin_entry =
         LiveHlsOriginEntry::parse(&format!("{}/live/user/pass/12345.m3u8", server.base_url)).expect("entry url");
     let context = HlsOriginManifestFetchContext {
+        retained_poll_origin: None,
         origin_account_snapshot: None,
         attempt: None,
         app_config: test_app_config(),
@@ -1168,6 +1167,7 @@ async fn shared_initial_manifest_waits_for_next_attempt_base_delay() {
     let origin_entry =
         LiveHlsOriginEntry::parse(&format!("{}/live/user/pass/12345.m3u8", server.base_url)).expect("entry url");
     let context = HlsOriginManifestFetchContext {
+        retained_poll_origin: None,
         origin_account_snapshot: None,
         attempt: None,
         app_config: test_app_config(),
@@ -1210,6 +1210,7 @@ async fn shared_initial_manifest_decoder_failures_stop_at_attempt_budget() {
     let retry_policy = no_delay_policy();
     let expected_attempts = retry_policy.attempt_count();
     let context = HlsOriginManifestFetchContext {
+        retained_poll_origin: None,
         origin_account_snapshot: None,
         attempt: None,
         app_config: test_app_config(),
@@ -1264,6 +1265,7 @@ async fn shared_refresh_metrics_use_successful_manifest_attempt_count() {
     request.origin_entry =
         LiveHlsOriginEntry::parse(&format!("{}/live/user/pass/12345.m3u8", server.base_url)).expect("entry url");
     let metrics = Arc::clone(request.segment_worker_pool.metrics());
+    let expected_manifest_requests = 3 + request.manifest_recovery_burst.level.total_candidates();
 
     assert!(Box::pin(trigger_origin_refresh_sync(request)).await);
 
@@ -1280,7 +1282,7 @@ async fn shared_refresh_metrics_use_successful_manifest_attempt_count() {
         .filter(|request| request.lines().next().is_some_and(|line| line.contains(" /live/user/pass/12345.m3u8 ")))
         .cloned()
         .collect::<Vec<_>>();
-    assert_eq!(manifest_requests.len(), 4, "initial retries plus the configured single-candidate qualification");
+    assert_eq!(manifest_requests.len(), expected_manifest_requests, "initial attempts plus the configured burst");
     assert!(manifest_requests
         .iter()
         .all(|request| request_header_value(request, "accept-encoding") == Some("identity")));

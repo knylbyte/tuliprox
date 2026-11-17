@@ -36,6 +36,60 @@ fn retired_revision_bindings_cannot_be_rebound_after_the_hard_limit() -> std::io
 }
 
 #[test]
+fn retained_revision_fifo_head_defers_publication_at_the_existing_binding_limit() -> std::io::Result<()> {
+    let mut media = crate::HlsSession::new(crate::HlsSessionKey::new(1, "retained-limit"), b"secret", 0);
+    let tuliprox_parser::hls::origin_manifest::OriginManifestParseOutcome::Normal(parsed) =
+        tuliprox_parser::hls::origin_manifest::parse_origin_media_manifest(
+            "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:4,\n1.ts\n",
+            "http://origin.example/live/index.m3u8",
+        )
+    else {
+        panic!("normal media fixture");
+    };
+    media.apply_origin_manifest(&parsed).unwrap();
+    media.segments[&0].access.retention.publish(4_000, 24_000, true);
+    let store = crate::SegmentRevisionStore::default();
+    let mut lease = lease(HlsAccessLeaseId("retained-bounded".into()), &media.proxy_session_id.0, 1000);
+    for seq in 0..1024 {
+        let revision = store.create(media.proxy_session_id.clone(), seq, crate::SegmentRevisionKind::Raw)?;
+        if seq == 0 {
+            revision.revision().bind_origin(&media);
+        }
+        revision.revision().prefix_available.store(1, std::sync::atomic::Ordering::Release);
+        let mut snapshot = manifest_snapshot(seq);
+        snapshot.startup_revisions = Some(Arc::new(crate::HlsManifestRevisions {
+            window_plan: None,
+            mode: shared::model::HlsStartupMode::Progressive,
+            retained_start_seq: 0,
+            revisions: [(seq, revision)].into(),
+        }));
+        assert!(super::super::commit_lease_revision_bindings(&mut lease, &snapshot));
+    }
+    let before = lease.revision_bindings.clone().unwrap();
+    let incoming = store.create(media.proxy_session_id.clone(), 1024, crate::SegmentRevisionKind::Raw)?;
+    incoming.revision().prefix_available.store(1, std::sync::atomic::Ordering::Release);
+    let mut next = manifest_snapshot(1024);
+    next.delivered_at_ms = 27_999;
+    next.startup_revisions = Some(Arc::new(crate::HlsManifestRevisions {
+        window_plan: None,
+        mode: shared::model::HlsStartupMode::Progressive,
+        retained_start_seq: 0,
+        revisions: [(1024, incoming)].into(),
+    }));
+    media.segments[&0].access.retention.remove(0);
+    assert!(!super::super::commit_lease_revision_bindings(&mut lease, &next));
+    assert_eq!(lease.revision_bindings.as_ref().unwrap(), &before, "failed admission preserves every prior binding");
+    next.delivered_at_ms = 28_000;
+    assert!(super::super::commit_lease_revision_bindings(&mut lease, &next));
+    let after = lease.revision_bindings.as_ref().unwrap();
+    assert_eq!(after.revisions.len(), 1024);
+    assert_eq!(after.retired_through, Some(0));
+    assert!(!after.revisions.contains_key(&0));
+    assert!(after.revisions.contains_key(&1));
+    Ok(())
+}
+
+#[test]
 fn repeated_lease_retirement_releases_publication_revision_guards() -> std::io::Result<()> {
     let session = ProxySessionId("lease-churn".into());
     let revisions = crate::SegmentRevisionStore::default();

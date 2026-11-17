@@ -113,10 +113,20 @@ pub(super) fn refresh_failure_backoff_schedule() -> [u64; 3] {
     *SCHEDULE
 }
 
+#[cfg(test)]
 pub(super) fn apply_manifest_fetch_failure_signal(
     session: &mut crate::HlsSession,
     err: &OriginManifestFetchError,
     failed_at_ms: u64,
+) -> HlsPostRefreshAvailabilityAction {
+    apply_manifest_fetch_failure(session, err, failed_at_ms, false)
+}
+
+pub(super) fn apply_manifest_fetch_failure(
+    session: &mut crate::HlsSession,
+    err: &OriginManifestFetchError,
+    failed_at_ms: u64,
+    entry_attempt: bool,
 ) -> HlsPostRefreshAvailabilityAction {
     let signal = classify_manifest_fetch_failure(err);
     if signal.is_discarded() {
@@ -142,6 +152,12 @@ pub(super) fn apply_manifest_fetch_failure_signal(
     let path_condition = if deterministic_conflict {
         crate::origin_progress::HlsOriginPathCondition::AcceptanceConflict
     } else if signal.is_hard() {
+        session.origin_control.entry_407_recovery_from = match signal.kind {
+            HlsManifestFetchFailureKind::HttpStatus {
+                status: axum::http::StatusCode::PROXY_AUTHENTICATION_REQUIRED,
+            } if entry_attempt => session.origin_control.entry_407_recovery_from.or(session.proxy_next_seq),
+            _ => None,
+        };
         session.require_fresh_manifest_commit(HlsFreshManifestRequiredReason::PreviousHardManifestFailure);
         crate::origin_progress::HlsOriginPathCondition::HardFetchFailure
     } else if preserves_acceptance_conflict {

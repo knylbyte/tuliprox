@@ -53,6 +53,7 @@ pub(super) fn hls_origin_refresh_request(
         refresh_identity: None,
         acceptance_directive: options.acceptance_directive,
         access_lease_id: options.access_lease_id,
+        retained_poll_origin: None,
         now_ms: options.now_ms,
         origin_io: Some(origin_io),
         post_refresh_runtime: Some(HlsPostRefreshRuntime { ctx: app_state.hls_ctx().downgrade() }),

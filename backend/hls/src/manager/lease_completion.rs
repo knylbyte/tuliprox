@@ -151,7 +151,7 @@ impl super::HlsLeaseRuntime {
                 .get(lease_id)
                 .is_some_and(|demand| demand.issued_at_ms == preparation.issued_at_ms)
             {
-                session.live_window_demands.remove(lease_id);
+                session.release_publication_retention(lease_id, tuliprox_core::utils::current_time_millis());
             }
             let finalized_manifest_released =
                 session.transient.release_finalized_manifest_generations(lease_id, preparation.issued_at_ms);

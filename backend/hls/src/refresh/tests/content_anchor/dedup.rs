@@ -52,13 +52,13 @@ impl ProbeOrigin {
             .build()
             .unwrap()
     }
-    fn fetched(&self, host: &str, index: usize, head: u64) -> FetchedOriginManifest {
+    fn fetched(&self, host: &str, _index: usize, head: u64) -> FetchedOriginManifest {
         let mut body = format!("#EXTM3U\n#EXT-X-TARGETDURATION:8\n#EXT-X-MEDIA-SEQUENCE:{head}\n");
         for seq in head..head + 6 {
             writeln!(body, "#EXTINF:8,\nhttp://{host}:{}/media/{seq}.ts?fixture=1", self.state.port).unwrap();
         }
         let mut fetched = fetched_manifest(&body);
-        fetched.final_manifest_url = format!("http://{host}:{}/manifest/{index}.m3u8", self.state.port);
+        fetched.final_manifest_url = format!("http://{host}:{}/index.m3u8", self.state.port);
         fetched.resolved_request_url = fetched.final_manifest_url.clone();
         fetched.redirect_host = Some(host.to_string());
         fetched
@@ -74,10 +74,7 @@ async fn probe_origin(State(state): State<Arc<ProbeState>>, headers: HttpHeaders
     if uri.path() == "/entry.m3u8" {
         let index = state.manifests.fetch_add(1, Ordering::AcqRel);
         let host = if state.two_hosts && index >= 7 { "c.probe.test" } else { "b.probe.test" };
-        return (
-            HttpStatus::FOUND,
-            [(header::LOCATION, format!("http://{host}:{}/manifest/{index}.m3u8", state.port))],
-        )
+        return (HttpStatus::FOUND, [(header::LOCATION, format!("http://{host}:{}/index.m3u8", state.port))])
             .into_response();
     }
     if std::path::Path::new(uri.path()).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("m3u8")) {
@@ -244,7 +241,7 @@ async fn prepared() -> (Origin, ProbeOrigin, OriginRefreshRequest) {
 }
 
 async fn verify(request: &OriginRefreshRequest, fetched: &FetchedOriginManifest) -> Result<(), HlsManifestCommitError> {
-    mark_full_burst_ready_for_switch_staging(&request.session, fetched).await;
+    super::super::support::select_completed_burst_candidate(&mut *request.session.write().await, fetched, 100);
     let _round = HlsAnchorProbeRoundGuard::install(&request.session, 12).await;
     verify_content_anchor(request, fetched).await.map(|_| ())
 }

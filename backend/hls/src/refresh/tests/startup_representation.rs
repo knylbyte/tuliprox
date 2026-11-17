@@ -24,6 +24,6 @@ async fn initial_local_representation_limit_does_not_enter_origin_recovery() {
     assert!(matches!(
         result,
         Err(OriginManifestFetchError::LocalRepresentationLimit(violation))
-            if violation.kind == crate::manifest_limits::HlsManifestLimitKind::LeaseSnapshotSegments
+            if violation.kind == crate::manifest_limits::HlsManifestLimitKind::TransientResources
     ));
 }

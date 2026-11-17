@@ -88,7 +88,7 @@ async fn origin_byterange_segment_fetch_uses_http_range_and_stores_logical_segme
         let mut session = session.write().await;
         session
             .apply_origin_manifest(&normal_manifest(&format!(
-                "#EXTM3U\n#EXT-X-BYTERANGE:5@10\n#EXTINF:4.0,\n{}/big.m4s\n",
+                "#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-BYTERANGE:5@10\n#EXTINF:4.0,\n{}/big.m4s\n",
                 server.base_url
             )))
             .expect("manifest maps");

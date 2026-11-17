@@ -26,6 +26,7 @@ pub struct HlsManifestSegmentFingerprint {
     pub discontinuity_before: bool,
     pub program_date_time_ms: Option<i64>,
     pub normalized_resource_identity: Option<HlsMediaResourceIdentity>,
+    pub occurrence_identity: Option<crate::resource_identity::HlsSegmentOccurrenceIdentity>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

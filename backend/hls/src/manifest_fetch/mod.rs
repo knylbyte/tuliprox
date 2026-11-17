@@ -51,6 +51,7 @@ pub(crate) use self::{
 };
 #[cfg(test)]
 use crate::timeline::TimelineMapError;
+pub(crate) use quality::quality_with_cache_continuity;
 
 #[cfg(any(test, feature = "test-support"))]
 pub async fn refresh_from_live_hls_entrypoint_with_retries(

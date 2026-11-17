@@ -22,7 +22,9 @@ pub struct HlsLiveWindowPlan {
     origin_sequences: Vec<u64>,
     strip: StripConfig,
     view: HlsLiveWindowView,
+    pub(crate) previous_window: Option<HlsPublishedWindow>,
     recovered_startup: bool,
+    pub(crate) recovery_entry: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,11 +33,21 @@ pub struct HlsLiveWindowPublication {
     pub body: std::sync::Arc<str>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HlsPublishedWindow {
+    pub(crate) first: u64,
+    pub(crate) last: u64,
+    pub(crate) tagged_head: bool,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct HlsLiveWindowDemand {
     pub(crate) issued_at_ms: u64,
     pub(crate) view: HlsLiveWindowView,
     pub(crate) published: Vec<u64>,
+    pub(crate) retention_recorded: bool,
+    pub(crate) retention_normal: bool,
+    pub(crate) retention_resources: crate::HlsPublishedTransientResourceIds,
 }
 
 impl HlsLiveWindowView {
@@ -51,10 +63,17 @@ impl HlsLiveWindowView {
 
 impl HlsLiveWindowPlan {
     pub fn is_current(&self, session: &HlsSession) -> bool {
-        session.plan_live_window(self.view).as_ref() == Some(self)
+        session.plan_live_window_with_previous(self.view, self.previous_window).as_ref() == Some(self)
     }
 
     pub fn is_startup_recovery(&self) -> bool { self.recovered_startup }
+
+    pub(crate) fn matches_view(&self, other: &Self) -> bool {
+        self.view == other.view
+            && self.visible == other.visible
+            && self.hidden_tail == other.hidden_tail
+            && self.previous_window.is_none_or(|previous| other.previous_window == Some(previous))
+    }
 
     pub(crate) fn is_ready(&self, session: &HlsSession) -> bool {
         self.visible.iter().all(|seq| {
@@ -104,6 +123,14 @@ impl HlsSession {
     /// Recovery may consume the stripped reserve, but never crosses a failed
     /// object or changes an active lease's published window.
     pub fn plan_live_window(&self, view: HlsLiveWindowView) -> Option<HlsLiveWindowPlan> {
+        self.plan_live_window_with_previous(view, None)
+    }
+
+    fn plan_live_window_with_previous(
+        &self,
+        view: HlsLiveWindowView,
+        previous_window: Option<HlsPublishedWindow>,
+    ) -> Option<HlsLiveWindowPlan> {
         if !self.uses_fast_start_live_window()
             || self.live_origin_sequences().is_empty()
             || self
@@ -162,7 +189,35 @@ impl HlsSession {
             origin_sequences: origin.to_vec(),
             strip: self.live_window_strip.clone(),
             view,
+            previous_window,
             recovered_startup,
+            recovery_entry: false,
+        })
+    }
+
+    pub(crate) fn plan_recovery_entry(
+        &self,
+        source: &crate::renderer::RenderedManifest,
+        strip: &StripConfig,
+    ) -> Option<HlsLiveWindowPlan> {
+        let sequences = &source.segment_proxy_seqs;
+        let durations = sequences.iter().map(|seq| self.segments[seq].duration_ms).collect::<Vec<_>>();
+        let stripped = crate::initial_strip::initial_hls_strip_segments_for_durations(strip, &durations);
+        let end = sequences.len() - stripped;
+        let visible = sequences[end.saturating_sub(crate::renderer::MIN_VISIBLE_SEGMENTS)..end].to_vec();
+        Some(HlsLiveWindowPlan {
+            visible,
+            hidden_tail: sequences[end..].to_vec(),
+            effective_strip_segments: stripped,
+            origin_commits: self.origin_manifest_commits(),
+            origin_work_generation: self.activity.origin_work_generation,
+            source_commit_identity: Some(self.last_normal_manifest_commit_identity()?),
+            origin_sequences: sequences.clone(),
+            strip: strip.clone(),
+            view: HlsLiveWindowView::Entry,
+            previous_window: None,
+            recovered_startup: false,
+            recovery_entry: true,
         })
     }
 
@@ -185,19 +240,45 @@ impl HlsSession {
 
     pub fn plan_live_window_for_lease(&mut self, lease: &HlsAccessLease) -> Option<HlsLiveWindowPlan> {
         let view = HlsLiveWindowView::for_lease(lease);
-        let plan = self.plan_live_window(view)?;
-        self.live_window_demands.insert(
-            lease.lease_id.clone(),
-            HlsLiveWindowDemand {
+        let plan = self.plan_live_window_for_lease_snapshot(lease)?;
+        self.prepare_live_window_discontinuity(&plan);
+        if self.live_window_demands.get(&lease.lease_id).is_some_and(|demand| demand.issued_at_ms != lease.issued_at_ms)
+        {
+            self.release_publication_retention(&lease.lease_id, tuliprox_core::utils::current_time_millis());
+        }
+        self.live_window_demands
+            .entry(lease.lease_id.clone())
+            .or_insert_with(|| HlsLiveWindowDemand {
                 issued_at_ms: lease.issued_at_ms,
                 view,
                 published: lease
                     .last_manifest_snapshot
                     .as_ref()
                     .map_or_else(Vec::new, |snapshot| snapshot.visible_proxy_seqs().collect()),
-            },
-        );
+                retention_recorded: false,
+                retention_normal: false,
+                retention_resources: crate::HlsPublishedTransientResourceIds::default(),
+            })
+            .view = view;
         Some(plan)
+    }
+
+    pub(crate) fn session_live_window_plan(&self) -> Option<HlsLiveWindowPlan> {
+        let view = self.last_rendered_manifest.as_ref().map_or(HlsLiveWindowView::Entry, |previous| {
+            HlsLiveWindowView::Active { first_published: previous.first_proxy_seq }
+        });
+        let previous = self.last_rendered_manifest.as_ref().map(crate::renderer::RenderedManifest::published_window);
+        self.plan_live_window_with_previous(view, previous)
+    }
+
+    pub(crate) fn plan_live_window_for_lease_snapshot(&self, lease: &HlsAccessLease) -> Option<HlsLiveWindowPlan> {
+        let view = HlsLiveWindowView::for_lease(lease);
+        let previous = lease.last_manifest_snapshot.as_ref().map(|window| HlsPublishedWindow {
+            first: window.first_proxy_seq,
+            last: window.last_proxy_seq,
+            tagged_head: window.visible_segments.first().is_some_and(|segment| segment.discontinuity_before),
+        });
+        self.plan_live_window_with_previous(view, previous)
     }
 
     pub(crate) fn required_live_windows(&self) -> Vec<HlsLiveWindowPlan> {
@@ -211,38 +292,77 @@ impl HlsSession {
         self.required_live_windows().iter().filter_map(|plan| plan.visible.first().copied()).collect()
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn record_live_window_publication(
         &mut self,
         lease_id: &crate::HlsAccessLeaseId,
         issued_at_ms: u64,
         snapshot: &crate::media_reserve::HlsLeaseManifestSnapshot,
     ) {
+        self.record_live_window_publication_with_resources(
+            lease_id,
+            issued_at_ms,
+            snapshot,
+            crate::HlsPublishedTransientResourceIds::default(),
+        );
+    }
+
+    pub(crate) fn record_live_window_publication_with_resources(
+        &mut self,
+        lease_id: &crate::HlsAccessLeaseId,
+        issued_at_ms: u64,
+        snapshot: &crate::media_reserve::HlsLeaseManifestSnapshot,
+        resources: crate::HlsPublishedTransientResourceIds,
+    ) {
+        if self.live_window_demands.get(lease_id).is_some_and(|demand| demand.issued_at_ms != issued_at_ms) {
+            self.release_publication_retention(lease_id, snapshot.delivered_at_ms);
+        }
+        let normal = snapshot.delivery_mode == crate::media_reserve::HlsManifestDeliveryMode::NormalCacheTimeline;
+        let visible = snapshot.visible_proxy_seqs().collect::<Vec<_>>();
+        let previous = self.live_window_demands.get(lease_id).filter(|demand| demand.retention_recorded);
+        let previous_segments =
+            previous.filter(|demand| demand.retention_normal).map_or(&[][..], |demand| demand.published.as_slice());
+        let empty_resources = crate::HlsPublishedTransientResourceIds::default();
+        self.update_publication_retention(
+            previous_segments,
+            if normal { &visible } else { &[] },
+            previous.map_or(&empty_resources, |demand| &demand.retention_resources),
+            &resources,
+            snapshot,
+        );
         if snapshot
             .startup_revisions
             .as_ref()
             .and_then(|publication| publication.window_plan.as_ref())
             .is_some_and(|window| window.plan.is_startup_recovery())
             && snapshot.visible_segments.len() < crate::renderer::MIN_VISIBLE_SEGMENTS
+            && self.last_warned_short_startup_window.as_ref() != Some(&visible)
         {
-            let visible = snapshot.visible_proxy_seqs().collect::<Vec<_>>();
-            if self.last_warned_short_startup_window.as_ref() != Some(&visible) {
-                crate::short_manifest::log_short_window_warning(self, visible.len(), "startup window recovered");
-                self.last_warned_short_startup_window = Some(visible);
-            }
+            crate::short_manifest::log_short_window_warning(self, visible.len(), "startup window recovered");
+            self.last_warned_short_startup_window = Some(visible.clone());
+        }
+        if normal {
+            self.publish_live_recovery_discontinuities(&visible);
         }
         let demand = self.live_window_demands.entry(lease_id.clone()).or_insert_with(|| HlsLiveWindowDemand {
             issued_at_ms,
             view: HlsLiveWindowView::Entry,
             published: Vec::new(),
+            retention_recorded: false,
+            retention_normal: false,
+            retention_resources: crate::HlsPublishedTransientResourceIds::default(),
         });
         demand.issued_at_ms = issued_at_ms;
-        demand.published = snapshot.visible_proxy_seqs().collect();
+        demand.published = visible;
+        demand.retention_recorded = true;
+        demand.retention_normal = normal;
+        demand.retention_resources = resources;
         self.longest_rendered_playlist_duration_ms =
             self.longest_rendered_playlist_duration_ms.max(snapshot.playlist_duration_ms);
         for seq in snapshot.visible_proxy_seqs() {
             if let Some(entry) = self.segments.get_mut(&seq) {
                 entry.last_rendered_at_ms = Some(snapshot.delivered_at_ms);
-                if let Some(identity) = entry.media_resource_identity() {
+                if let Some(identity) = entry.occurrence_identity {
                     self.published_resource_history.record(identity, seq);
                 }
                 if self.published_live_origin_baseline.is_none() {

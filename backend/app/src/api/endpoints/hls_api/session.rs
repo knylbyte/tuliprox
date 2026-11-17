@@ -704,6 +704,7 @@ pub(super) async fn hls_session_origin_playback_kind(session: &HlsSessionHandle)
 /// Acquires a provider account (preferring `preferred_account`) and resolves its origin fetch URL; the slot is
 /// released when no URL or binding results.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines, reason = "Own the allocation from admission through URL resolution.")]
 pub(super) async fn prepare_hls_origin_runtime_with_new_account(
     app_state: &Arc<AppState>,
     input: &ConfigInput,
@@ -719,35 +720,50 @@ pub(super) async fn prepare_hls_origin_runtime_with_new_account(
     playback_kind: PlaybackKind,
     preferred_account: Option<&Arc<str>>,
     now_ms: u64,
+    retained: Option<super::origin_account_runtime::RetainedOriginPreparation<'_>>,
 ) -> Result<HlsOriginRuntimeAllocation, HlsOriginRuntimeAcquireError> {
+    use super::origin_account_runtime::discard_unpublished_origin_allocation;
+
     let session_owner = build_hls_origin_session_owner(proxy_session_id);
     let lease = PlaybackLeaseRef::new(&session_owner, playback_kind);
-    let provider_handle = preferred_account
-        .and_then(|account| {
-            let handle = app_state.active_provider.try_acquire_exact_connection_with_lease_for_session(
-                account,
-                &fingerprint.addr,
-                priority,
-                connection_kind,
-                Some(lease),
-            );
-            debug!(
-                "HLS origin account preference tried: account={} result={}",
-                sanitize_sensitive_info(account.as_ref()),
-                if handle.is_some() { "reused" } else { "unavailable" }
-            );
-            handle
-        })
-        .or_else(|| {
-            app_state.active_provider.acquire_connection_with_lease_for_session(
-                &input.name,
-                &fingerprint.addr,
-                allow_grace,
-                priority,
-                connection_kind,
-                Some(lease),
-            )
-        });
+    let acquire = || {
+        preferred_account
+            .and_then(|account| {
+                let handle = app_state.active_provider.try_acquire_exact_connection_with_lease_for_session(
+                    account,
+                    &fingerprint.addr,
+                    priority,
+                    connection_kind,
+                    Some(lease),
+                );
+                debug!(
+                    "HLS origin account preference tried: account={} result={}",
+                    sanitize_sensitive_info(account.as_ref()),
+                    if handle.is_some() { "reused" } else { "unavailable" }
+                );
+                handle
+            })
+            .or_else(|| {
+                app_state.active_provider.acquire_connection_with_lease_for_session(
+                    &input.name,
+                    &fingerprint.addr,
+                    allow_grace,
+                    priority,
+                    connection_kind,
+                    Some(lease),
+                )
+            })
+    };
+    let provider_handle = if let Some(retained) = retained {
+        retained
+            .with_current(app_state, |state, _| {
+                super::origin_account_runtime::ensure_retained_origin_policy(state, connection_kind, priority)?;
+                Ok(acquire())
+            })
+            .await?
+    } else {
+        acquire()
+    };
     let Some(provider_handle) = provider_handle else {
         debug!(
             "HLS origin account acquire unavailable: work={} work_class={} grace={}",
@@ -766,7 +782,7 @@ pub(super) async fn prepare_hls_origin_runtime_with_new_account(
         return Err(HlsOriginRuntimeAcquireError::Fatal(StatusCode::SERVICE_UNAVAILABLE));
     };
     let Some(provider_config) = provider_handle.allocation.get_provider_config() else {
-        drop(managed_handle);
+        discard_unpublished_origin_allocation(app_state, &session_owner, retained, managed_handle);
         return Err(HlsOriginRuntimeAcquireError::Fatal(StatusCode::SERVICE_UNAVAILABLE));
     };
 
@@ -779,7 +795,7 @@ pub(super) async fn prepare_hls_origin_runtime_with_new_account(
     )
     .await
     else {
-        drop(managed_handle);
+        discard_unpublished_origin_allocation(app_state, &session_owner, retained, managed_handle);
         return Err(HlsOriginRuntimeAcquireError::Fatal(StatusCode::SERVICE_UNAVAILABLE));
     };
 
@@ -789,7 +805,7 @@ pub(super) async fn prepare_hls_origin_runtime_with_new_account(
         &provider_handle.allocation,
         now_ms,
     ) else {
-        drop(managed_handle);
+        discard_unpublished_origin_allocation(app_state, &session_owner, retained, managed_handle);
         return Err(HlsOriginRuntimeAcquireError::Fatal(StatusCode::SERVICE_UNAVAILABLE));
     };
 
@@ -1669,6 +1685,42 @@ pub(super) fn hls_entry_origin_connection_kind(
     }
 }
 
+const HLS_MASTER_BITRATE_LOOKUP_TIMEOUT: Duration = Duration::from_millis(500);
+
+pub(super) async fn resolve_hls_master_bandwidth(
+    app_config: &Arc<AppConfig>,
+    input: &ConfigInput,
+    stream_ref: Option<&str>,
+    known_bitrate_bps: Option<u32>,
+) -> HlsMasterBandwidthSelection {
+    let database_bitrate_bps = match stream_ref {
+        Some(stream_ref) if HlsMasterBandwidth::new(known_bitrate_bps).is_unknown() => {
+            match tokio::time::timeout(
+                HLS_MASTER_BITRATE_LOOKUP_TIMEOUT,
+                load_input_live_bitrate_bps(app_config, input, stream_ref),
+            )
+            .await
+            {
+                Ok(Ok(bitrate_bps)) => bitrate_bps,
+                Ok(Err(err)) => {
+                    warn!("HLS entry live bitrate lookup failed; using fallback: input_id={} error={err}", input.id);
+                    None
+                }
+                Err(_) => {
+                    debug!(
+                        "HLS entry live bitrate lookup timed out; using fallback: input_id={} timeout_ms={}",
+                        input.id,
+                        HLS_MASTER_BITRATE_LOOKUP_TIMEOUT.as_millis(),
+                    );
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
+    HlsMasterBandwidthSelection::resolve(known_bitrate_bps, database_bitrate_bps)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn create_hls_cache_entry_master_playlist_response(
     app_state: &Arc<AppState>,
@@ -1726,19 +1778,9 @@ pub(super) async fn create_hls_cache_entry_master_playlist_response_with_key(
     connection_kind: Option<crate::api::model::ConnectionKind>,
     server_path: Option<&str>,
 ) -> axum::response::Response {
-    let item_bandwidth = HlsMasterBandwidth::new(known_bitrate_bps);
-    let database_bitrate_bps = if item_bandwidth.is_unknown() {
-        match load_input_live_bitrate_bps(&app_state.app_config, input, &origin_source.stream_ref).await {
-            Ok(known_bitrate_bps) => known_bitrate_bps,
-            Err(err) => {
-                warn!("HLS entry live bitrate lookup failed; using fallback: input_id={} error={err}", input.id);
-                None
-            }
-        }
-    } else {
-        None
-    };
-    let bandwidth = HlsMasterBandwidthSelection::resolve(known_bitrate_bps, database_bitrate_bps);
+    let bandwidth =
+        resolve_hls_master_bandwidth(&app_state.app_config, input, Some(&origin_source.stream_ref), known_bitrate_bps)
+            .await;
     let known_bitrate_bps = bandwidth.known_bitrate_bps();
 
     let proxy_session_id = build_proxy_session_id(&session_key, &app_state.get_encrypt_secret());

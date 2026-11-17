@@ -784,3 +784,77 @@ async fn a_published_raw_session_rejects_later_incompatible_segments() -> std::i
     assert_eq!(session.startup_mode(), shared::model::HlsStartupMode::Progressive);
     Ok(())
 }
+
+#[tokio::test]
+async fn occurrence_old_completion_preserves_successor_attempt_notifier_and_bytes() {
+    for successor_ready in [false, true] {
+        let server = spawn_segment_server(0).await;
+        let directory = tempfile::tempdir().unwrap();
+        let policy = SegmentFetchPolicy { retry_delays_ms: [0; 5], retry_jitter_max_ms: 0, ..Default::default() };
+        let (worker, context, _) = fetch_context(&server, &directory, &policy).await;
+        let snapshot = worker.next_fetch_snapshot(&context, 10, &policy).await.unwrap();
+        let seq = snapshot.proxy_seq;
+        let key = snapshot.cache_key.clone();
+        let (entered, enter) = oneshot::channel();
+        let (release, released) = oneshot::channel();
+        let old_worker = Arc::clone(&worker);
+        let old_context = context.clone();
+        let old_policy = policy.clone();
+        let old = tokio::spawn(async move {
+            entered.send(()).unwrap();
+            released.await.unwrap();
+            let mut state = old_context.session.write().await;
+            old_worker.apply_segment_fetch_result(
+                &mut state,
+                &snapshot,
+                &old_policy,
+                Ok(super::super::SegmentFetchCommit {
+                    origin_digest: None,
+                    content_length: 3,
+                    generation_valid: false,
+                }),
+                30,
+            )
+        });
+        enter.await.unwrap();
+        let successor_notifier = Arc::new(tokio::sync::Notify::new());
+        let expected = {
+            let mut state = context.session.write().await;
+            state.handoff_origin_account(crate::origin::HlsOriginAccountBinding::rebound(
+                Arc::from("input"),
+                Arc::from("new-account"),
+                "owner".into(),
+                2,
+                20,
+            ));
+            let entry = state.segments.get_mut(&seq).unwrap();
+            entry.origin_fetch_ref = Some(crate::OriginSegmentFetchRef {
+                resolved_origin_url: format!("http://mirror.example/{seq}.ts"),
+                byte_range: None,
+                valid_until_ms: None,
+            });
+            entry.status = if successor_ready {
+                SegmentCacheStatus::Ready { content_length: 9, ready_at_ms: 20 }
+            } else {
+                SegmentCacheStatus::Fetching { priority: SegmentFetchPriority::Demand, started_at_ms: 20 }
+            };
+            let expected = entry.clone();
+            state.segment_fetch_notifiers.insert(seq, Arc::clone(&successor_notifier));
+            state.active_segment_fetches = 2;
+            expected
+        };
+        context.segment_cache.write_bytes_and_commit(&key, b"successor").await.unwrap();
+        release.send(()).unwrap();
+        let completion = old.await.unwrap();
+        assert!(!completion.generation_valid);
+        assert!(!completion.stale_commit_cleanup_reserved, "old cleanup must not own the successor cache object");
+        assert!(completion.notifier.is_none(), "an obsolete attempt cannot remove or finish a successor's notifier");
+        let state = context.session.read().await;
+        assert_eq!(state.segments[&seq], expected);
+        assert!(Arc::ptr_eq(&state.segment_fetch_notifiers[&seq], &successor_notifier));
+        assert_eq!(state.active_segment_fetches, 1);
+        drop(state);
+        let metadata = context.segment_cache.metadata(&key).await.unwrap().unwrap();
+        assert_eq!(tokio::fs::read(metadata.path).await.unwrap(), b"successor");
+    }
+}
